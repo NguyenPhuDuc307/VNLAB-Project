@@ -1,4 +1,4 @@
-import { ArrowSquareOut, ArrowsClockwise, Trash, UserPlus, X } from '@phosphor-icons/react';
+import { ArrowSquareOut, ArrowsClockwise, Table, Trash, UserPlus, X } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -12,7 +12,7 @@ type Form = { name: string; code: string; customer: string; description: string;
 const empty: Form = { name: '', code: '', customer: '', description: '', startDate: '', color: PROJECT_COLORS[0], satWeight: 0.5, sunWeight: 0, archived: false };
 
 /** Tạo hoặc sửa dự án; chủ dự án còn lưu trữ / xoá được. */
-export function ProjectSheet({ open, onClose, project }: { open: boolean; onClose: () => void; project?: ProjectDetail | null }) {
+export function ProjectSheet({ open, onClose, project, onImport }: { open: boolean; onClose: () => void; project?: ProjectDetail | null; onImport?: () => void }) {
   const { toast, confirm } = useFeedback();
   const can = useCan();
   const nav = useNavigate();
@@ -81,6 +81,17 @@ export function ProjectSheet({ open, onClose, project }: { open: boolean; onClos
         </Field>
         {project && owner && <Toggle checked={f.archived} onChange={(v) => setF({ ...f, archived: v })} label="Lưu trữ dự án" desc="Ẩn khỏi Tổng quan, vẫn mở được trong danh sách Dự án" />}
       </form>
+      {project && onImport && (
+        <div className="mt-5 rounded-2xl border border-line bg-fill/40 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-[13px] font-bold">Nhập kế hoạch</p>
+              <p className="mt-0.5 text-[12px] text-muted">Dán các dòng chọn từ Excel / Google Sheets; có xem trước trước khi thêm vào dự án.</p>
+            </div>
+            <Button variant="secondary" size="sm" onClick={onImport}><Table size={15} /> Dán từ bảng tính</Button>
+          </div>
+        </div>
+      )}
       {project && owner && <GoogleSheetBox project={project} />}
     </Sheet>
   );

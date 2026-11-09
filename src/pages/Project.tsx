@@ -174,7 +174,6 @@ export function ProjectPage() {
           </>
         )}
         <span className="ml-auto flex flex-wrap items-center gap-2">
-          {canTask && can('project.data.import') && <Button variant="ghost" size="sm" onClick={() => setImportOpen(true)}><TableIcon size={15} /> <span className="hidden sm:inline">Dán từ bảng tính</span><span className="sm:hidden">Dán</span></Button>}
           {p.sheetUrl && editor && can('project.project.write') && (
             <Button variant="ghost" size="sm" onClick={() => syncSheet.mutate()} disabled={syncSheet.isPending} title={p.sheetSyncedAt ? `Đồng bộ lần cuối ${new Date(p.sheetSyncedAt).toLocaleString('vi-VN')}` : 'Chưa đồng bộ'}>
               <ArrowsClockwise size={15} className={syncSheet.isPending ? 'animate-spin' : undefined} /> <span className="hidden sm:inline">Đồng bộ Sheets</span><span className="sm:hidden">Sheets</span>
@@ -226,7 +225,7 @@ export function ProjectPage() {
 
       <TaskSheet open={taskSheet.open} onClose={() => setTaskSheet((s) => ({ ...s, open: false }))} project={p} task={taskSheet.task} groupId={taskSheet.groupId ?? null} canEdit={editor} />
       <GroupSheet open={groupSheet.open} onClose={() => setGroupSheet((s) => ({ ...s, open: false }))} project={p} group={groupSheet.group} confirm={confirm} onSort={(g) => { sortByDate.mutate(g.id); setGroupSheet((s) => ({ ...s, open: false })); }} />
-      <ProjectSheet open={settings} onClose={() => setSettings(false)} project={p} />
+      <ProjectSheet open={settings} onClose={() => setSettings(false)} project={p} onImport={canTask && can('project.data.import') ? () => { setSettings(false); setImportOpen(true); } : undefined} />
       <MembersSheet open={members} onClose={() => setMembers(false)} project={p} />
       <ImportSheet open={importOpen} onClose={() => setImportOpen(false)} project={p} />
       <Sheet open={exportOpen} onClose={() => setExportOpen(false)} title="Xuất dự án">
