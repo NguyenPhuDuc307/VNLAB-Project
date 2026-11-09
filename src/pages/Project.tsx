@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowsClockwise, CaretLeft, ClockCounterClockwise, CornersIn, CornersOut, CrosshairSimple, DownloadSimple, GearSix, Minus, Plus, SortAscending, TableIcon, Trash, Users } from '@phosphor-icons/react';
+import { ArrowsClockwise, CaretLeft, ClockCounterClockwise, CrosshairSimple, DownloadSimple, GearSix, Minus, Plus, SortAscending, TableIcon, Trash, Users } from '@phosphor-icons/react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Gantt, spanOf, type GanttView } from '../components/Gantt';
@@ -173,9 +173,6 @@ export function ProjectPage() {
             </span>
           </>
         )}
-        <Button variant={full ? 'secondary' : 'ghost'} size="sm" onClick={() => setFull((v) => !v)} title={full ? 'Thoát toàn màn hình (Esc)' : 'Phóng to cả bảng ra toàn màn hình'} aria-pressed={full}>
-          {full ? <CornersIn size={15} /> : <CornersOut size={15} />} <span className="hidden md:inline">{full ? 'Thoát' : 'Toàn màn hình'}</span>
-        </Button>
         <span className="ml-auto flex flex-wrap items-center gap-2">
           {canTask && can('project.data.import') && <Button variant="ghost" size="sm" onClick={() => setImportOpen(true)}><TableIcon size={15} /> <span className="hidden sm:inline">Dán từ bảng tính</span><span className="sm:hidden">Dán</span></Button>}
           {p.sheetUrl && editor && can('project.project.write') && (
