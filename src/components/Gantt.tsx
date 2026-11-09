@@ -246,7 +246,7 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
     <>
       {days.map((d) => {
         const wd = weekday(d);
-        return <span key={`${rowKey}-${d}`} className={cx('gantt-day', (wd === 0 || wd === 6) && 'weekend', d === today && 'today')} />;
+        return <span key={`${rowKey}-${d}`} className={cx('gantt-day', (wd === 0 || wd === 6) && 'weekend', d === today && 'today', d.endsWith('-01') && 'month-start')} />;
       })}
     </>
   );
@@ -280,8 +280,9 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
                 {days.map((d) => {
                   const wd = weekday(d);
                   return (
-                    <div key={d} className={cx('gantt-day flex flex-col items-center justify-end pb-1.5 text-center leading-none', (wd === 0 || wd === 6) && 'weekend', d === today && 'today')}>
-                      <span className={cx('num text-[11.5px] font-bold', d === today ? 'rounded-full bg-primary px-1.5 py-0.5 text-on-primary' : 'text-ink')}>{Number(d.slice(8))}</span>
+                    <div key={d} className={cx('gantt-day flex flex-col items-center justify-end pb-1.5 text-center leading-none', (wd === 0 || wd === 6) && 'weekend', d === today && 'today', d.endsWith('-01') && 'month-start')}>
+                      {/* Mồng 1 ghi kèm tháng (1/12) khi cột đủ rộng để đánh dấu sang tháng mới. */}
+                      <span className={cx('num font-bold', d === today ? 'rounded-full bg-primary px-1.5 py-0.5 text-on-primary' : d.endsWith('-01') ? 'text-primary' : 'text-ink', d.endsWith('-01') && dayWidth >= 26 ? 'text-[10.5px]' : 'text-[11.5px]')}>{d.endsWith('-01') && dayWidth >= 26 ? `1/${Number(d.slice(5, 7))}` : Number(d.slice(8))}</span>
                       <span className="mt-0.5 text-[9px] font-semibold text-muted">{WEEKDAY_SHORT[wd]}</span>
                     </div>
                   );

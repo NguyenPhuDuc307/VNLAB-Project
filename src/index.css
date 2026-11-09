@@ -348,7 +348,9 @@ body::before {
 /* Hàng nhóm: dải màu rõ, cả phần bảng lẫn phần lưới ngày. */
 .gantt-group { background: color-mix(in srgb, var(--ink) 9%, var(--surface)); }
 .gantt-group-left { background: color-mix(in srgb, var(--ink) 9%, var(--surface)); border-top: 1px solid color-mix(in srgb, var(--ink) 14%, transparent); }
-.gantt-group .gantt-days .gantt-day.weekend { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.gantt-group .gantt-days /* Ranh giới tháng: vạch đậm ở mép trái ngày mồng 1, chạy suốt đầu bảng và mọi hàng. */
+.gantt-day.month-start { box-shadow: inset 2px 0 0 color-mix(in oklab, var(--primary) 70%, var(--line)); }
+.gantt-day.weekend { background: color-mix(in srgb, var(--ink) 5%, transparent); }
 .gantt-day.weekend {
   background: var(--weekend);
 }
