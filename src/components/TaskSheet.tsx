@@ -1,0 +1,175 @@
+import { ArrowDown, ArrowUp, ClockCounterClockwise, Trash } from '@phosphor-icons/react';
+import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { api, planShift, useAction, useCan, type ProjectDetail, type Task, type TaskHistory, type TaskInput } from '../lib/api';
+import { fmtNum, fmtShort, workDays } from '../lib/dates';
+import { Button, DateInput, Field, IconButton, Input, Select, Sheet, Textarea, useFeedback } from './ui';
+
+type Props = {
+  open: boolean;
+  onClose: () => void;
+  project: ProjectDetail;
+  /** Có task = sửa; không = tạo mới vào nhóm `groupId`. */
+  task?: Task | null;
+  groupId?: string | null;
+  canEdit: boolean;
+};
+
+const empty = (groupId: string | null): TaskInput => ({ name: '', groupId, assignee: '', support: '', progress: 0, startDate: null, endDate: null, days: null, note: '' });
+
+export function TaskSheet({ open, onClose, project, task, groupId = null, canEdit }: Props) {
+  const { toast, confirm } = useFeedback();
+  const can = useCan();
+  const [f, setF] = useState<TaskInput>(() => empty(groupId));
+  const [daysText, setDaysText] = useState('');
+  useEffect(() => {
+    if (!open) return;
+    const init = task ? { ...task } : empty(groupId);
+    setF(init);
+    setDaysText(init.days == null ? '' : String(init.days).replace('.', ','));
+  }, [open, task, groupId]);
+
+  const auto = f.startDate && f.endDate ? workDays(f.startDate, f.endDate, project.satWeight, project.sunWeight) : null;
+  const names = useMemo(() => {
+    const set = new Set<string>();
+    for (const t of project.tasks) for (const n of `${t.assignee},${t.support}`.split(',')) if (n.trim()) set.add(n.trim());
+    for (const m of project.members) if (m.name) set.add(m.name);
+    if (project.owner.name) set.add(project.owner.name);
+    return [...set].sort((a, b) => a.localeCompare(b, 'vi'));
+  }, [project]);
+
+  const save = useAction(async (body: TaskInput) =>
+    task ? api<Task>(`/projects/${project.id}/tasks/${task.id}`, { method: 'PATCH', body }) : api<Task>(`/projects/${project.id}/tasks`, { method: 'POST', body }),
+  { onSuccess: () => { toast(task ? 'Đã lưu việc' : 'Đã thêm việc'); onClose(); } });
+  const remove = useAction(() => api(`/projects/${project.id}/tasks/${task!.id}`, { method: 'DELETE' }), { onSuccess: () => { toast('Đã xoá việc'); onClose(); } });
+  const reorder = useAction((p: { groupId: string | null; ids: string[] }) => api(`/projects/${project.id}/tasks/order`, { method: 'PUT', body: p }));
+  const rebase = useAction(() => api<Task>(`/projects/${project.id}/tasks/${task!.id}/rebaseline`, { method: 'POST', body: {} }), { onSuccess: () => toast('Đã chốt kế hoạch gốc mới') });
+  const history = useQuery({ queryKey: ['task-history', task?.id], queryFn: () => api<TaskHistory[]>(`/projects/${project.id}/tasks/${task!.id}/history`), enabled: open && !!task });
+  const shift = task ? planShift(task) : null;
+
+  const submit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const days = daysText.trim() === '' ? null : Number(daysText.replace(',', '.'));
+    if (days != null && (!Number.isFinite(days) || days < 0)) return toast('Ngày công phải là số ≥ 0', 'error');
+    if (f.startDate && f.endDate && f.endDate < f.startDate) return toast('Ngày kết thúc phải từ ngày bắt đầu trở đi', 'error');
+    save.mutate({ ...f, name: f.name.trim(), days, startDate: f.startDate || null, endDate: f.endDate || null });
+  };
+  const del = async () => {
+    if (await confirm({ title: 'Xoá việc này?', desc: <p><b>{task?.name}</b> sẽ bị xoá khỏi dự án. Không hoàn tác được.</p>, ok: 'Xoá', danger: true })) remove.mutate(undefined);
+  };
+  const move = (dir: -1 | 1) => {
+    if (!task) return;
+    const siblings = project.tasks.filter((t) => (t.groupId ?? null) === (task.groupId ?? null)).map((t) => t.id);
+    const i = siblings.indexOf(task.id);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= siblings.length) return;
+    [siblings[i], siblings[j]] = [siblings[j], siblings[i]];
+    reorder.mutate({ groupId: task.groupId ?? null, ids: siblings });
+  };
+  const busy = save.isPending || remove.isPending;
+  const readOnly = !canEdit || !can('project.task.write');
+
+  return (
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title={task ? (readOnly ? 'Chi tiết việc' : 'Sửa việc') : 'Thêm việc'}
+      wide
+      footer={
+        readOnly ? <Button variant="secondary" block onClick={onClose}>Đóng</Button> : (
+          <div className="flex items-center gap-2">
+            {task && (
+              <>
+                <IconButton label="Chuyển lên" onClick={() => move(-1)} disabled={reorder.isPending}><ArrowUp size={18} /></IconButton>
+                <IconButton label="Chuyển xuống" onClick={() => move(1)} disabled={reorder.isPending}><ArrowDown size={18} /></IconButton>
+                {can('project.task.delete') && <IconButton label="Xoá việc" onClick={del} className="text-danger hover:bg-danger-soft" disabled={busy}><Trash size={18} /></IconButton>}
+              </>
+            )}
+            <Button variant="secondary" className="ml-auto" onClick={onClose}>Huỷ</Button>
+            <Button type="submit" form="task-form" disabled={busy || !f.name.trim()}>{busy ? 'Đang lưu…' : task ? 'Lưu' : 'Thêm'}</Button>
+          </div>
+        )
+      }
+    >
+      <form id="task-form" onSubmit={submit} className="pt-1">
+        <fieldset disabled={readOnly} className="min-w-0 border-0 p-0">
+          <Field label="Tên việc">
+            <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required maxLength={300} autoFocus={!task} placeholder="VD: Thiết kế màn hình đăng nhập" />
+          </Field>
+          <div className="grid gap-x-3 sm:grid-cols-2">
+            <Field label="Nhóm">
+              <Select value={f.groupId ?? ''} onChange={(e) => setF({ ...f, groupId: e.target.value || null })}>
+                <option value="">Chưa phân nhóm</option>
+                {project.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </Select>
+            </Field>
+            <Field label="Tiến độ" hint={<span className="num">{f.progress}%</span>}>
+              <div className="flex h-11 items-center gap-3">
+                <input type="range" min={0} max={100} step={5} value={f.progress ?? 0} onChange={(e) => setF({ ...f, progress: Number(e.target.value) })} className="w-full accent-[var(--primary)]" aria-label="Tiến độ" />
+                <Input type="number" min={0} max={100} value={f.progress ?? 0} onChange={(e) => setF({ ...f, progress: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })} className="num w-20 text-center" />
+              </div>
+            </Field>
+            <Field label="Phụ trách">
+              <Input list="prj-names" value={f.assignee ?? ''} onChange={(e) => setF({ ...f, assignee: e.target.value })} maxLength={160} placeholder="VD: An" />
+            </Field>
+            <Field label="Hỗ trợ" hint="Nhiều người cách nhau bằng dấu phẩy">
+              <Input list="prj-names" value={f.support ?? ''} onChange={(e) => setF({ ...f, support: e.target.value })} maxLength={300} placeholder="VD: Bình, Chi" />
+            </Field>
+            <Field label="Bắt đầu">
+              <DateInput value={f.startDate ?? ''} onChange={(v) => setF({ ...f, startDate: v || null })} optional />
+            </Field>
+            <Field label="Kết thúc">
+              <DateInput value={f.endDate ?? ''} onChange={(v) => setF({ ...f, endDate: v || null })} optional min={f.startDate ?? undefined} />
+            </Field>
+            <Field label="Ngày công" hint={auto != null ? `Để trống = tự tính: ${fmtNum(auto)} ngày (T7 ×${project.satWeight}, CN ×${project.sunWeight})` : 'Để trống = tự tính khi có đủ ngày bắt đầu và kết thúc'}>
+              <Input inputMode="decimal" value={daysText} onChange={(e) => setDaysText(e.target.value)} placeholder={auto != null ? fmtNum(auto) : '—'} className="num" />
+            </Field>
+          </div>
+          <Field label="Ghi chú">
+            <Textarea value={f.note ?? ''} onChange={(e) => setF({ ...f, note: e.target.value })} maxLength={4000} rows={3} />
+          </Field>
+          {task && (
+            <div className="mb-3 rounded-2xl border border-line bg-card p-3 text-[13px]">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-ink-2">Kế hoạch gốc:</span>
+                {task.baselineStart && task.baselineEnd ? (
+                  <span className="num">{fmtShort(task.baselineStart)} → {fmtShort(task.baselineEnd)}</span>
+                ) : <span className="text-muted">chưa có (được chốt khi có đủ ngày bắt đầu và kết thúc)</span>}
+                {shift && (
+                  <span className={shift.end > 0 ? 'rounded-md bg-warning-soft px-1.5 py-0.5 text-[12px] font-semibold text-warning' : 'rounded-md bg-ok-soft px-1.5 py-0.5 text-[12px] font-semibold text-ok'}>
+                    {shift.end > 0 ? `gia hạn ${shift.end} ngày` : shift.end < 0 ? `rút ngắn ${-shift.end} ngày` : `dời ${shift.start > 0 ? 'lùi' : 'sớm'} ${Math.abs(shift.start)} ngày`}
+                  </span>
+                )}
+                {!readOnly && shift && <Button type="button" size="sm" variant="ghost" onClick={() => rebase.mutate(undefined)} disabled={rebase.isPending}>Chốt ngày hiện tại làm kế hoạch gốc</Button>}
+              </div>
+              {history.data && history.data.length > 0 && (
+                <details className="mt-2">
+                  <summary className="cursor-pointer select-none text-[12.5px] font-semibold text-ink-2"><ClockCounterClockwise size={14} className="mr-1 inline" />Lịch sử thay đổi ({history.data.length})</summary>
+                  <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-[12.5px] text-ink-2">
+                    {history.data.map((h) => <li key={h.id}><span className="num text-muted">{new Date(h.at).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span> · {h.user ?? 'AI / hệ thống'} · {describeChange(h)}</li>)}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
+          <datalist id="prj-names">{names.map((n) => <option key={n} value={n} />)}</datalist>
+        </fieldset>
+      </form>
+    </Sheet>
+  );
+}
+
+const FIELD_LABEL: Record<string, string> = { name: 'tên', groupId: 'nhóm', assignee: 'phụ trách', support: 'hỗ trợ', progress: 'tiến độ', startDate: 'bắt đầu', endDate: 'kết thúc', days: 'ngày công', note: 'ghi chú', baseline: 'kế hoạch gốc' };
+const fmtVal = (field: string, v: string | null) => {
+  if (v === null) return 'trống';
+  if (field === 'startDate' || field === 'endDate') return fmtShort(v);
+  if (field === 'progress') return `${v}%`;
+  if (field === 'baseline') return v.split('..').map(fmtShort).join(' → ');
+  if (field === 'groupId') return 'nhóm khác';
+  return v.length > 40 ? `${v.slice(0, 40)}…` : v;
+};
+function describeChange(h: TaskHistory) {
+  const label = FIELD_LABEL[h.field] ?? h.field;
+  if (h.field === 'baseline') return `chốt ${label}: ${fmtVal(h.field, h.newValue)}`;
+  return `${label}: ${fmtVal(h.field, h.oldValue)} → ${fmtVal(h.field, h.newValue)}`;
+}

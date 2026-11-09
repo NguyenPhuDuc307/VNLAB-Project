@@ -1,0 +1,611 @@
+@import 'tailwindcss';
+
+/* Plus Jakarta Sans tự host (public/fonts, SIL OFL — xem OFL.txt): không gọi
+   Google Fonts. Bản variable 200–800, chia ba subset. */
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 800;
+  src: url('/fonts/plus-jakarta-sans-vietnamese-wght-normal.woff2') format('woff2');
+  unicode-range: U+0102-0103, U+0110-0111, U+0128-0129, U+0168-0169, U+01A0-01A1, U+01AF-01B0, U+0300-0301, U+0303-0304, U+0308-0309, U+0323, U+0329, U+1EA0-1EF9, U+20AB;
+}
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 800;
+  src: url('/fonts/plus-jakarta-sans-latin-ext-wght-normal.woff2') format('woff2');
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+@font-face {
+  font-family: 'Plus Jakarta Sans';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 200 800;
+  src: url('/fonts/plus-jakarta-sans-latin-wght-normal.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+/* Token theo poster "VNLab Ecosystem v4", màu nhận diện của Project là xanh xám
+   thép sáng #4274BC → #A5D8FF: tông lạnh, trung tính, khác xanh ngọc Finance,
+   xanh dương Stock, chàm Server, tím Shop. Nền xám lạnh rất nhạt, vệt màu tròn
+   loang ở góc, thẻ kính trắng viền trong 1px; chữ navy #1B2A41. Tối: nền xanh
+   đen, nhấn xanh xám sáng. */
+:root {
+  color-scheme: light;
+  --bg: #f4f7fb;
+  --bg-grad: linear-gradient(160deg, #f9fbfe 0%, #f2f6fb 45%, #e8f0f9 100%);
+  --blob-1: rgba(165, 216, 255, 0.42);
+  --blob-2: rgba(66, 116, 188, 0.1);
+  --card: rgba(255, 255, 255, 0.8);
+  --surface: #fcfdff;
+  --fill: rgba(27, 42, 65, 0.055);
+  --fill-2: rgba(27, 42, 65, 0.12);
+  --ink: #1b2a41;
+  --ink-2: rgba(27, 42, 65, 0.78);
+  --muted: rgba(27, 42, 65, 0.72);
+  --line: rgba(27, 42, 65, 0.1);
+  --rim: rgba(255, 255, 255, 0.95);
+  --primary: #4274bc;
+  --accent: #a5d8ff;
+  --primary-soft: rgba(66, 116, 188, 0.1);
+  --primary-grad: linear-gradient(135deg, #4274bc 0%, #3a68ab 60%, #315c9a 100%);
+  --hero-grad: radial-gradient(120% 140% at 100% 0%, rgba(165, 216, 255, 0.55), transparent 58%), linear-gradient(135deg, #315c9a 0%, #4274bc 55%, #4f86cf 100%);
+  --on-primary: #ffffff;
+  --on-hero: #ffffff;
+  --ok: #1f8a4c;
+  --ok-soft: rgba(31, 138, 76, 0.12);
+  --danger: #d6343a;
+  --danger-soft: rgba(214, 52, 58, 0.1);
+  --warning: #a86a00;
+  --warning-soft: rgba(237, 161, 0, 0.16);
+  --grid: rgba(27, 42, 65, 0.07);
+  --weekend: rgba(27, 42, 65, 0.035);
+  --today: rgba(66, 116, 188, 0.1);
+  --shadow: 0 1px 2px rgba(40, 60, 90, 0.04), 0 10px 30px -14px rgba(40, 60, 90, 0.22);
+  --shadow-lg: 0 2px 6px rgba(40, 60, 90, 0.05), 0 28px 60px -24px rgba(40, 60, 90, 0.32);
+  --shadow-primary: 0 10px 24px -10px rgba(66, 116, 188, 0.6);
+  --glass-bg: rgba(255, 255, 255, 0.64);
+  --glass-border: rgba(255, 255, 255, 0.95);
+  --glass-shadow: 0 18px 44px -12px rgba(40, 60, 90, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
+    --bg: #0e1726;
+    --bg-grad: linear-gradient(160deg, #132035 0%, #0e1726 55%, #0a111c 100%);
+    --blob-1: rgba(165, 216, 255, 0.14);
+    --blob-2: rgba(66, 116, 188, 0.24);
+    --card: rgba(28, 39, 56, 0.72);
+    --surface: #182434;
+    --fill: rgba(232, 238, 246, 0.07);
+    --fill-2: rgba(232, 238, 246, 0.16);
+    --ink: #e8eef6;
+    --ink-2: rgba(232, 238, 246, 0.8);
+    --muted: rgba(232, 238, 246, 0.6);
+    --line: rgba(232, 238, 246, 0.1);
+    --rim: rgba(255, 255, 255, 0.07);
+    --primary: #8dbdf5;
+    --accent: #b6ddff;
+    --primary-soft: rgba(141, 189, 245, 0.16);
+    --primary-grad: linear-gradient(135deg, #74acee 0%, #8dbdf5 60%, #a6cdfa 100%);
+    --hero-grad: radial-gradient(120% 140% at 100% 0%, rgba(165, 216, 255, 0.35), transparent 58%), linear-gradient(135deg, #1f3a5f 0%, #315c9a 55%, #4274bc 100%);
+    --on-primary: #0b1521;
+    --on-hero: #ffffff;
+    --ok: #4ccf7e;
+    --ok-soft: rgba(76, 207, 126, 0.14);
+    --danger: #ff6b6f;
+    --danger-soft: rgba(255, 107, 111, 0.14);
+    --warning: #ffc14d;
+    --warning-soft: rgba(255, 193, 77, 0.14);
+    --grid: rgba(232, 238, 246, 0.08);
+    --weekend: rgba(232, 238, 246, 0.04);
+    --today: rgba(141, 189, 245, 0.14);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
+    --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.25), 0 30px 60px -24px rgba(0, 0, 0, 0.7);
+    --shadow-primary: 0 10px 26px -10px rgba(141, 189, 245, 0.45);
+    --glass-bg: rgba(22, 32, 46, 0.64);
+    --glass-border: rgba(255, 255, 255, 0.1);
+    --glass-shadow: 0 18px 48px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --bg: #0e1726;
+  --bg-grad: linear-gradient(160deg, #132035 0%, #0e1726 55%, #0a111c 100%);
+  --blob-1: rgba(165, 216, 255, 0.14);
+  --blob-2: rgba(66, 116, 188, 0.24);
+  --card: rgba(28, 39, 56, 0.72);
+  --surface: #182434;
+  --fill: rgba(232, 238, 246, 0.07);
+  --fill-2: rgba(232, 238, 246, 0.16);
+  --ink: #e8eef6;
+  --ink-2: rgba(232, 238, 246, 0.8);
+  --muted: rgba(232, 238, 246, 0.6);
+  --line: rgba(232, 238, 246, 0.1);
+  --rim: rgba(255, 255, 255, 0.07);
+  --primary: #8dbdf5;
+  --accent: #b6ddff;
+  --primary-soft: rgba(141, 189, 245, 0.16);
+  --primary-grad: linear-gradient(135deg, #74acee 0%, #8dbdf5 60%, #a6cdfa 100%);
+  --hero-grad: radial-gradient(120% 140% at 100% 0%, rgba(165, 216, 255, 0.35), transparent 58%), linear-gradient(135deg, #1f3a5f 0%, #315c9a 55%, #4274bc 100%);
+  --on-primary: #0b1521;
+  --on-hero: #ffffff;
+  --ok: #4ccf7e;
+  --ok-soft: rgba(76, 207, 126, 0.14);
+  --danger: #ff6b6f;
+  --danger-soft: rgba(255, 107, 111, 0.14);
+  --warning: #ffc14d;
+  --warning-soft: rgba(255, 193, 77, 0.14);
+  --grid: rgba(232, 238, 246, 0.08);
+  --weekend: rgba(232, 238, 246, 0.04);
+  --today: rgba(141, 189, 245, 0.14);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.25), 0 30px 60px -24px rgba(0, 0, 0, 0.7);
+  --shadow-primary: 0 10px 26px -10px rgba(141, 189, 245, 0.45);
+  --glass-bg: rgba(22, 32, 46, 0.64);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --glass-shadow: 0 18px 48px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-card: var(--card);
+  --color-surface: var(--surface);
+  --color-fill: var(--fill);
+  --color-fill-2: var(--fill-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-primary: var(--primary);
+  --color-accent: var(--accent);
+  --color-primary-soft: var(--primary-soft);
+  --color-on-primary: var(--on-primary);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+}
+
+html {
+  -webkit-text-size-adjust: 100%;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  overscroll-behavior-y: none;
+}
+
+/* Nền poster: gradient rất nhạt + hai vệt màu tròn loang ở góc. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 100% 0%, var(--blob-1) 0, transparent min(62vw, 560px)),
+    radial-gradient(circle at 0% 100%, var(--blob-2) 0, transparent min(70vw, 520px)),
+    var(--bg-grad);
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+.eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.display {
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  line-height: 1.02;
+}
+
+.card {
+  background: var(--card);
+  border-radius: 18px;
+  box-shadow: var(--shadow), inset 0 0 0 1px var(--rim);
+  border: 1px solid var(--line);
+  border-color: color-mix(in srgb, var(--line) 60%, transparent);
+}
+
+.liquid-glass {
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-shadow);
+  -webkit-backdrop-filter: blur(24px) saturate(175%);
+  backdrop-filter: blur(24px) saturate(175%);
+}
+
+.bg-primary-grad {
+  background: var(--primary-grad);
+}
+.bg-hero {
+  background: var(--hero-grad);
+  color: var(--on-hero);
+}
+
+.pb-safe {
+  padding-bottom: env(safe-area-inset-bottom);
+}
+.pt-safe {
+  padding-top: env(safe-area-inset-top);
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  scrollbar-width: none;
+}
+
+/* Thanh bên (màn rộng) và thanh trên (màn hẹp): kính mờ theo nền, như Stock. */
+@layer components {
+  .sidebar {
+    background: var(--glass-bg);
+    border-right: 1px solid var(--line);
+    -webkit-backdrop-filter: blur(22px) saturate(160%);
+    backdrop-filter: blur(22px) saturate(160%);
+  }
+  .side-active {
+    background: var(--card);
+    color: var(--ink);
+    box-shadow: 0 0 0 1px var(--line), var(--shadow);
+  }
+  .side-active::before {
+    content: '';
+    position: absolute;
+    inset: 9px auto 9px 0;
+    width: 3px;
+    border-radius: 999px;
+    background: linear-gradient(180deg, var(--accent), var(--primary));
+  }
+  .topbar {
+    background: color-mix(in srgb, var(--bg) 72%, transparent);
+    border-bottom: 1px solid var(--line);
+    -webkit-backdrop-filter: blur(18px) saturate(160%);
+    backdrop-filter: blur(18px) saturate(160%);
+  }
+
+  .brand-logo-dark { display: none; }
+  :root[data-theme='dark'] .brand-logo-light { display: none; }
+  :root[data-theme='dark'] .brand-logo-dark { display: block; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme='light']) .brand-logo-light { display: none; }
+    :root:not([data-theme='light']) .brand-logo-dark { display: block; }
+  }
+}
+
+/* ---- Gantt: bảng bên trái dính, lưới ngày bên phải cuộn ngang. */
+.gantt {
+  --day: 30px;
+  position: relative;
+  overflow: auto;
+  /* Cuộn trong khung để đầu bảng (tuần/ngày) luôn dính trên cùng khi danh sách dài. */
+  max-height: calc(100dvh - 240px);
+  overscroll-behavior-x: contain;
+  background: var(--surface);
+  border-radius: 18px;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+.gantt-row {
+  display: grid;
+  grid-template-columns: var(--left) 1fr;
+  min-width: max-content;
+}
+.gantt-left {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  display: grid;
+  align-items: center;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  width: var(--left);
+}
+.gantt-head {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  background: var(--surface);
+}
+.gantt-head .gantt-left {
+  z-index: 4;
+}
+.gantt-days {
+  position: relative;
+  display: flex;
+  min-width: max-content;
+  background-image: linear-gradient(to right, var(--grid) 1px, transparent 1px);
+  background-size: var(--day) 100%;
+}
+.gantt-day {
+  flex: 0 0 var(--day);
+  width: var(--day);
+  align-self: stretch;
+}
+/* Hàng nhóm: dải màu rõ, cả phần bảng lẫn phần lưới ngày. */
+.gantt-group { background: color-mix(in srgb, var(--ink) 9%, var(--surface)); }
+.gantt-group-left { background: color-mix(in srgb, var(--ink) 9%, var(--surface)); border-top: 1px solid color-mix(in srgb, var(--ink) 14%, transparent); }
+.gantt-group .gantt-days .gantt-day.weekend { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.gantt-day.weekend {
+  background: var(--weekend);
+}
+.gantt-day.today {
+  background: var(--today);
+}
+.gantt-bar {
+  position: absolute;
+  top: 50%;
+  height: 26px;
+  margin-top: -13px;
+  border-radius: 7px;
+  overflow: hidden;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+.gantt-bar:active {
+  cursor: grabbing;
+}
+.gantt-bar .fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  background: rgba(0, 0, 0, 0.22);
+}
+.gantt-bar .label {
+  position: relative;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  color: #fff;
+  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+}
+/* Kế hoạch gốc: khung thanh rỗng nét đứt cùng cỡ thanh thật, nằm dưới thanh hiện tại —
+   đọc như "thanh cũ" của việc trước khi bị dời / gia hạn. */
+.gantt-baseline {
+  position: absolute;
+  top: 50%;
+  height: 26px;
+  margin-top: -13px;
+  border-radius: 7px;
+  border: 1.5px dashed color-mix(in srgb, var(--ink) 38%, transparent);
+  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--ink) 7%, transparent) 0 4px, transparent 4px 8px);
+}
+.gantt-baseline::after {
+  content: 'gốc';
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: color-mix(in srgb, var(--ink) 55%, transparent);
+}
+/* Thanh quá ngắn (≤ 1–2 ngày) không đủ chỗ: nhãn % đặt ngay bên phải thanh. */
+.gantt-bar-out {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--ink-2);
+  pointer-events: none;
+}
+/* Ô nhập sửa tại chỗ trên bảng Gantt. */
+.gantt-input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 0 6px;
+  border: 1.5px solid var(--primary);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 13px !important;
+  outline: none;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent);
+}
+.gantt-input[type='date'] { padding: 0 4px; font-size: 12px !important; }
+/* Kéo thả hàng: hàng đang kéo mờ đi, vạch chỉ vị trí thả trên / dưới hàng đích. */
+.gantt-row.is-dragging { opacity: 0.45; }
+.gantt-row.drop-before { box-shadow: inset 0 2px 0 var(--primary); }
+.gantt-row.drop-after { box-shadow: inset 0 -2px 0 var(--primary); }
+.gantt-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: ew-resize;
+}
+.gantt-handle.l { left: 0; }
+.gantt-handle.r { right: 0; }
+.gantt-today-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--primary);
+  opacity: 0.6;
+  pointer-events: none;
+}
+@media (max-width: 1023px) {
+  .gantt { --left: 300px; --day: 28px; }
+}
+@media (max-width: 639px) {
+  .gantt { --left: 200px; --day: 26px; }
+}
+
+@layer base {
+  input,
+  select,
+  textarea,
+  button {
+    font: inherit;
+    color: inherit;
+  }
+  input[type='date'] {
+    -webkit-appearance: none;
+    appearance: none;
+    min-width: 0;
+    display: block;
+  }
+  input[type='date']::-webkit-date-and-time-value {
+    text-align: left;
+  }
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+  :focus-visible {
+    outline: 2px solid var(--primary);
+    outline-offset: 2px;
+  }
+}
+
+@keyframes sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
+}
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes pop-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.anim-sheet { animation: sheet-up 0.24s cubic-bezier(0.2, 0.9, 0.3, 1); }
+.anim-fade { animation: fade-in 0.18s ease-out; }
+@media (min-width: 768px) {
+  .anim-sheet { animation: pop-in 0.18s ease-out; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .anim-sheet, .anim-fade { animation: none; }
+}
+
+/* Nút phóng to cả bảng (góc trên-phải, nổi trên đầu bảng dính). */
+.gantt-max {
+  position: absolute;
+  top: 5px;
+  right: 10px;
+  z-index: 6;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  color: var(--muted);
+  background: color-mix(in oklab, var(--surface) 88%, transparent);
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+  transition: color 120ms, background 120ms, border-color 120ms;
+}
+.gantt-max:hover, .gantt-max:focus-visible, .gantt-max.on { color: var(--primary); border-color: var(--primary); background: var(--surface); }
+.gantt-max:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+/* Toàn màn hình: khung bảng kéo dài hết phần còn lại của màn hình thay vì giới hạn theo 100dvh - 240px. */
+.gantt-full .gantt-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.gantt-full .gantt { flex: 1; min-height: 0; max-height: none; }
+
+/* Bảng và lịch chia theo chiều rộng thực tế, kể cả khi zoom trình duyệt. */
+.gantt-shell { position: relative; min-width: 0; }
+.gantt-shell.resizing { cursor: col-resize; user-select: none; }
+.gantt-splitter {
+  position: absolute;
+  z-index: 5;
+  top: 1px;
+  bottom: 1px;
+  left: var(--left);
+  width: 12px;
+  transform: translateX(-50%);
+  cursor: col-resize;
+  touch-action: none;
+  border-radius: 6px;
+}
+.gantt-splitter::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 5px;
+  width: 2px;
+  background: var(--line);
+}
+.gantt-splitter span {
+  position: absolute;
+  top: 50%;
+  left: 3px;
+  width: 6px;
+  height: 32px;
+  border-radius: 6px;
+  background: var(--muted);
+}
+.gantt-splitter:hover::before, .gantt-splitter:focus-visible::before,
+.resizing .gantt-splitter::before, .gantt-splitter:hover span,
+.gantt-splitter:focus-visible span, .resizing .gantt-splitter span { background: var(--primary); }
+.gantt-splitter:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.gantt { --cols: 32px minmax(0, 1fr) 84px 84px 88px 72px 72px 44px; }
+.gantt-left { grid-template-columns: var(--cols); }
+.gantt-left > * { min-width: 0; padding-inline: 6px; }
+/* Mật độ cột theo bề rộng bảng trái (kéo vạch chia): full ≥ 620 đủ 8 cột; medium ẩn Ngày công;
+   compact ẩn thêm Hỗ trợ; tight chỉ #, Việc, Tiến độ; narrow chỉ Việc, Tiến độ. */
+.gantt:not(.list)[data-density="wide"] { --cols: 36px minmax(0, 1fr) 120px 120px 110px 84px 84px 64px; }
+.gantt:not(.list)[data-density="full"] { --cols: 32px minmax(0, 1fr) 96px 96px 84px 70px 70px 48px; }
+.gantt:not(.list)[data-density="medium"] { --cols: 32px minmax(0, 1fr) 92px 92px 80px 68px 68px; }
+.gantt:not(.list)[data-density="medium"] .c-days { display: none !important; }
+.gantt:not(.list)[data-density="compact"] { --cols: 32px minmax(0, 1fr) 88px 80px 66px 66px; }
+.gantt:not(.list)[data-density="compact"] :is(.c-sup, .c-days) { display: none !important; }
+.gantt:not(.list)[data-density="tight"] { --cols: 32px minmax(0, 1fr) 84px; }
+.gantt:not(.list)[data-density="tight"] :is(.c-sup, .c-days, .c-asg, .c-start, .c-end) { display: none !important; }
+.gantt:not(.list)[data-density="narrow"] { --cols: minmax(0, 1fr) 64px; }
+.gantt:not(.list)[data-density="narrow"] :is(.c-sup, .c-days, .c-asg, .c-start, .c-end, .c-no) { display: none !important; }
+/* Chế độ danh sách: không có lưới ngày, bảng trái chiếm hết bề ngang và thêm cột. */
+.gantt.list .gantt-row { grid-template-columns: minmax(0, 1fr); min-width: 0; width: 100%; }
+.gantt.list .gantt-left { position: static; width: 100%; border-right: 0; }
+.gantt.list .gantt-days { display: none; }
+/* Danh sách không có hai hàng lịch nên tiêu đề bảng cần chiều cao riêng, chữ căn giữa dọc. */
+.gantt.list .gantt-head .gantt-left { min-height: 44px; }
+.gantt.list .gantt-head .gantt-left > * { align-items: center !important; padding-bottom: 0 !important; }
+.gantt.list { --cols: 36px minmax(0, 1fr) 120px 120px 110px 84px 84px 64px; }
+@media (max-width: 1279px) {
+  .gantt.list .c-sup, .gantt.list .c-days { display: none !important; }
+  .gantt.list { --cols: 32px minmax(0, 1fr) 84px 88px 72px 72px; }
+}
+@media (max-width: 1023px) {
+  .gantt.list { --cols: 32px minmax(0, 1fr) 84px 88px 72px 72px; }
+  .gantt.list .c-asg, .gantt.list .c-start, .gantt.list .c-end { display: flex !important; }
+  .gantt.list .c-sup, .gantt.list .c-days { display: none !important; }
+}
+@media (max-width: 639px) {
+  .gantt.list { --cols: minmax(0, 1fr) 96px 72px; }
+  .gantt.list .c-asg, .gantt.list .c-start, .gantt.list .c-no { display: none !important; }
+  .gantt.list .c-end { display: flex !important; }
+}

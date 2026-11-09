@@ -1,0 +1,81 @@
+# Production trên VPS ở /home/ducnp/project — `./deploy.sh` đẩy file này lên
+# cùng mã nguồn (src/) và .env do deploy.sh tự sinh một lần.
+name: project
+
+services:
+  app:
+    image: vnlab-project:local
+    build: ./src
+    restart: unless-stopped
+    mem_limit: 256m
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PORT: 3400
+      TZ: Asia/Ho_Chi_Minh
+      PROJECT_DATABASE_URL: postgres://project:${POSTGRES_PASSWORD:?}@db:5432/project
+      # Khoá ký phiên: đổi là mọi người bị đăng xuất. deploy.sh sinh một lần.
+      PROJECT_JWT_SECRET: ${PROJECT_JWT_SECRET:?}
+      # Id app Logto SPA "VNLab Project" — bootstrap ở repo Account tạo, đặt tay vào .env.
+      PROJECT_LOGTO_APP_ID: ${PROJECT_LOGTO_APP_ID:?chạy bootstrap ở repo Account rồi đặt id app project}
+      LOGTO_ENDPOINT: ${LOGTO_ENDPOINT:-https://auth.vnlab.id.vn}
+      # Khoá dịch vụ để VNLab Account quản lý quyền của role project:* qua
+      # /api/service/rbac. Phải TRÙNG giá trị bên Account; để trống thì API đó
+      # trả 503, app vẫn chạy bình thường.
+      ACCOUNT_SERVICE_TOKEN: ${ACCOUNT_SERVICE_TOKEN:-}
+      # Google service account (file JSON đặt cạnh compose: /home/ducnp/project/google-sa.json)
+      # để đồng bộ kế hoạch sang Google Sheets. Thiếu file thì tính năng báo "chưa cấu hình", app vẫn chạy.
+      GOOGLE_SERVICE_ACCOUNT_FILE: /app/secrets/google-sa.json
+    volumes:
+      - ./google-sa.json:/app/secrets/google-sa.json:ro
+    networks:
+      default: {}
+      vnlab-edge:
+        # Tên Edge gọi tới (deploy/edge.caddy) — phải riêng trên network chung.
+        aliases: [project-app]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3400/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    mem_limit: 256m
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      POSTGRES_USER: project
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: project
+      TZ: Asia/Ho_Chi_Minh
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U project -d project"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  pg_data:
+
+networks:
+  # Network chung với VNLab Edge (repo Edge tạo).
+  vnlab-edge:
+    external: true

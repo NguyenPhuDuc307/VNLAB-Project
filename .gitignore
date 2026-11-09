@@ -1,0 +1,8 @@
+node_modules
+dist
+.env
+.DS_Store
+.mcp-token
+google-sa.json
+*.pem
+.playwright-mcp

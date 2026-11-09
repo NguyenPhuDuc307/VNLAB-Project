@@ -1,0 +1,15 @@
+{
+  "name": "VNLab Project",
+  "short_name": "VNLab Project",
+  "description": "Kế hoạch dự án, việc theo nhóm, biểu đồ Gantt theo ngày.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#4274bc",
+  "lang": "vi",
+  "icons": [
+    { "src": "/icon-192.png?v=eco4-20261109", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/icon-512.png?v=eco4-20261109", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

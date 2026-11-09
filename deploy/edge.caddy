@@ -1,0 +1,9 @@
+# Site của Project trên VNLab Edge (repo Edge). `./deploy.sh` chép file này lên
+# /home/ducnp/edge/caddy/sites/project.caddy rồi nạp lại Edge.
+# Service app tự phục vụ cả API lẫn SPA.
+project.vnlab.id.vn {
+	encode gzip
+	import browser_security
+
+	reverse_proxy project-app:3400
+}

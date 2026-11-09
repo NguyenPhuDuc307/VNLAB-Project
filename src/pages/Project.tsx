@@ -1,0 +1,296 @@
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { ArrowsClockwise, CaretLeft, ClockCounterClockwise, CornersIn, CornersOut, CrosshairSimple, DownloadSimple, GearSix, Minus, Plus, SortAscending, TableIcon, Trash, Users } from '@phosphor-icons/react';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Gantt, spanOf, type GanttView } from '../components/Gantt';
+import { ImportSheet } from '../components/ImportSheet';
+import { MembersSheet, ProjectSheet } from '../components/ProjectSheet';
+import { TaskSheet } from '../components/TaskSheet';
+import { ColumnPicker, normalizeColumns, type ColKey } from '../components/ColumnPicker';
+import { Button, Chip, Empty, Field, IconButton, Input, PageHeader, Segmented, Sheet, Skeleton, useFeedback, cx } from '../components/ui';
+import { api, canEditRole, ROLE_LABEL, useAction, useCan, useProject, type Group, type ProjectDetail, type Task, type TaskInput } from '../lib/api';
+import { diffDays, fmtShort, todayStr } from '../lib/dates';
+
+const pref = <T,>(key: string, fallback: T, ok: (v: unknown) => v is T): T => {
+  try {
+    const v = JSON.parse(localStorage.getItem(key) ?? 'null');
+    return ok(v) ? v : fallback;
+  } catch {
+    return fallback;
+  }
+};
+const savePref = (key: string, v: unknown) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* riêng tư */ } };
+
+export function ProjectPage() {
+  const { id = '' } = useParams();
+  const [params, setParams] = useSearchParams();
+  const q = useProject(id);
+  const qc = useQueryClient();
+  const can = useCan();
+  const { toast, confirm } = useFeedback();
+  const today = todayStr();
+  const [view, setView] = useState<GanttView>(() => pref('project:view', 'gantt', (v): v is GanttView => v === 'gantt' || v === 'list'));
+  const [dayWidth, setDayWidth] = useState(() => pref('project:day', 30, (v): v is number => typeof v === 'number' && v >= 18 && v <= 60));
+  const [focus, setFocus] = useState({ date: today, tick: 0 });
+  const [showBaseline, setShowBaseline] = useState(() => pref('project:baseline', true, (v): v is boolean => typeof v === 'boolean'));
+  useEffect(() => savePref('project:baseline', showBaseline), [showBaseline]);
+  // Toàn màn hình: thanh công cụ + cả bảng phủ kín cửa sổ (trên sidebar, dưới hộp thoại); Esc thoát, khoá cuộn trang.
+  const [full, setFull] = useState(false);
+  useEffect(() => {
+    if (!full) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape' || e.defaultPrevented) return;
+      // Đang có hộp thoại / đang gõ trong ô nhập thì Esc thuộc về chúng, không thoát toàn màn hình.
+      if (document.querySelector('[role="dialog"]') || (e.target as HTMLElement | null)?.closest('input, textarea, select')) return;
+      setFull(false);
+    };
+    window.addEventListener('keydown', onKey);
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
+  }, [full]);
+  const [collapsed, setCollapsed] = useState<string[]>(() => pref(`project:${id}:collapsed`, [], (v): v is string[] => Array.isArray(v)));
+  const [taskSheet, setTaskSheet] = useState<{ open: boolean; task?: Task | null; groupId?: string | null }>({ open: false });
+  const [groupSheet, setGroupSheet] = useState<{ open: boolean; group?: Group | null }>({ open: false });
+  const [settings, setSettings] = useState(false);
+  const [members, setMembers] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  useEffect(() => savePref('project:view', view), [view]);
+  useEffect(() => savePref('project:day', dayWidth), [dayWidth]);
+  useEffect(() => savePref(`project:${id}:collapsed`, collapsed), [collapsed, id]);
+
+  const p = q.data;
+  // Từ Tổng quan tới thẳng một việc: ?task=<id>.
+  useEffect(() => {
+    const tid = params.get('task');
+    if (!tid || !p) return;
+    const t = p.tasks.find((x) => x.id === tid);
+    if (t) setTaskSheet({ open: true, task: t });
+    setParams({}, { replace: true });
+  }, [p, params, setParams]);
+
+  // Thu gọn nhóm là sở thích riêng từng máy (không ghi server, người chỉ xem cũng gập được).
+  const shown = useMemo<ProjectDetail | undefined>(() => p && { ...p, groups: p.groups.map((g) => ({ ...g, collapsed: collapsed.includes(g.id) })) }, [p, collapsed]);
+
+  const editor = canEditRole(p?.myRole);
+  const canTask = editor && can('project.task.write');
+  const canStruct = editor && can('project.project.write');
+
+  // Kéo thanh Gantt / sửa tại chỗ: cập nhật lạc quan để ô và thanh đứng yên chỗ vừa sửa.
+  const patchTask = useMutation({
+    mutationFn: (a: { task: Task; patch: Partial<TaskInput> }) => api<Task>(`/projects/${id}/tasks/${a.task.id}`, { method: 'PATCH', body: a.patch }),
+    onMutate: async (a) => {
+      await qc.cancelQueries({ queryKey: ['project', id] });
+      const prev = qc.getQueryData<ProjectDetail>(['project', id]);
+      if (prev) qc.setQueryData<ProjectDetail>(['project', id], { ...prev, tasks: prev.tasks.map((t) => (t.id === a.task.id ? { ...t, ...a.patch } as Task : t)) });
+      return { prev };
+    },
+    onError: (e, _a, ctx) => { if (ctx?.prev) qc.setQueryData(['project', id], ctx.prev); toast((e as Error).message, 'error'); },
+    onSettled: () => qc.invalidateQueries({ predicate: (query) => query.queryKey[0] !== 'me' }),
+  });
+  // Kéo thả đổi thứ tự trong nhóm: đổi vị trí trong cache ngay, server lưu sort.
+  const reorder = useMutation({
+    mutationFn: (a: { groupId: string | null; ids: string[] }) => api(`/projects/${id}/tasks/order`, { method: 'PUT', body: a }),
+    onMutate: async (a) => {
+      await qc.cancelQueries({ queryKey: ['project', id] });
+      const prev = qc.getQueryData<ProjectDetail>(['project', id]);
+      if (prev) {
+        const inGroup = new Map(prev.tasks.filter((t) => (t.groupId ?? null) === a.groupId).map((t) => [t.id, t]));
+        const ordered = a.ids.map((x) => inGroup.get(x)).filter((t): t is Task => !!t);
+        let k = 0;
+        qc.setQueryData<ProjectDetail>(['project', id], { ...prev, tasks: prev.tasks.map((t) => ((t.groupId ?? null) === a.groupId ? ordered[k++] ?? t : t)) });
+      }
+      return { prev };
+    },
+    onError: (e, _a, ctx) => { if (ctx?.prev) qc.setQueryData(['project', id], ctx.prev); toast((e as Error).message, 'error'); },
+    onSettled: () => qc.invalidateQueries({ predicate: (query) => query.queryKey[0] !== 'me' }),
+  });
+  const sortByDate = useAction((groupId?: string | null) => api<{ moved: number }>(`/projects/${id}/tasks/sort`, { method: 'POST', body: groupId === undefined ? {} : { groupId } }), { onSuccess: (r) => toast(r.moved ? `Đã sắp xếp lại ${r.moved} việc theo ngày` : 'Thứ tự đã đúng theo ngày') });
+  const sortAll = async () => {
+    if (await confirm({ title: 'Sắp xếp mọi nhóm theo ngày?', desc: <p>Việc trong từng nhóm được xếp lại theo ngày bắt đầu (trống xếp cuối), rồi kết thúc, rồi tên. Thứ tự tay hiện tại sẽ mất.</p>, ok: 'Sắp xếp' })) sortByDate.mutate(undefined);
+  };
+  const [exportCols, setExportCols] = useState<ColKey[] | null>(null);
+  const saveCols = useAction((cols: ColKey[]) => api(`/projects/${id}`, { method: 'PATCH', body: { exportColumns: cols } }), { onSuccess: () => toast('Đã lưu cột xuất cho dự án') });
+
+  const syncSheet = useMutation({
+    mutationFn: () => api<{ sheetUrl: string }>(`/projects/${id}/sheet/sync`, { method: 'POST', body: {} }),
+    onSuccess: () => { toast('Đã đồng bộ sang Google Sheet'); qc.invalidateQueries({ queryKey: ['project', id] }); },
+    onError: (e) => toast((e as Error).message, 'error'),
+  });
+  if (q.isPending) return <div><Skeleton className="mb-5 h-16 max-w-md" /><Skeleton className="h-[480px]" /></div>;
+  if (!p || !shown) {
+    return (
+      <div>
+        <PageHeader title="Không tìm thấy dự án" sub="Dự án không tồn tại hoặc bạn không được mời." />
+        <Link to="/du-an" className="text-sm font-semibold text-primary">← Về danh sách dự án</Link>
+      </div>
+    );
+  }
+  const span = spanOf(p.tasks);
+  const done = p.tasks.filter((t) => t.progress >= 100).length;
+  const overdue = p.tasks.filter((t) => t.endDate && t.endDate < today && t.progress < 100).length;
+  const avg = p.tasks.length ? Math.round(p.tasks.reduce((s, t) => s + t.progress, 0) / p.tasks.length) : 0;
+
+  return (
+    <div>
+      <Link to="/du-an" className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold text-ink-2 hover:text-ink"><CaretLeft size={14} weight="bold" /> Dự án</Link>
+      <PageHeader
+        eyebrow={`VNLab / Project${p.code ? ` / ${p.code}` : ''}`}
+        title={<span className="flex items-center gap-2.5"><span className="h-3.5 w-3.5 shrink-0 rounded-full" style={{ background: p.color }} />{p.name}</span>}
+        sub={
+          <span className="flex flex-wrap items-center gap-1.5">
+            {p.customer && <Chip>KH: {p.customer}</Chip>}
+            <Chip>PM: {p.owner.name || p.owner.email}</Chip>
+            <Chip tone="primary">{avg}% · {done}/{p.tasks.length} việc</Chip>
+            {overdue > 0 && <Chip tone="danger">{overdue} quá hạn</Chip>}
+            {span && <Chip className="num">{fmtShort(span.start)} → {fmtShort(span.end)}{span.end >= today ? ` · còn ${diffDays(today, span.end)} ngày` : ''}</Chip>}
+            {p.myRole !== 'owner' && <Chip tone="warning">{ROLE_LABEL[p.myRole]}</Chip>}
+            {p.archived && <Chip tone="warning">Đã lưu trữ</Chip>}
+          </span>
+        }
+        action={
+          <>
+            <Button variant="secondary" size="sm" onClick={() => setMembers(true)}><Users size={15} /> Thành viên{p.members.length ? ` · ${p.members.length + 1}` : ''}</Button>
+            {editor && can('project.project.write') && <Button variant="secondary" size="sm" onClick={() => setSettings(true)}><GearSix size={15} /> Cài đặt</Button>}
+          </>
+        }
+      />
+
+      <div className={cx(full && 'gantt-full fixed inset-0 z-[45] flex flex-col overflow-hidden p-3 md:p-4')} style={full ? { background: 'var(--bg-grad, var(--bg))' } : undefined}>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <Segmented size="sm" value={view} onChange={setView} options={[{ value: 'gantt', label: 'Gantt' }, { value: 'list', label: 'Danh sách' }]} className="w-44" />
+        {view === 'gantt' && (
+          <>
+            <Button variant="secondary" size="sm" onClick={() => setFocus({ date: today, tick: focus.tick + 1 })}><CrosshairSimple size={15} /> Hôm nay</Button>
+            {p.startDate && <Button variant="ghost" size="sm" className="hidden md:inline-flex" onClick={() => setFocus({ date: p.startDate!, tick: focus.tick + 1 })}>Đầu dự án</Button>}
+            <Button variant={showBaseline ? 'secondary' : 'ghost'} size="sm" className="hidden md:inline-flex" onClick={() => setShowBaseline((v) => !v)} title="Khung nét đứt = khoảng ngày ban đầu của việc đã dời / gia hạn" aria-pressed={showBaseline}>
+              <ClockCounterClockwise size={15} /> Kế hoạch gốc
+            </Button>
+            <span className="inline-flex items-center rounded-lg bg-fill p-0.5">
+              <IconButton label="Thu nhỏ" className="h-7 w-7 rounded-md" onClick={() => setDayWidth((w) => Math.max(18, w - 4))} disabled={dayWidth <= 18}><Minus size={14} weight="bold" /></IconButton>
+              <IconButton label="Phóng to" className="h-7 w-7 rounded-md" onClick={() => setDayWidth((w) => Math.min(60, w + 4))} disabled={dayWidth >= 60}><Plus size={14} weight="bold" /></IconButton>
+            </span>
+          </>
+        )}
+        <Button variant={full ? 'secondary' : 'ghost'} size="sm" onClick={() => setFull((v) => !v)} title={full ? 'Thoát toàn màn hình (Esc)' : 'Phóng to cả bảng ra toàn màn hình'} aria-pressed={full}>
+          {full ? <CornersIn size={15} /> : <CornersOut size={15} />} <span className="hidden md:inline">{full ? 'Thoát' : 'Toàn màn hình'}</span>
+        </Button>
+        <span className="ml-auto flex flex-wrap items-center gap-2">
+          {canTask && can('project.data.import') && <Button variant="ghost" size="sm" onClick={() => setImportOpen(true)}><TableIcon size={15} /> <span className="hidden sm:inline">Dán từ bảng tính</span><span className="sm:hidden">Dán</span></Button>}
+          {p.sheetUrl && editor && can('project.project.write') && (
+            <Button variant="ghost" size="sm" onClick={() => syncSheet.mutate()} disabled={syncSheet.isPending} title={p.sheetSyncedAt ? `Đồng bộ lần cuối ${new Date(p.sheetSyncedAt).toLocaleString('vi-VN')}` : 'Chưa đồng bộ'}>
+              <ArrowsClockwise size={15} className={syncSheet.isPending ? 'animate-spin' : undefined} /> <span className="hidden sm:inline">Đồng bộ Sheets</span><span className="sm:hidden">Sheets</span>
+            </Button>
+          )}
+          {can('project.data.export') && <Button variant="ghost" size="sm" onClick={() => setExportOpen(true)}><DownloadSimple size={15} /> Xuất</Button>}
+          {canTask && p.tasks.length > 1 && <Button variant="ghost" size="sm" onClick={sortAll} disabled={sortByDate.isPending} title="Sắp xếp việc trong từng nhóm theo ngày bắt đầu"><SortAscending size={15} /> <span className="hidden lg:inline">Sắp xếp theo ngày</span><span className="lg:hidden">Sắp xếp</span></Button>}
+          {canStruct && <Button variant="secondary" size="sm" onClick={() => setGroupSheet({ open: true, group: null })}><Plus size={14} weight="bold" /> Nhóm</Button>}
+          {canTask && <Button size="sm" onClick={() => setTaskSheet({ open: true, task: null, groupId: p.groups[0]?.id ?? null })}><Plus size={14} weight="bold" /> Việc</Button>}
+        </span>
+      </div>
+
+      {!p.groups.length && !p.tasks.length ? (
+        <div className="card">
+          <Empty
+            icon={<TableIcon size={30} />}
+            title="Dự án chưa có việc nào"
+            desc="Thêm nhóm việc (giai đoạn / phân hệ) rồi thêm việc, hoặc dán thẳng kế hoạch từ Excel / Google Sheets. AI bên ngoài cũng thêm được qua MCP (Cài đặt)."
+            action={canTask && (
+              <span className="flex flex-wrap justify-center gap-2">
+                {canStruct && <Button variant="secondary" onClick={() => setGroupSheet({ open: true, group: null })}><Plus size={14} weight="bold" /> Thêm nhóm</Button>}
+                {can('project.data.import') && <Button onClick={() => setImportOpen(true)}><TableIcon size={15} /> Dán từ bảng tính</Button>}
+              </span>
+            )}
+          />
+        </div>
+      ) : (
+      <Gantt
+        project={shown}
+        today={today}
+        view={view}
+        dayWidth={dayWidth}
+        canEdit={canTask}
+        focus={focus}
+        onEditTask={(t) => setTaskSheet({ open: true, task: t })}
+        onAddTask={(groupId) => setTaskSheet({ open: true, task: null, groupId })}
+        onGroupMenu={(g) => setGroupSheet({ open: true, group: g })}
+        onToggleGroup={(g, c) => setCollapsed((xs) => (c ? [...new Set([...xs, g.id])] : xs.filter((x) => x !== g.id)))}
+        onChangeDates={(task, startDate, endDate) => patchTask.mutate({ task, patch: { startDate, endDate } })}
+        onPatchTask={(task, patch) => patchTask.mutate({ task, patch })}
+        showBaseline={showBaseline}
+        onReorder={(groupId, ids) => reorder.mutate({ groupId, ids })}
+        fullscreen={full}
+        onToggleFullscreen={() => setFull((v) => !v)}
+      />
+      )}
+      {view === 'gantt' && !full && <p className="mt-2 px-1 text-[12px] text-muted">Bấm vào ô để sửa tại chỗ (Enter lưu, Esc huỷ, Tab sang ô kế); bấm số thứ tự để mở chi tiết, ghi chú, lịch sử. Kéo thanh để dời ngày, kéo hai mép đổi ngày bắt đầu / kết thúc. Khung nét đứt "gốc" là khoảng ngày ban đầu của việc đã dời / gia hạn. Kéo ô số thứ tự để đổi thứ tự trong nhóm; nút ⤢ ở góc bảng để phóng to cả bảng ra toàn màn hình (Esc thoát).</p>}
+      </div>
+
+      <TaskSheet open={taskSheet.open} onClose={() => setTaskSheet((s) => ({ ...s, open: false }))} project={p} task={taskSheet.task} groupId={taskSheet.groupId ?? null} canEdit={editor} />
+      <GroupSheet open={groupSheet.open} onClose={() => setGroupSheet((s) => ({ ...s, open: false }))} project={p} group={groupSheet.group} confirm={confirm} onSort={(g) => { sortByDate.mutate(g.id); setGroupSheet((s) => ({ ...s, open: false })); }} />
+      <ProjectSheet open={settings} onClose={() => setSettings(false)} project={p} />
+      <MembersSheet open={members} onClose={() => setMembers(false)} project={p} />
+      <ImportSheet open={importOpen} onClose={() => setImportOpen(false)} project={p} />
+      <Sheet open={exportOpen} onClose={() => setExportOpen(false)} title="Xuất dự án">
+        <p className="mb-3 text-[13.5px] text-ink-2">Excel theo mẫu kế hoạch Gantt (bảng việc + lưới ngày theo tuần, thanh tự vẽ theo ngày bắt đầu/kết thúc, sheet "Dữ liệu" để dán ngược lại). CSV phẳng có BOM. JSON giữ nguyên cấu trúc nhóm và việc.</p>
+        <div className="mb-3 rounded-2xl border border-line bg-card p-3">
+          <p className="mb-2 text-[12.5px] font-semibold text-ink-2">Cột trong sheet PLAN (Excel và Google Sheets)</p>
+          <ColumnPicker value={exportCols ?? normalizeColumns(p.exportColumns)} onChange={setExportCols} />
+          {canStruct && exportCols && JSON.stringify(exportCols) !== JSON.stringify(normalizeColumns(p.exportColumns)) && (
+            <Button size="sm" variant="secondary" className="mt-2" onClick={() => saveCols.mutate(exportCols)} disabled={saveCols.isPending}>Lưu làm mặc định cho dự án (dùng cho Google Sheets)</Button>
+          )}
+        </div>
+        <div className="flex flex-col gap-2 pb-2">
+          <Button block onClick={() => { location.assign(`/api/projects/${p.id}/export?format=xlsx&cols=${(exportCols ?? normalizeColumns(p.exportColumns)).join(',')}`); setExportOpen(false); }}><DownloadSimple size={16} /> Tải Excel (mẫu kế hoạch Gantt)</Button>
+          <Button variant="secondary" block onClick={() => { location.assign(`/api/projects/${p.id}/export?format=csv`); setExportOpen(false); }}><DownloadSimple size={16} /> Tải CSV</Button>
+          <Button variant="secondary" block onClick={() => { location.assign(`/api/projects/${p.id}/export`); setExportOpen(false); }}><DownloadSimple size={16} /> Tải JSON</Button>
+        </div>
+      </Sheet>
+    </div>
+  );
+}
+
+/** Tạo / đổi tên / xoá nhóm việc. */
+function GroupSheet({ open, onClose, project, group, confirm, onSort }: {
+  open: boolean; onClose: () => void; project: ProjectDetail; group?: Group | null; confirm: ReturnType<typeof useFeedback>['confirm']; onSort: (g: Group) => void;
+}) {
+  const { toast } = useFeedback();
+  const [name, setName] = useState('');
+  useEffect(() => { if (open) setName(group?.name ?? ''); }, [open, group]);
+  const count = group ? project.tasks.filter((t) => t.groupId === group.id).length : 0;
+  const save = useAction((n: string) => group ? api(`/projects/${project.id}/groups/${group.id}`, { method: 'PATCH', body: { name: n } }) : api(`/projects/${project.id}/groups`, { method: 'POST', body: { name: n } }), {
+    onSuccess: () => { toast(group ? 'Đã đổi tên nhóm' : 'Đã thêm nhóm'); onClose(); },
+  });
+  const remove = useAction((keep: boolean) => api(`/projects/${project.id}/groups/${group!.id}${keep ? '?keepTasks=1' : ''}`, { method: 'DELETE' }), { onSuccess: () => { toast('Đã xoá nhóm'); onClose(); } });
+  const del = async (keep: boolean) => {
+    const ok = await confirm({
+      title: keep ? 'Xoá nhóm, giữ việc?' : `Xoá nhóm cùng ${count} việc?`,
+      desc: keep ? <p>Các việc trong <b>{group?.name}</b> chuyển thành "Chưa phân nhóm".</p> : <p>Mọi việc trong <b>{group?.name}</b> bị xoá theo. Không hoàn tác được.</p>,
+      ok: 'Xoá', danger: true,
+    });
+    if (ok) remove.mutate(keep);
+  };
+  return (
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title={group ? 'Nhóm việc' : 'Thêm nhóm việc'}
+      footer={
+        <div className="flex items-center gap-2">
+          {group && <IconButton label={count ? 'Xoá nhóm cùng việc' : 'Xoá nhóm'} onClick={() => del(false)} className="text-danger hover:bg-danger-soft" disabled={remove.isPending}><Trash size={18} /></IconButton>}
+          {group && count > 0 && <Button variant="ghost" size="sm" onClick={() => del(true)} disabled={remove.isPending}>Xoá nhóm, giữ {count} việc</Button>}
+          {group && count > 1 && <Button variant="ghost" size="sm" onClick={() => onSort(group)}><SortAscending size={14} /> Sắp xếp theo ngày</Button>}
+          <Button variant="secondary" className="ml-auto" onClick={onClose}>Huỷ</Button>
+          <Button type="submit" form="group-form" disabled={save.isPending || !name.trim()}>{group ? 'Lưu' : 'Thêm'}</Button>
+        </div>
+      }
+    >
+      <form id="group-form" className="pt-1" onSubmit={(e) => { e.preventDefault(); save.mutate(name.trim()); }}>
+        <Field label="Tên nhóm" hint="VD: Thiết kế, Lập trình, Kiểm thử — mỗi nhóm là một giai đoạn hoặc phân hệ">
+          <Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={160} autoFocus />
+        </Field>
+      </form>
+    </Sheet>
+  );
+}
