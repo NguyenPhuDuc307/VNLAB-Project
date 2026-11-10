@@ -617,3 +617,11 @@ body::before {
 
 /* Hiện đầy đủ tên việc và giữ các dòng người dùng nhập. */
 .gantt-task-name { overflow-wrap: anywhere; }
+
+/* Thông báo: tông màu nhận diện (xanh thép) nhạt, vạch trái đậm — không dùng nền tối. */
+.toast-ok {
+  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
+  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
+  box-shadow: inset 3px 0 0 var(--primary), var(--shadow-lg);
+  color: var(--ink);
+}

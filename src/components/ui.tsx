@@ -302,7 +302,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       {/* Thông báo ở góc dưới bên phải (trên thanh điều hướng đáy ở điện thoại). */}
       <div aria-live="polite" className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+84px)] right-4 z-[60] flex max-w-[calc(100vw-32px)] flex-col items-end gap-2 md:bottom-5 md:right-5">
         {toasts.map((t) => (
-          <div key={t.id} className={cx('anim-sheet max-w-sm rounded-2xl px-4 py-3 text-sm font-semibold shadow-[var(--shadow-lg)]', t.tone === 'error' ? 'bg-danger text-white' : 'bg-ink text-bg')}>{t.text}</div>
+          <div key={t.id} className={cx('anim-sheet max-w-sm rounded-2xl border px-4 py-3 text-sm font-semibold shadow-[var(--shadow-lg)]', t.tone === 'error' ? 'border-danger/30 bg-danger-soft text-danger' : 'toast-ok')}>{t.text}</div>
         ))}
       </div>
       <Sheet
