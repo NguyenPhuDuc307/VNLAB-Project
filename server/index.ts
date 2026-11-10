@@ -120,7 +120,7 @@ auth.use('*', async (c, next) => {
   c.set('userId', user.id);
   c.set('roles', roles);
   c.set('permissions', await effectivePermissions(roles));
-  await next();
+  await D.actorContext.run({ source: 'web', actor: user.name || user.email, actorId: user.id }, () => next());
 });
 
 // ---------------------------------------------------------------- VNLab ID (Logto)
@@ -238,7 +238,8 @@ app.all('/mcp', async (c) => {
   const [user] = row ? await sql<UserRow[]>`select * from users where id = ${row.userId}` : [];
   if (!user) return deny(-32001, 'Token không còn hiệu lực', 401);
   if (!(await effectivePermissions(rolesOf(user))).has('project.tokens.manage')) return deny(-32002, 'Tài khoản không còn quyền dùng MCP — xem VNLab Account', 403);
-  return handleMcp(c.req.raw, user);
+  // Ghi qua MCP: touch() đọc ngữ cảnh này để giao diện web báo "AI vừa sửa gì".
+  return D.actorContext.run({ source: 'mcp', actor: user.name || user.email, actorId: user.id }, () => handleMcp(c.req.raw, user));
 });
 
 // ---------------------------------------------------------------- tài khoản
@@ -322,7 +323,10 @@ auth.get('/projects/:id/events', async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
   return streamSSE(c, async (stream) => {
     let n = 0;
-    const onChanged = (projectId: string) => { if (projectId === p.id) void stream.writeSSE({ event: 'changed', data: String(Date.now()), id: String(++n) }); };
+    const onChanged = (projectId: string, actor: D.Actor | null) => {
+      if (projectId !== p.id) return;
+      void stream.writeSSE({ event: 'changed', data: JSON.stringify({ at: Date.now(), ...(actor ?? {}) }), id: String(++n) });
+    };
     D.projectEvents.on('changed', onChanged);
     stream.onAbort(() => { D.projectEvents.off('changed', onChanged); });
     await stream.writeSSE({ event: 'hello', data: p.id });

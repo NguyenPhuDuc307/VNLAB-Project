@@ -120,7 +120,9 @@ test('MCP: token vpj_ ở Cài đặt, công cụ dùng chung tầng dữ liệu
     assert.match(await readUntil('event: hello'), /event: hello/);
     const live = await call(token, 'create_task', { projectId: created.id, name: 'Việc tạo qua MCP phải hiện ngay' });
     assert.ok(live.task.id);
-    assert.match(await readUntil('event: changed'), /event: changed/);
+    const evt = await readUntil('"source":"mcp"');
+    assert.match(evt, /event: changed/);
+    assert.match(evt, /Thêm việc “Việc tạo qua MCP phải hiện ngay”/); // mô tả để giao diện báo ở góc màn hình
     await reader.cancel();
     // Sắp xếp theo ngày: đảo thứ tự bằng REST rồi gọi sort_tasks -> việc có ngày bắt đầu lên trước, việc trống ngày xếp cuối.
     const after = (await R('GET', `/projects/${created.id}`)).body;

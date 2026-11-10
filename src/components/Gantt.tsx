@@ -291,6 +291,12 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
     return { start: d.start, end: fromDayNumber(Math.max(dayNumber(d.end) + d.delta, dayNumber(d.start))) };
   };
 
+  // Việc trong tuần này (T2–CN chứa hôm nay): khoảng ngày giao với tuần và chưa xong -> tô nổi trên bảng.
+  const weekStart = mondayOf(today), weekEnd = addDays(mondayOf(today), 6);
+  const inWeek = (t: Task) => {
+    const s0 = t.startDate ?? t.endDate, e0 = t.endDate ?? t.startDate;
+    return !!s0 && !!e0 && t.progress < 100 && s0 <= weekEnd && e0 >= weekStart;
+  };
   const list = view === 'list';
   const dayCells = (rowKey: string) => (
     <>
@@ -404,7 +410,7 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
         const color = t.progress >= 100 ? 'var(--ok)' : project.color;
         const shift = planShift(t);
         return (
-          <div key={t.id} data-task-row={t.id} data-group={t.groupId ?? UNGROUPED} className={cx('gantt-row group border-b border-line last:border-b-0 hover:bg-fill/40', rowDrag?.active && rowDrag.task.id === t.id && 'is-dragging', rowDrag?.active && rowDrag.overId === t.id && (rowDrag.after ? 'drop-after' : 'drop-before'))}>
+          <div key={t.id} data-task-row={t.id} data-group={t.groupId ?? UNGROUPED} className={cx('gantt-row group border-b border-line last:border-b-0 hover:bg-fill/40', inWeek(t) && 'this-week', rowDrag?.active && rowDrag.task.id === t.id && 'is-dragging', rowDrag?.active && rowDrag.overId === t.id && (rowDrag.after ? 'drop-after' : 'drop-before'))}>
             <div className={cx('gantt-left min-h-10 py-1.5', !canEdit && 'cursor-pointer')} onClick={canEdit ? undefined : () => onEditTask(t)} onDoubleClick={canEdit ? () => onEditTask(t) : undefined} role={canEdit ? undefined : 'button'} tabIndex={canEdit ? undefined : 0} onKeyDown={canEdit ? undefined : (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onEditTask(t))}>
               <button type="button" className={cx('c-no group/no relative flex h-7 w-full items-center justify-start rounded-lg pl-1 text-[12px] text-muted hover:bg-fill hover:text-ink', canEdit && 'cursor-grab active:cursor-grabbing')} title={canEdit ? 'Bấm: mở chi tiết · Kéo: đổi thứ tự trong nhóm' : 'Mở chi tiết'} style={{ touchAction: 'none' }}
                 onPointerDown={(e) => beginRow(e, t)} onPointerMove={moveRow} onPointerUp={endRow} onPointerCancel={() => setRowDrag(null)} onClick={(e) => e.stopPropagation()}>

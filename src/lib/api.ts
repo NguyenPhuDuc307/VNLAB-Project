@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { PermissionKey } from '../../server/permissions.ts';
 
 export type { PermissionKey };
@@ -104,12 +104,16 @@ export const useOverview = () => useQuery({ queryKey: ['overview'], queryFn: () 
  * EventSource tự kết nối lại khi rớt; lúc nối lại thì tải lại để không bỏ sót thay đổi trong lúc mất kết nối.
  */
 const BASE = '/api';
-export function useProjectLive(id: string | undefined) {
+export type LiveChange = { at: number; source?: 'web' | 'mcp'; actor?: string; actorId?: string; action?: string };
+export function useProjectLive(id: string | undefined, onChange?: (ev: LiveChange) => void) {
   const qc = useQueryClient();
+  const cb = useRef(onChange);
+  cb.current = onChange;
   useEffect(() => {
     if (!id || typeof EventSource === 'undefined') return;
     let timer: number | undefined;
     let opened = false;
+    let last = { key: '', at: 0 };
     const refresh = () => {
       window.clearTimeout(timer);
       timer = window.setTimeout(() => {
@@ -119,7 +123,17 @@ export function useProjectLive(id: string | undefined) {
       }, 300);
     };
     const es = new EventSource(`${BASE}/projects/${id}/events`);
-    es.addEventListener('changed', refresh);
+    es.addEventListener('changed', (e) => {
+      refresh();
+      try {
+        const ev = JSON.parse((e as MessageEvent).data) as LiveChange;
+        // Một lệnh MCP (vd. thêm 10 việc) phát nhiều sự kiện cùng mô tả -> chỉ báo một lần trong 1,5 giây.
+        const key = `${ev.source}|${ev.actorId}|${ev.action ?? ''}`;
+        if (key === last.key && Date.now() - last.at < 1500) return;
+        last = { key, at: Date.now() };
+        cb.current?.(ev);
+      } catch { /* sự kiện không có JSON */ }
+    });
     es.addEventListener('open', () => { if (opened) refresh(); opened = true; });
     return () => { window.clearTimeout(timer); es.close(); };
   }, [id, qc]);

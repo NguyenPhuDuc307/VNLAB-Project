@@ -3,6 +3,7 @@
 // không bao giờ lệch nhau. Lỗi ném ra là HTTPException (REST trả thẳng, MCP đổi
 // thành thông báo cho AI).
 import { randomUUID } from 'node:crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { EventEmitter } from 'node:events';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
@@ -63,9 +64,12 @@ export const owned = (p: { myRole: MemberRole }) => {
 /** Phát khi dự án đổi (mọi lệnh ghi) — server/sheets.ts nghe để tự đồng bộ Google Sheet. */
 export const projectEvents = new EventEmitter();
 projectEvents.setMaxListeners(0); // mỗi tab đang mở dự án là một listener SSE
+/** Ai đang ghi (web hay MCP) — đặt ở middleware / route, đọc lại trong touch() để báo cho giao diện biết nguồn thay đổi. */
+export type Actor = { source: 'web' | 'mcp'; actor: string; actorId: string; action?: string };
+export const actorContext = new AsyncLocalStorage<Actor>();
 export const touch = async (projectId: string) => {
   await sql`update projects set updated_at = now() where id = ${projectId}`;
-  projectEvents.emit('changed', projectId);
+  projectEvents.emit('changed', projectId, actorContext.getStore() ?? null);
 };
 
 // ---------------------------------------------------------------- đọc

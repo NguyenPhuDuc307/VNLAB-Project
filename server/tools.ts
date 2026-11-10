@@ -299,9 +299,31 @@ TOOLS.sync_google_sheet = {
 export const toolList = () => Object.entries(TOOLS).map(([name, t]) => ({ name, title: t.title, description: t.description, write: !!t.write }));
 
 /** Chạy một công cụ: kiểm quyền tính năng, validate input, đổi lỗi HTTP thành ToolError. */
+const FIELD_VI: Record<string, string> = { name: 'tên', assignee: 'phụ trách', support: 'hỗ trợ', progress: 'tiến độ', startDate: 'bắt đầu', endDate: 'kết thúc', days: 'ngày công', note: 'ghi chú', group: 'nhóm', subtasks: 'task con' };
+/** Mô tả ngắn (tiếng Việt) cho thông báo trên giao diện: "Thêm việc “X”", "Sửa việc (tiến độ)". */
+function describeTool(name: string, a: Record<string, unknown> | null): string {
+  const q = (v: unknown) => (typeof v === 'string' && v.trim() ? `“${v.trim().slice(0, 60)}”` : '');
+  switch (name) {
+    case 'create_project': return `Tạo dự án ${q(a?.name)}`.trim();
+    case 'create_group': return `Thêm nhóm ${q(a?.name)}`.trim();
+    case 'create_task': return `Thêm việc ${q(a?.name)}`.trim();
+    case 'create_tasks': return `Thêm ${Array.isArray(a?.tasks) ? a.tasks.length : 'nhiều'} việc`;
+    case 'update_task': {
+      const fields = Object.keys(a ?? {}).filter((k) => !['taskId', 'projectId', 'project'].includes(k)).map((k) => FIELD_VI[k] ?? k);
+      return `Sửa việc${fields.length ? ` (${fields.join(', ')})` : ''}`;
+    }
+    case 'delete_task': return 'Xoá việc';
+    case 'sort_tasks': return 'Sắp xếp việc theo ngày';
+    case 'sync_google_sheet': return 'Đồng bộ Google Sheet';
+    default: return TOOLS[name]?.title ?? name;
+  }
+}
+
 export async function runTool(user: D.UserRow, name: string, args: unknown) {
   const t = TOOLS[name];
   if (!t) throw new ToolError(`Không có công cụ ${name}`);
+  const ctx = D.actorContext.getStore();
+  if (ctx) ctx.action = describeTool(name, args && typeof args === 'object' ? (args as Record<string, unknown>) : null);
   if (t.perm) {
     const perms = await effectivePermissions(rolesOf(user));
     if (!perms.has(t.perm)) throw new ToolError(`Bạn chưa có quyền "${t.perm}" trong Project — nhờ quản trị viên cấp ở VNLab Account`);

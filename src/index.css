@@ -436,6 +436,9 @@ body::before {
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent);
 }
 .gantt-input[type='date'] { padding: 0 4px; font-size: 12px !important; }
+/* Việc trong tuần này: nền xanh nhạt + vạch trái ở phần bảng (đè nền surface của cột dính). */
+.gantt-row.this-week > .gantt-left { background: color-mix(in srgb, var(--primary) 9%, var(--surface)); box-shadow: inset 3px 0 0 var(--primary); }
+.gantt-row.this-week > .gantt-days { background-color: color-mix(in srgb, var(--primary) 4%, transparent); }
 /* Kéo thả hàng: hàng đang kéo mờ đi, vạch chỉ vị trí thả trên / dưới hàng đích. */
 .gantt-row.is-dragging { opacity: 0.45; }
 .gantt-row.drop-before { box-shadow: inset 0 2px 0 var(--primary); }

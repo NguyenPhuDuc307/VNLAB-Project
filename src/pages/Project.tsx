@@ -25,10 +25,11 @@ export function ProjectPage() {
   const { id = '' } = useParams();
   const [params, setParams] = useSearchParams();
   const q = useProject(id);
-  useProjectLive(id); // cập nhật thời gian thực khi AI (MCP) hay người khác sửa
   const qc = useQueryClient();
   const can = useCan();
   const { toast, confirm } = useFeedback();
+  // Cập nhật thời gian thực; thay đổi qua MCP (AI bên ngoài) thì báo ở góc màn hình.
+  useProjectLive(id, (ev) => { if (ev.source === 'mcp') toast(`MCP · ${ev.actor ?? 'AI'}: ${ev.action ?? 'đã cập nhật dự án'}`); });
   const today = todayStr();
   const [view, setView] = useState<GanttView>(() => pref('project:view', 'gantt', (v): v is GanttView => v === 'gantt' || v === 'list'));
   const [dayWidth, setDayWidth] = useState(() => pref('project:day', 30, (v): v is number => typeof v === 'number' && v >= 18 && v <= 60));
