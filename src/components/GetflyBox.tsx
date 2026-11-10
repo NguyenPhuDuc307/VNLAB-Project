@@ -1,4 +1,4 @@
-import { ArrowSquareOut, CloudArrowUp } from '@phosphor-icons/react';
+import { ArrowSquareOut, CloudArrowUp, Trash } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { api, useAction, type ProjectDetail } from '../lib/api';
@@ -41,6 +41,13 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
     onSuccess: (_r, b) => { toast(b.parent !== undefined ? (b.parent ? 'Đã đặt việc cha trên Getfly' : 'Đã bỏ việc cha') : 'Đã lưu cấu hình Getfly'); setParent(''); setGroupRef({}); void qc.invalidateQueries({ queryKey: ['project', project.id] }); },
   });
   const sync = useGetflySync(project.id);
+  const { confirm } = useFeedback();
+  const unsync = useAction(() => api<{ deleted: number; errors: string[] }>(`/projects/${project.id}/getfly/unsync`, { method: 'POST', body: {} }), {
+    onSuccess: (r) => { toast(r.errors.length ? `Đã xoá ${r.deleted} việc, ${r.errors.length} lỗi` : `Đã xoá ${r.deleted} việc khỏi Getfly`, r.errors.length ? 'error' : 'ok', r.errors.length ? { meta: r.errors[0] } : undefined); void qc.invalidateQueries({ queryKey: ['project', project.id] }); },
+  });
+  const askUnsync = async () => {
+    if (await confirm({ title: 'Gỡ dự án khỏi Getfly?', desc: <p>Xoá trên Getfly mọi việc app đã tạo cho dự án này (việc của nhóm, việc, task con). Việc cha và việc có sẵn đã gắn cho nhóm được giữ nguyên. Không hoàn tác được.</p>, ok: 'Xoá khỏi Getfly', danger: true })) unsync.mutate(undefined);
+  };
   // Mọi tên người phụ trách / hỗ trợ trong dự án (cả task con) để ghép người dùng Getfly.
   const names = useMemo(() => {
     const set = new Set<string>();
@@ -68,7 +75,7 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
         <p className="text-[13px] font-bold">Getfly CRM</p>
         {status.data?.configured && ready && <Button size="sm" variant="secondary" onClick={() => sync.mutate(undefined)} disabled={sync.isPending || !canEdit}><CloudArrowUp size={15} className={sync.isPending ? 'animate-pulse' : undefined} /> {sync.isPending ? 'Đang đồng bộ…' : 'Đồng bộ ngay'}</Button>}
       </div>
-      <p className="mb-3 mt-0.5 text-[12px] text-muted">Bấm đồng bộ để tạo việc mới, sửa việc đã đổi và xoá việc đã xoá trên Getfly. Cây trên Getfly: việc cha → nhóm việc → việc → task con. Việc xong 100% được ghi chú trong mô tả — API Getfly không cho đánh dấu hoàn thành, anh đánh dấu tay.</p>
+      <p className="mb-3 mt-0.5 text-[12px] text-muted">Bấm đồng bộ để tạo việc mới, sửa việc đã đổi và xoá việc đã xoá trên Getfly. Cây trên Getfly: việc cha → nhóm việc → việc → task con. Không gửi ghi chú. Việc xong 100% thì anh đánh dấu hoàn thành tay trên Getfly (API không cho).</p>
       {!status.data?.configured ? (
         <p className="rounded-xl bg-fill px-3 py-2 text-[12px] text-muted">Máy chủ chưa có thông tin Getfly. Chạy <code>./scripts/getfly-setup.sh</code> để lưu API key lên VPS.</p>
       ) : (
@@ -134,6 +141,11 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
           )}
           {gUsers.error && <p className="text-[12px] text-danger">{(gUsers.error as Error).message}</p>}
           {project.getflySyncedAt && <p className="text-[12px] text-muted">Đồng bộ lần cuối {new Date(project.getflySyncedAt).toLocaleString('vi-VN')}</p>}
+          {canEdit && project.getflyParentCode && (
+            <button type="button" className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-semibold text-danger hover:underline disabled:opacity-50" disabled={unsync.isPending} onClick={() => void askUnsync()}>
+              <Trash size={13} /> {unsync.isPending ? 'Đang xoá trên Getfly…' : 'Gỡ khỏi Getfly (xoá các việc app đã tạo)'}
+            </button>
+          )}
           {project.getflyError && <p className="mt-1 whitespace-pre-wrap text-[12px] text-danger">{project.getflyError}</p>}
         </>
       )}
