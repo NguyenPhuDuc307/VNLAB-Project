@@ -25,20 +25,22 @@ export function useGetflySync(projectId: string) {
   });
 }
 
-/** Cấu hình đồng bộ Getfly CRM của dự án: việc cha, dự án Getfly, ghép người phụ trách -> username. */
+type GUser = { id: string; name: string; email: string; dept: string };
+
+/** Cấu hình đồng bộ Getfly CRM của dự án: việc cha (dự án Getfly theo việc cha), người tạo, ghép người phụ trách -> người dùng Getfly. */
 export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdit: boolean }) {
   const status = useGetflyStatus();
+  const gUsers = useQuery({ queryKey: ['getfly-users'], queryFn: () => api<GUser[]>('/getfly/users'), enabled: !!status.data?.configured, staleTime: 600_000 });
   const [parent, setParent] = useState('');
-  const [projectName, setProjectName] = useState(project.getflyProjectName ?? '');
   const [users, setUsers] = useState<Record<string, string>>(project.getflyUsers ?? {});
-  useEffect(() => { setProjectName(project.getflyProjectName ?? ''); setUsers(project.getflyUsers ?? {}); }, [project.getflyProjectName, project.getflyUsers]);
+  useEffect(() => { setUsers(project.getflyUsers ?? {}); }, [project.getflyUsers]);
   const { toast } = useFeedback();
   const qc = useQueryClient();
-  const save = useAction((b: { parent?: string; projectName?: string; users?: Record<string, string> }) => api(`/projects/${project.id}/getfly`, { method: 'PATCH', body: b }), {
+  const save = useAction((b: { parent?: string; creatorId?: string; users?: Record<string, string> }) => api(`/projects/${project.id}/getfly`, { method: 'PATCH', body: b }), {
     onSuccess: (_r, b) => { toast(b.parent !== undefined ? (b.parent ? 'Đã đặt việc cha trên Getfly' : 'Đã bỏ việc cha') : 'Đã lưu cấu hình Getfly'); setParent(''); void qc.invalidateQueries({ queryKey: ['project', project.id] }); },
   });
   const sync = useGetflySync(project.id);
-  // Mọi tên người phụ trách / hỗ trợ trong dự án (cả task con) để ghép username Getfly.
+  // Mọi tên người phụ trách / hỗ trợ trong dự án (cả task con) để ghép người dùng Getfly.
   const names = useMemo(() => {
     const set = new Set<string>();
     for (const t of project.tasks) {
@@ -47,54 +49,64 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
     }
     return [...set].sort((a, b) => a.localeCompare(b, 'vi'));
   }, [project.tasks]);
-  const dirtyUsers = JSON.stringify(Object.fromEntries(Object.entries(users).filter(([, v]) => v.trim()))) !== JSON.stringify(project.getflyUsers ?? {});
+  const clean = (u: Record<string, string>) => Object.fromEntries(Object.entries(u).filter(([, v]) => v));
+  const dirtyUsers = JSON.stringify(clean(users)) !== JSON.stringify(project.getflyUsers ?? {});
   const base = status.data?.host ? `https://${status.data.host}` : null;
+  const ready = !!project.getflyParentCode && !!project.getflyCreatorId;
+  const userSelect = (value: string, onChange: (v: string) => void, label: string, emptyText: string) => (
+    <select aria-label={label} value={value} disabled={!canEdit || !gUsers.data} onChange={(e) => onChange(e.target.value)}
+      className="h-9 w-full min-w-0 rounded-xl border border-line bg-card px-2.5 text-[13px] outline-none focus:border-primary">
+      <option value="">{gUsers.isLoading ? 'Đang tải…' : emptyText}</option>
+      {(gUsers.data ?? []).map((u) => <option key={u.id} value={u.id}>{u.name}{u.dept ? ` · ${u.dept}` : ''}</option>)}
+    </select>
+  );
 
   return (
     <section className="mt-5 rounded-2xl border border-line p-4" aria-label="Getfly CRM">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[13px] font-bold">Getfly CRM</p>
-        {status.data?.configured && project.getflyParentCode && <Button size="sm" variant="secondary" onClick={() => sync.mutate(undefined)} disabled={sync.isPending || !canEdit}><CloudArrowUp size={15} className={sync.isPending ? 'animate-pulse' : undefined} /> {sync.isPending ? 'Đang đồng bộ…' : 'Đồng bộ ngay'}</Button>}
+        {status.data?.configured && ready && <Button size="sm" variant="secondary" onClick={() => sync.mutate(undefined)} disabled={sync.isPending || !canEdit}><CloudArrowUp size={15} className={sync.isPending ? 'animate-pulse' : undefined} /> {sync.isPending ? 'Đang đồng bộ…' : 'Đồng bộ ngay'}</Button>}
       </div>
-      <p className="mb-3 mt-0.5 text-[12px] text-muted">Bấm đồng bộ để tạo việc mới, sửa việc đã đổi, hoàn thành việc 100% và xoá việc đã xoá trên Getfly. Mọi việc nằm dưới việc cha bên dưới; task con nằm dưới việc tương ứng.</p>
+      <p className="mb-3 mt-0.5 text-[12px] text-muted">Bấm đồng bộ để tạo việc mới, sửa việc đã đổi và xoá việc đã xoá trên Getfly. Mọi việc nằm dưới việc cha bên dưới; task con nằm dưới việc tương ứng. Việc xong 100% được ghi chú trong mô tả — API Getfly không cho đánh dấu hoàn thành, anh đánh dấu tay.</p>
       {!status.data?.configured ? (
-        <p className="rounded-xl bg-fill px-3 py-2 text-[12px] text-muted">Máy chủ chưa có thông tin Getfly. Thêm <code>GETFLY_BASE_URL</code> và <code>GETFLY_API_KEY</code> vào .env trên VPS rồi deploy lại.</p>
+        <p className="rounded-xl bg-fill px-3 py-2 text-[12px] text-muted">Máy chủ chưa có thông tin Getfly. Chạy <code>./scripts/getfly-setup.sh</code> để lưu API key lên VPS.</p>
       ) : (
         <>
-          <Field label="Việc cha trên Getfly" hint={project.getflyParentCode ? undefined : 'Mở việc cha trên Getfly, copy link (có task_id=…) dán vào đây; cũng nhận id hoặc mã việc.'}>
+          <Field label="Việc cha trên Getfly" hint={project.getflyParentCode ? undefined : 'Mở việc cha trên Getfly, copy link (có task_id=…) dán vào đây; cũng nhận id hoặc mã việc. Dự án Getfly lấy theo việc cha.'}>
             {project.getflyParentCode && (
               <div className="mb-2 flex items-center gap-2 rounded-xl bg-fill px-3 py-2 text-[13px]">
-                <span className="min-w-0 flex-1 truncate"><b>{project.getflyParentName || project.getflyParentCode}</b> <span className="text-muted">· {project.getflyParentCode}</span></span>
-                {base && <a className="text-primary" href={`${base}/#/tasks/`} target="_blank" rel="noopener noreferrer" aria-label="Mở Getfly"><ArrowSquareOut size={15} /></a>}
+                <span className="min-w-0 flex-1">
+                  <b className="block truncate">{project.getflyParentName || project.getflyParentCode}</b>
+                  <span className="block truncate text-[12px] text-muted">{project.getflyParentCode}{project.getflyProjectName ? ` · Dự án ${project.getflyProjectName}` : ''}</span>
+                </span>
+                {base && project.getflyParentId && <a className="text-primary" href={`${base}/#/tasks/?task_id=${project.getflyParentId}`} target="_blank" rel="noopener noreferrer" aria-label="Mở việc cha trên Getfly"><ArrowSquareOut size={15} /></a>}
                 {canEdit && <button type="button" className="text-[12px] font-semibold text-muted hover:text-danger" onClick={() => save.mutate({ parent: '' })}>Bỏ</button>}
               </div>
             )}
             {canEdit && (
               <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); if (parent.trim()) save.mutate({ parent: parent.trim() }); }}>
                 <Input className="min-w-0 flex-1" value={parent} onChange={(e) => setParent(e.target.value)} placeholder={base ? `${base}/#/tasks/?…task_id=…` : 'Link / id / mã việc'} />
-                <Button type="submit" size="sm" variant="secondary" disabled={!parent.trim() || save.isPending}>{project.getflyParentCode ? 'Đổi' : 'Đặt'}</Button>
+                <Button type="submit" size="sm" variant="secondary" disabled={!parent.trim() || save.isPending}>{save.isPending ? 'Đang tìm…' : project.getflyParentCode ? 'Đổi' : 'Đặt'}</Button>
               </form>
             )}
           </Field>
-          <Field label="Dự án trên Getfly" hint="Tự lấy theo việc cha; để trống thì Getfly dùng mặc định.">
-            <div className="flex gap-2">
-              <Input className="min-w-0 flex-1" value={projectName} disabled={!canEdit} onChange={(e) => setProjectName(e.target.value)} maxLength={200} />
-              {canEdit && projectName !== (project.getflyProjectName ?? '') && <Button size="sm" variant="secondary" onClick={() => save.mutate({ projectName })}>Lưu</Button>}
-            </div>
+          <Field label="Người tạo việc trên Getfly" hint="Getfly bắt buộc có người tạo; việc đẩy sang sẽ đứng tên người này.">
+            {userSelect(project.getflyCreatorId ?? '', (v) => save.mutate({ creatorId: v }), 'Người tạo việc trên Getfly', 'Chọn người tạo')}
           </Field>
           {names.length > 0 && (
-            <Field label="Ghép người phụ trách → tên đăng nhập Getfly" hint="Người chưa ghép thì việc lên Getfly không có người nhận.">
-              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)] items-center gap-x-2 gap-y-1.5">
+            <Field label="Ghép người phụ trách → người dùng Getfly" hint="Người chưa ghép thì Getfly tự giao việc cho người tạo.">
+              <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] items-center gap-x-2 gap-y-1.5">
                 {names.map((n) => (
                   <div key={n} className="contents">
                     <span className="truncate text-[13px]">{n}</span>
-                    <Input value={users[n] ?? ''} disabled={!canEdit} placeholder="username" onChange={(e) => setUsers({ ...users, [n]: e.target.value })} className="h-9 text-[14px]" />
+                    {userSelect(users[n] ?? '', (v) => setUsers({ ...users, [n]: v }), `Người dùng Getfly cho ${n}`, 'Chưa ghép')}
                   </div>
                 ))}
               </div>
-              {canEdit && dirtyUsers && <Button className="mt-2" size="sm" variant="secondary" onClick={() => save.mutate({ users: Object.fromEntries(Object.entries(users).filter(([, v]) => v.trim())) })}>Lưu ghép tên</Button>}
+              {canEdit && dirtyUsers && <Button className="mt-2" size="sm" variant="secondary" onClick={() => save.mutate({ users: clean(users) })}>Lưu ghép người</Button>}
             </Field>
           )}
+          {gUsers.error && <p className="text-[12px] text-danger">{(gUsers.error as Error).message}</p>}
           {project.getflySyncedAt && <p className="text-[12px] text-muted">Đồng bộ lần cuối {new Date(project.getflySyncedAt).toLocaleString('vi-VN')}</p>}
           {project.getflyError && <p className="mt-1 whitespace-pre-wrap text-[12px] text-danger">{project.getflyError}</p>}
         </>

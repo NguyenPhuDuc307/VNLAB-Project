@@ -243,6 +243,13 @@ const MIGRATIONS: string[] = [
     primary key (project_id, local_id)
   );
   `,
+  // 13: Getfly của ACS chạy API v3 — việc cha / dự án / người tạo / người nhận đều theo id số.
+  `
+  alter table projects
+    add column getfly_parent_id bigint,
+    add column getfly_project_id text not null default '',
+    add column getfly_creator_id text not null default '';
+  `,
 ];
 
 export async function migrate() {

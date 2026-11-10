@@ -4,12 +4,14 @@ import { createServer, type IncomingMessage, type ServerResponse } from 'node:ht
 import { once } from 'node:events';
 import { cookieOf, memoryDb, startServer } from './test-helpers.ts';
 
-/** Getfly giả (API v6.1): lưu việc trong bộ nhớ, ghi lại mọi request. */
+/** Getfly giả theo hành vi API v3 đã kiểm chứng trên acs.getflycrm.com: task_info, task_creator bắt buộc, ngày Y-m-d H:i,
+ *  sửa / xoá theo task_code, danh sách bỏ qua bộ lọc, không có trường tiến độ / trạng thái. */
 async function fakeGetfly() {
   const calls: { method: string; path: string; body: any }[] = [];
-  const tasks = new Map<string, any>();
-  tasks.set('CHA.0001', { id: 8689, task_code: 'CHA.0001', task_name: 'Giao hàng — phát triển', project_name: 'AMMS', status: 'open' });
-  let next = 100;
+  const tasks = new Map<number, any>();
+  tasks.set(8689, { task_id: '8689', task_code: 'CVI/2026-11/008676', task_name: 'Xây dựng Module Giao Hàng', project_id: '1', project_name: '12. R&D_ Nghiên cứu', task_status: '11' });
+  for (let i = 1; i <= 150; i++) tasks.set(9000 + i, { task_id: String(9000 + i), task_code: `CVI/X/${i}`, task_name: `Việc khác ${i}`, project_id: '2', project_name: 'Khác', task_status: '11' });
+  let next = 9800;
   const server = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     let raw = '';
     for await (const chunk of req) raw += chunk;
@@ -18,34 +20,37 @@ async function fakeGetfly() {
     calls.push({ method: req.method!, path: url.pathname, body });
     const json = (o: unknown, status = 200) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
     if (req.headers['x-api-key'] !== 'khoa-getfly') return json({ message: 'Unauthorized' }, 401);
-    if (req.method === 'GET' && url.pathname === '/api/v6.1/tasks') {
-      const id = url.searchParams.get('filter[id][eq]');
-      return json({ data: [...tasks.values()].filter((t) => String(t.id) === id), has_more: false, offset: 0, limited: 5 });
+    if (url.pathname === '/api/v3/users') return json([{ id: '25', name: 'Nguyễn Phú Đức', email: 'ducnp@acs.vn', dept_name: 'R&D' }, { id: '4', name: 'Nguyễn Công Quyết', email: 'q@acs.vn', dept_name: 'R&D' }]);
+    if (url.pathname === '/api/v3/tasks' && req.method === 'GET') {
+      const all = [...tasks.values()].sort((a, b) => Number(b.task_id) - Number(a.task_id));
+      const limit = Number(url.searchParams.get('limit') ?? 10), page = Number(url.searchParams.get('page') ?? 1);
+      return json({ data: all.slice((page - 1) * limit, page * limit), total_record: all.length, total_page: Math.ceil(all.length / limit), current_page: page });
     }
-    if (url.pathname === '/api/v6.1/task') {
+    if (url.pathname === '/api/v3/tasks') {
+      const info = body?.task_info;
       if (req.method === 'POST') {
-        if (!body.task_name) return json({ message: 'task_name required' }, 422);
-        if (body.task_parent_code && !tasks.has(body.task_parent_code)) return json({ message: 'parent not found' }, 422);
-        const code = `Task.${String(++next).padStart(4, '0')}`;
-        tasks.set(code, { id: next, ...body, task_code: code, status: 'open' });
-        return json({ message: 'Successfully added', data: { task_id: next, task_code: code } });
+        if (!info || typeof info !== 'object') return json({ message: 'task_info phải là một plain object.' }, 400);
+        const bad = Object.keys(info).filter((k) => !['task_name', 'task_start_date', 'task_end_date', 'task_description', 'project_id', 'task_parent', 'task_type', 'task_weight', 'task_creator', 'task_receiver'].includes(k));
+        if (bad.length) return json({ message: `task_info thuộc tính ${bad.join(',')} không hợp lệ` }, 400);
+        if (!info.task_creator) return json({ message: 'Người tạo việc không được để trống' }, 400);
+        if (info.task_start_date && !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(info.task_start_date)) return json({ message: 'Thời gian bắt đầu công việc không đúng định dạng (Y-m-d H:i)' }, 400);
+        if (info.task_parent && !tasks.has(Number(info.task_parent))) return json({ message: 'Công việc cha không tồn tại' }, 400);
+        const id = ++next;
+        tasks.set(id, { task_id: String(id), task_code: `CVI/2026-11/${id}`, task_status: '11', ...info });
+        return json({ message: 'Thêm mới công việc thành công', task_id: id });
       }
+      const t = [...tasks.values()].find((x) => x.task_code === body?.task_code);
       if (req.method === 'PUT') {
-        const t = tasks.get(body.current_task_code);
-        if (!t) return json({ message: 'not found' }, 404);
-        Object.assign(t, body);
-        return json({ message: 'Successfully updated', data: { task_id: t.id, task_code: t.task_code } });
+        if (!t) return json({ message: 'Công việc không tồn tại' }, 400);
+        if ('task_progress' in info || 'task_status' in info) return json({ message: 'task_info thuộc tính không hợp lệ' }, 400);
+        Object.assign(t, info);
+        return json({ message: 'Cập nhật công việc thành công', task_id: t.task_id });
       }
       if (req.method === 'DELETE') {
-        if (!tasks.delete(body.task_code)) return json({ message: 'not found' }, 404);
-        return json({ message: 'Deleted' });
+        if (!t) return json({ message: 'Công việc không tồn tại' }, 400);
+        tasks.delete(Number(t.task_id));
+        return json({ message: 'Xóa công việc thành công' });
       }
-    }
-    if (req.method === 'POST' && url.pathname === '/api/v6.1/task/complete') {
-      const t = tasks.get(body.task_code);
-      if (!t) return json({ message: 'not found' }, 404);
-      t.status = 'done';
-      return json({ message: 'Task completed successfully', data: { task_code: t.task_code } });
     }
     return json({ message: 'no route' }, 404);
   });
@@ -55,7 +60,7 @@ async function fakeGetfly() {
   return { base: `http://127.0.0.1:${port}`, calls, tasks, close: () => server.close() };
 }
 
-test('đồng bộ Getfly: việc cha từ link, tạo / sửa / hoàn thành / xoá, task con nằm dưới việc tương ứng, ghép username', { timeout: 90_000 }, async () => {
+test('đồng bộ Getfly (API v3): việc cha từ link, tạo / sửa / xoá, task con dưới việc tương ứng, ghép id người dùng, việc xong chỉ ghi chú', { timeout: 90_000 }, async () => {
   const gf = await fakeGetfly();
   const mem = await memoryDb();
   const srv = await startServer({ PROJECT_DATABASE_URL: mem.url, PROJECT_DEV_LOGIN: '1', GETFLY_BASE_URL: `${gf.base}/`, GETFLY_API_KEY: 'khoa-getfly' });
@@ -67,41 +72,42 @@ test('đồng bộ Getfly: việc cha từ link, tạo / sửa / hoàn thành / 
       return { status: r.status, body: await r.json().catch(() => null) as any };
     };
     assert.deepEqual((await R('GET', '/getfly/status')).body.configured, true);
+    assert.equal((await R('GET', '/getfly/users')).body.length, 2);
     const p = (await R('POST', '/projects', { name: 'Đồng bộ thử' })).body;
-    // Việc cha: dán link Getfly -> tra ra mã + tên dự án Getfly.
-    const cfg = await R('PATCH', `/projects/${p.id}/getfly`, { parent: 'https://acs.getflycrm.com/#/tasks/?project_id=1;view_type=list;task_id=8689', users: { 'Đức': 'ducnp' } });
+    assert.equal((await R('POST', `/projects/${p.id}/getfly/sync`)).status, 400); // chưa đặt việc cha
+    // Việc cha: dán link Getfly -> lật danh sách tìm id 8689 -> mã + dự án Getfly.
+    const cfg = await R('PATCH', `/projects/${p.id}/getfly`, { parent: 'https://acs.getflycrm.com/#/tasks/?project_id=1;view_type=list;task_id=8689', creatorId: '25', users: { 'Đức': '25', 'Quyết': '4' } });
     assert.equal(cfg.status, 200, JSON.stringify(cfg.body));
-    assert.deepEqual([cfg.body.getflyParentCode, cfg.body.getflyProjectName], ['CHA.0001', 'AMMS']);
-    assert.equal((await R('PATCH', `/projects/${p.id}/getfly`, { parent: '99999' })).status, 404);
+    assert.deepEqual([cfg.body.getflyParentCode, cfg.body.getflyParentId, cfg.body.getflyProjectId, cfg.body.getflyProjectName], ['CVI/2026-11/008676', 8689, '1', '12. R&D_ Nghiên cứu']);
+    assert.equal((await R('PATCH', `/projects/${p.id}/getfly`, { parent: '1' })).status, 404);
 
-    const t1 = (await R('POST', `/projects/${p.id}/tasks`, { name: 'Màn hình giao hàng', assignee: 'Đức', startDate: '2026-11-10', endDate: '2026-11-12', subtasks: [{ name: 'Danh sách chuyến', assignee: 'Đức', progress: 0 }] })).body;
+    const t1 = (await R('POST', `/projects/${p.id}/tasks`, { name: 'Màn hình giao hàng', assignee: 'Đức', startDate: '2026-11-10', endDate: '2026-11-12', subtasks: [{ name: 'Danh sách chuyến', assignee: 'Quyết', progress: 0 }] })).body;
     const t2 = (await R('POST', `/projects/${p.id}/tasks`, { name: 'Việc không có ngày', assignee: 'Người lạ' })).body;
     const s1 = await R('POST', `/projects/${p.id}/getfly/sync`);
     assert.equal(s1.status, 200, JSON.stringify(s1.body));
     assert.deepEqual([s1.body.created, s1.body.updated, s1.body.errors], [3, 0, []]);
-    const created = gf.calls.filter((c) => c.method === 'POST' && c.path === '/api/v6.1/task').map((c) => c.body);
-    const parent = created.find((b) => b.task_name === 'Màn hình giao hàng');
-    assert.equal(parent.task_parent_code, 'CHA.0001');
-    assert.equal(parent.project_name, 'AMMS');
-    assert.equal(parent.task_receiver_username, 'ducnp');
-    assert.equal(parent.task_start_date, '2026-11-10 08:00:00');
-    const parentCode = [...gf.tasks.values()].find((t) => t.task_name === 'Màn hình giao hàng').task_code;
-    assert.equal(created.find((b) => b.task_name === 'Danh sách chuyến').task_parent_code, parentCode); // task con dưới đúng việc cha
-    assert.equal(created.find((b) => b.task_name === 'Việc không có ngày').task_receiver_username, undefined);
+    const made = [...gf.tasks.values()];
+    const parent = made.find((t) => t.task_name === 'Màn hình giao hàng');
+    assert.deepEqual([parent.task_parent, parent.project_id, parent.task_receiver, parent.task_creator, parent.task_start_date], ['8689', '1', '25', '25', '2026-11-10 08:00']);
+    assert.equal(made.find((t) => t.task_name === 'Danh sách chuyến').task_parent, parent.task_id); // task con dưới đúng việc cha
+    assert.equal(made.find((t) => t.task_name === 'Danh sách chuyến').task_receiver, '4');
+    assert.equal(made.find((t) => t.task_name === 'Việc không có ngày').task_receiver, undefined);
 
-    // Bấm lại không đổi gì -> không gọi thừa.
-    const before = gf.calls.length;
+    // Bấm lại không đổi gì -> không gửi lệnh ghi nào.
+    const writes = () => gf.calls.filter((c) => c.method !== 'GET').length;
+    const before = writes();
     const s2 = (await R('POST', `/projects/${p.id}/getfly/sync`)).body;
     assert.deepEqual([s2.created, s2.updated, s2.unchanged], [0, 0, 3]);
-    assert.equal(gf.calls.length, before);
+    assert.equal(writes(), before);
 
-    // Sửa tên + xong 100% -> PUT + complete; xoá việc -> DELETE.
+    // Sửa tên + task con xong 100% -> PUT theo task_code, ghi chú "đã xong"; xoá việc -> DELETE.
     await R('PATCH', `/projects/${p.id}/tasks/${t1.id}`, { name: 'Màn hình giao hàng (bản 2)', subtasks: [{ ...t1.subtasks[0], progress: 100 }] });
     await R('DELETE', `/projects/${p.id}/tasks/${t2.id}`);
     const s3 = (await R('POST', `/projects/${p.id}/getfly/sync`)).body;
-    assert.deepEqual([s3.updated, s3.completed, s3.deleted, s3.errors], [2, 2, 1, []]); // việc cha đổi tên + tiến độ, task con 100% -> cả hai xong
-    assert.equal(gf.tasks.get(parentCode).task_name, 'Màn hình giao hàng (bản 2)');
-    assert.equal(gf.tasks.get(parentCode).status, 'done');
+    assert.deepEqual([s3.updated, s3.completed, s3.deleted, s3.errors], [2, 2, 1, []]);
+    assert.equal(gf.tasks.get(Number(parent.task_id)).task_name, 'Màn hình giao hàng (bản 2)');
+    assert.match(gf.tasks.get(Number(parent.task_id)).task_description, /Đã xong 100%/);
+    assert.ok(s3.warnings.some((w: string) => /đánh dấu tay/.test(w)));
     assert.ok(![...gf.tasks.values()].some((t) => t.task_name === 'Việc không có ngày'));
     assert.ok((await R('GET', `/projects/${p.id}`)).body.getflySyncedAt);
   } finally {

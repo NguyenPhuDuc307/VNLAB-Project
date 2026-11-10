@@ -8,7 +8,7 @@ import * as D from './data.ts';
 import { parseDate, today } from './dates.ts';
 import { effectivePermissions, rolesOf } from './rbac.ts';
 import { parseSheetId, syncProject } from './sheets.ts';
-import { findGetflyTask, syncGetfly } from './getfly.ts';
+import { findGetflyTask, getflyUsers, syncGetfly } from './getfly.ts';
 import { ALL_COLUMNS, normalizeColumns } from './plan-layout.ts';
 import type { PermissionKey } from './permissions.ts';
 
@@ -638,30 +638,36 @@ TOOLS.get_export_link = {
 TOOLS.set_getfly = {
   title: 'Cấu hình đồng bộ Getfly',
   description: 'Đặt việc cha trên Getfly CRM (dán link #/tasks/?…task_id=…, id hoặc mã việc) — mọi việc của dự án sẽ nằm dưới việc cha này, task con nằm dưới việc tương ứng; tên dự án Getfly; ghép tên người phụ trách -> username Getfly (users: {"Đức": "ducnp"}).',
-  input: z.object({ ...projectRef, parent: z.string().trim().max(500).optional().describe('Link / id / mã việc cha trên Getfly; "" = bỏ'), getflyProject: z.string().trim().max(200).optional().describe('Tên dự án trên Getfly'), users: z.record(z.string().max(160), z.string().trim().max(120)).optional().describe('Tên người phụ trách -> username Getfly (gửi đầy đủ)') }),
+  input: z.object({ ...projectRef, parent: z.string().trim().max(500).optional().describe('Link / id / mã việc cha trên Getfly; "" = bỏ. Dự án Getfly lấy theo việc cha'), creatorId: z.string().trim().max(20).optional().describe('Id người dùng Getfly đứng tên người tạo việc (bắt buộc để đồng bộ)'), users: z.record(z.string().max(160), z.string().trim().max(120)).optional().describe('Tên người phụ trách -> id người dùng Getfly (gửi đầy đủ). Xem get_getfly_users') }),
   write: true, destructive: false, perm: 'project.project.write',
-  run: async (user, a: { projectId?: string; project?: string; parent?: string; getflyProject?: string; users?: Record<string, string> }) => {
+  run: async (user, a: { projectId?: string; project?: string; parent?: string; creatorId?: string; users?: Record<string, string> }) => {
     const p = await editableProject(user, a);
     const patch: Record<string, unknown> = {};
     if (a.parent !== undefined) {
-      if (!a.parent) Object.assign(patch, { getflyParentCode: '', getflyParentName: '' });
+      if (!a.parent) Object.assign(patch, { getflyParentCode: '', getflyParentName: '', getflyParentId: null, getflyProjectId: '', getflyProjectName: '' });
       else {
         const t = await findGetflyTask(a.parent);
-        Object.assign(patch, { getflyParentCode: t.code, getflyParentName: t.name });
-        if (t.projectName && a.getflyProject === undefined && !p.getflyProjectName) patch.getflyProjectName = t.projectName;
+        Object.assign(patch, { getflyParentCode: t.code, getflyParentName: t.name, getflyParentId: t.id, getflyProjectId: t.projectId, getflyProjectName: t.projectName });
       }
     }
-    if (a.getflyProject !== undefined) patch.getflyProjectName = a.getflyProject;
+    if (a.creatorId !== undefined) patch.getflyCreatorId = a.creatorId;
     if (a.users !== undefined) patch.getflyUsers = a.users;
-    if (!Object.keys(patch).length) throw new ToolError('Cần parent, getflyProject hoặc users');
+    if (!Object.keys(patch).length) throw new ToolError('Cần parent, creatorId hoặc users');
     const row = await D.updateProject(p, patch);
-    return { project: p.name, getfly: { parentCode: row.getflyParentCode, parentName: row.getflyParentName, projectName: row.getflyProjectName, users: row.getflyUsers } };
+    return { project: p.name, getfly: { parentCode: row.getflyParentCode, parentName: row.getflyParentName, projectName: row.getflyProjectName, creatorId: row.getflyCreatorId, users: row.getflyUsers } };
   },
+};
+
+TOOLS.get_getfly_users = {
+  title: 'Người dùng Getfly',
+  description: 'Danh sách người dùng Getfly (id, tên, email, phòng ban) để ghép người phụ trách hoặc chọn người tạo trong set_getfly.',
+  input: z.object({}),
+  run: async () => ({ users: await getflyUsers() }),
 };
 
 TOOLS.sync_getfly = {
   title: 'Đồng bộ sang Getfly',
-  description: 'Đẩy việc của dự án sang Getfly CRM: tạo việc mới, sửa việc đã đổi, đánh dấu hoàn thành việc 100%, xoá việc đã xoá. Task con thành việc con dưới việc tương ứng. Như bấm nút "Đồng bộ Getfly".',
+  description: 'Đẩy việc của dự án sang Getfly CRM: tạo việc mới, sửa việc đã đổi, xoá việc đã xoá (việc 100% chỉ được ghi chú — API Getfly không cho đánh dấu hoàn thành). Task con thành việc con dưới việc tương ứng. Như bấm nút "Đồng bộ Getfly".',
   input: z.object({ ...projectRef }),
   write: true, destructive: false, perm: 'project.project.write',
   run: async (user, a: { projectId?: string; project?: string }) => {

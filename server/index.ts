@@ -19,7 +19,7 @@ import { toolList } from './tools.ts';
 import { ALL_COLUMNS, buildPlanLayout, isColKey, normalizeColumns } from './plan-layout.ts';
 import { parseSheetId, sheetStatus, startAutoSync, syncProject } from './sheets.ts';
 import { GoogleError } from './google.ts';
-import { findGetflyTask, getflyLinkCount, getflyStatus, syncGetfly } from './getfly.ts';
+import { findGetflyTask, getflyLinkCount, getflyStatus, getflyUsers, syncGetfly } from './getfly.ts';
 import { renderXlsx } from './xlsx.ts';
 import type { PermissionKey, ProjectRole } from './permissions.ts';
 
@@ -395,6 +395,7 @@ auth.get('/google/status', (c) => c.json(sheetStatus()));
 
 // ---- Getfly CRM (đồng bộ một chiều app -> Getfly bằng nút bấm)
 auth.get('/getfly/status', (c) => c.json(getflyStatus()));
+auth.get('/getfly/users', async (c) => c.json(await getflyUsers()));
 
 /** Cấu hình Getfly của dự án: việc cha (dán link / id / mã), tên dự án Getfly, ghép tên người phụ trách -> username Getfly. */
 auth.patch('/projects/:id/getfly', requirePermission('project.project.write'), async (c) => {
@@ -402,19 +403,19 @@ auth.patch('/projects/:id/getfly', requirePermission('project.project.write'), a
   D.editable(p);
   const b = await body(c, z.object({
     parent: z.string().trim().max(500).optional(),
-    projectName: zText(200).optional(),
+    creatorId: z.string().trim().max(20).optional(),
     users: z.record(z.string().max(160), z.string().trim().max(120)).optional(),
   }));
   const patch: Record<string, unknown> = {};
   if (b.parent !== undefined) {
-    if (!b.parent) Object.assign(patch, { getflyParentCode: '', getflyParentName: '' });
+    if (!b.parent) Object.assign(patch, { getflyParentCode: '', getflyParentName: '', getflyParentId: null, getflyProjectId: '', getflyProjectName: '' });
     else {
+      // Việc cha quyết định luôn dự án Getfly của các việc đẩy sang.
       const t = await findGetflyTask(b.parent);
-      Object.assign(patch, { getflyParentCode: t.code, getflyParentName: t.name });
-      if (t.projectName && b.projectName === undefined && !p.getflyProjectName) patch.getflyProjectName = t.projectName;
+      Object.assign(patch, { getflyParentCode: t.code, getflyParentName: t.name, getflyParentId: t.id, getflyProjectId: t.projectId, getflyProjectName: t.projectName });
     }
   }
-  if (b.projectName !== undefined) patch.getflyProjectName = b.projectName;
+  if (b.creatorId !== undefined) patch.getflyCreatorId = b.creatorId;
   if (b.users !== undefined) patch.getflyUsers = sql.json(Object.fromEntries(Object.entries(b.users).filter(([k, v]) => k.trim() && v)));
   if (!Object.keys(patch).length) throw new HTTPException(400, { message: 'Không có gì để sửa' });
   const row = await D.updateProject(p, patch);
