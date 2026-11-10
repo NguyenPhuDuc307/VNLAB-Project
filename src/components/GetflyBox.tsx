@@ -36,8 +36,9 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
   useEffect(() => { setUsers(project.getflyUsers ?? {}); }, [project.getflyUsers]);
   const { toast } = useFeedback();
   const qc = useQueryClient();
-  const save = useAction((b: { parent?: string; creatorId?: string; users?: Record<string, string> }) => api(`/projects/${project.id}/getfly`, { method: 'PATCH', body: b }), {
-    onSuccess: (_r, b) => { toast(b.parent !== undefined ? (b.parent ? 'Đã đặt việc cha trên Getfly' : 'Đã bỏ việc cha') : 'Đã lưu cấu hình Getfly'); setParent(''); void qc.invalidateQueries({ queryKey: ['project', project.id] }); },
+  const [groupRef, setGroupRef] = useState<Record<string, string>>({});
+  const save = useAction((b: { parent?: string; creatorId?: string; users?: Record<string, string>; groups?: Record<string, string> }) => api(`/projects/${project.id}/getfly`, { method: 'PATCH', body: b }), {
+    onSuccess: (_r, b) => { toast(b.parent !== undefined ? (b.parent ? 'Đã đặt việc cha trên Getfly' : 'Đã bỏ việc cha') : 'Đã lưu cấu hình Getfly'); setParent(''); setGroupRef({}); void qc.invalidateQueries({ queryKey: ['project', project.id] }); },
   });
   const sync = useGetflySync(project.id);
   // Mọi tên người phụ trách / hỗ trợ trong dự án (cả task con) để ghép người dùng Getfly.
@@ -67,7 +68,7 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
         <p className="text-[13px] font-bold">Getfly CRM</p>
         {status.data?.configured && ready && <Button size="sm" variant="secondary" onClick={() => sync.mutate(undefined)} disabled={sync.isPending || !canEdit}><CloudArrowUp size={15} className={sync.isPending ? 'animate-pulse' : undefined} /> {sync.isPending ? 'Đang đồng bộ…' : 'Đồng bộ ngay'}</Button>}
       </div>
-      <p className="mb-3 mt-0.5 text-[12px] text-muted">Bấm đồng bộ để tạo việc mới, sửa việc đã đổi và xoá việc đã xoá trên Getfly. Mọi việc nằm dưới việc cha bên dưới; task con nằm dưới việc tương ứng. Việc xong 100% được ghi chú trong mô tả — API Getfly không cho đánh dấu hoàn thành, anh đánh dấu tay.</p>
+      <p className="mb-3 mt-0.5 text-[12px] text-muted">Bấm đồng bộ để tạo việc mới, sửa việc đã đổi và xoá việc đã xoá trên Getfly. Cây trên Getfly: việc cha → nhóm việc → việc → task con. Việc xong 100% được ghi chú trong mô tả — API Getfly không cho đánh dấu hoàn thành, anh đánh dấu tay.</p>
       {!status.data?.configured ? (
         <p className="rounded-xl bg-fill px-3 py-2 text-[12px] text-muted">Máy chủ chưa có thông tin Getfly. Chạy <code>./scripts/getfly-setup.sh</code> để lưu API key lên VPS.</p>
       ) : (
@@ -90,6 +91,31 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
               </form>
             )}
           </Field>
+          {project.getflyParentCode && project.groups.length > 0 && (
+            <Field label="Nhóm việc trên Getfly" hint="Mỗi nhóm là một việc nằm dưới việc cha; việc trong nhóm nằm dưới nó. Mặc định app tự tạo — dán link nếu nhóm đã có việc sẵn trên Getfly.">
+              <div className="space-y-1.5">
+                {project.groups.map((g) => {
+                  const m = project.getflyGroups?.[g.id];
+                  return (
+                    <div key={g.id} className="flex items-center gap-2 text-[13px]">
+                      <span className="w-2/5 min-w-0 truncate font-semibold">{g.name}</span>
+                      {m ? (
+                        <span className="flex min-w-0 flex-1 items-center gap-2 rounded-lg bg-fill px-2.5 py-1.5">
+                          <span className="min-w-0 flex-1 truncate">{m.name} <span className="text-muted">· {m.code}</span></span>
+                          {canEdit && <button type="button" className="text-[12px] font-semibold text-muted hover:text-danger" onClick={() => save.mutate({ groups: { [g.id]: '' } })}>Bỏ</button>}
+                        </span>
+                      ) : canEdit ? (
+                        <form className="flex min-w-0 flex-1 gap-1.5" onSubmit={(e) => { e.preventDefault(); const v = groupRef[g.id]?.trim(); if (v) save.mutate({ groups: { [g.id]: v } }); }}>
+                          <Input className="!h-9 min-w-0 flex-1 !text-[13px]" value={groupRef[g.id] ?? ''} onChange={(e) => setGroupRef({ ...groupRef, [g.id]: e.target.value })} placeholder="Tự tạo — hoặc dán link việc có sẵn" />
+                          {groupRef[g.id]?.trim() && <Button type="submit" size="sm" variant="secondary" disabled={save.isPending}>Gắn</Button>}
+                        </form>
+                      ) : <span className="text-muted">Tự tạo</span>}
+                    </div>
+                  );
+                })}
+              </div>
+            </Field>
+          )}
           <Field label="Người tạo việc trên Getfly" hint="Getfly bắt buộc có người tạo; việc đẩy sang sẽ đứng tên người này.">
             {userSelect(project.getflyCreatorId ?? '', (v) => save.mutate({ creatorId: v }), 'Người tạo việc trên Getfly', 'Chọn người tạo')}
           </Field>

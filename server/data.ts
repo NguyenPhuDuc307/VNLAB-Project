@@ -24,6 +24,7 @@ export type ProjectRow = {
   getflyParentCode: string; getflyParentName: string; getflyProjectName: string; getflyUsers: Record<string, string>;
   getflySyncedAt: Date | null; getflyError: string | null;
   getflyParentId: number | null; getflyProjectId: string; getflyCreatorId: string;
+  getflyGroups: Record<string, { id: number; code: string; name: string }>;
 };
 export type Subtask = { id: string; name: string; assignee: string; progress: number };
 export type TaskRow = {
@@ -103,6 +104,7 @@ export const projectView = (p: ProjectRow) => ({
   getflyUsers: (p.getflyUsers ?? {}) as Record<string, string>,
   getflySyncedAt: p.getflySyncedAt ? new Date(p.getflySyncedAt).toISOString() : null, getflyError: p.getflyError ?? null,
   getflyParentId: p.getflyParentId == null ? null : Number(p.getflyParentId), getflyProjectId: p.getflyProjectId ?? '', getflyCreatorId: p.getflyCreatorId ?? '',
+  getflyGroups: (p.getflyGroups ?? {}) as Record<string, { id: number; code: string; name: string }>,
 });
 
 export const taskView = (t: Record<string, unknown>) => ({

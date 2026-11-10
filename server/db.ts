@@ -250,6 +250,8 @@ const MIGRATIONS: string[] = [
     add column getfly_project_id text not null default '',
     add column getfly_creator_id text not null default '';
   `,
+  // 14: nhóm việc (danh mục) gắn sẵn với một việc có trên Getfly: { groupId: { id, code, name } }; nhóm không gắn thì app tự tạo.
+  `alter table projects add column getfly_groups jsonb not null default '{}'::jsonb;`,
 ];
 
 export async function migrate() {

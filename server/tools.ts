@@ -8,7 +8,7 @@ import * as D from './data.ts';
 import { parseDate, today } from './dates.ts';
 import { effectivePermissions, rolesOf } from './rbac.ts';
 import { parseSheetId, syncProject } from './sheets.ts';
-import { findGetflyTask, getflyUsers, syncGetfly } from './getfly.ts';
+import { findGetflyTask, getflyUsers, syncGetfly, unsyncGetfly } from './getfly.ts';
 import { ALL_COLUMNS, normalizeColumns } from './plan-layout.ts';
 import type { PermissionKey } from './permissions.ts';
 
@@ -637,10 +637,10 @@ TOOLS.get_export_link = {
 
 TOOLS.set_getfly = {
   title: 'Cấu hình đồng bộ Getfly',
-  description: 'Đặt việc cha trên Getfly CRM (dán link #/tasks/?…task_id=…, id hoặc mã việc) — mọi việc của dự án sẽ nằm dưới việc cha này, task con nằm dưới việc tương ứng; tên dự án Getfly; ghép tên người phụ trách -> username Getfly (users: {"Đức": "ducnp"}).',
-  input: z.object({ ...projectRef, parent: z.string().trim().max(500).optional().describe('Link / id / mã việc cha trên Getfly; "" = bỏ. Dự án Getfly lấy theo việc cha'), creatorId: z.string().trim().max(20).optional().describe('Id người dùng Getfly đứng tên người tạo việc (bắt buộc để đồng bộ)'), users: z.record(z.string().max(160), z.string().trim().max(120)).optional().describe('Tên người phụ trách -> id người dùng Getfly (gửi đầy đủ). Xem get_getfly_users') }),
+  description: 'Đặt việc cha trên Getfly CRM (dán link #/tasks/?…task_id=…, id hoặc mã việc). Cây trên Getfly: việc cha -> mỗi nhóm việc một việc (tự tạo, hoặc gắn việc có sẵn qua `groups`) -> việc -> task con; tên dự án Getfly; ghép tên người phụ trách -> username Getfly (users: {"Đức": "ducnp"}).',
+  input: z.object({ ...projectRef, parent: z.string().trim().max(500).optional().describe('Link / id / mã việc cha trên Getfly; "" = bỏ. Dự án Getfly lấy theo việc cha'), creatorId: z.string().trim().max(20).optional().describe('Id người dùng Getfly đứng tên người tạo việc (bắt buộc để đồng bộ)'), users: z.record(z.string().max(160), z.string().trim().max(120)).optional().describe('Tên người phụ trách -> id người dùng Getfly (gửi đầy đủ). Xem get_getfly_users'), groups: z.record(z.string().max(160), z.string().trim().max(500)).optional().describe('Tên nhóm việc -> link / id / mã việc có sẵn trên Getfly làm việc cha của nhóm; "" = bỏ gắn (app tự tạo việc cho nhóm)') }),
   write: true, destructive: false, perm: 'project.project.write',
-  run: async (user, a: { projectId?: string; project?: string; parent?: string; creatorId?: string; users?: Record<string, string> }) => {
+  run: async (user, a: { projectId?: string; project?: string; parent?: string; creatorId?: string; users?: Record<string, string>; groups?: Record<string, string> }) => {
     const p = await editableProject(user, a);
     const patch: Record<string, unknown> = {};
     if (a.parent !== undefined) {
@@ -652,7 +652,18 @@ TOOLS.set_getfly = {
     }
     if (a.creatorId !== undefined) patch.getflyCreatorId = a.creatorId;
     if (a.users !== undefined) patch.getflyUsers = a.users;
-    if (!Object.keys(patch).length) throw new ToolError('Cần parent, creatorId hoặc users');
+    if (a.groups !== undefined) {
+      const next = { ...(p.getflyGroups ?? {}) };
+      for (const [gname, ref] of Object.entries(a.groups)) {
+        const g = await D.findGroup(p.id, gname);
+        if (!g) throw new ToolError(`Không có nhóm "${gname}" trong ${p.name}`);
+        if (!ref) { delete next[g.id]; continue; }
+        const t = await findGetflyTask(ref);
+        next[g.id] = { id: t.id, code: t.code, name: t.name };
+      }
+      patch.getflyGroups = next;
+    }
+    if (!Object.keys(patch).length) throw new ToolError('Cần parent, creatorId, users hoặc groups');
     const row = await D.updateProject(p, patch);
     return { project: p.name, getfly: { parentCode: row.getflyParentCode, parentName: row.getflyParentName, projectName: row.getflyProjectName, creatorId: row.getflyCreatorId, users: row.getflyUsers } };
   },
@@ -663,6 +674,17 @@ TOOLS.get_getfly_users = {
   description: 'Danh sách người dùng Getfly (id, tên, email, phòng ban) để ghép người phụ trách hoặc chọn người tạo trong set_getfly.',
   input: z.object({}),
   run: async () => ({ users: await getflyUsers() }),
+};
+
+TOOLS.unsync_getfly = {
+  title: 'Gỡ dự án khỏi Getfly',
+  description: 'Xoá mọi việc app đã tạo trên Getfly cho dự án (không đụng việc cha hay việc có sẵn đã gắn cho nhóm). Chỉ gọi khi người dùng nói rõ.',
+  input: z.object({ ...projectRef }),
+  write: true, destructive: true, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string }) => {
+    const p = await editableProject(user, a);
+    return { project: p.name, ...(await unsyncGetfly(p.id)) };
+  },
 };
 
 TOOLS.sync_getfly = {
@@ -715,6 +737,7 @@ function describeTool(name: string, a: Record<string, unknown> | null): string {
     case 'set_ai_context': return 'Lưu hướng dẫn cho AI';
     case 'set_getfly': return 'Cấu hình Getfly';
     case 'sync_getfly': return 'Đồng bộ Getfly';
+    case 'unsync_getfly': return 'Gỡ dự án khỏi Getfly';
     case 'delete_project': return 'Xoá dự án';
     case 'set_member': return `Mời / đổi quyền ${typeof a?.email === 'string' ? a.email : ''}`.trim();
     case 'remove_member': return `Gỡ thành viên ${typeof a?.email === 'string' ? a.email : ''}`.trim();

@@ -4,9 +4,11 @@
 //   - Tạo: POST /api/v3/tasks { task_info: { task_name, task_start_date "Y-m-d H:i", task_end_date, task_description,
 //          project_id, task_parent (id việc cha), task_type, task_weight, task_creator (bắt buộc), task_receiver } } -> { task_id }.
 //   - Sửa: PUT /api/v3/tasks { task_code, task_info: {...} }. Xoá: DELETE /api/v3/tasks { task_code }.
-//   - KHÔNG có cách đánh dấu hoàn thành qua API (task_progress / task_status đều bị từ chối): việc 100% chỉ ghi chú
-//     trong mô tả và báo người dùng đánh dấu tay.
-// Mỗi việc -> một việc Getfly dưới "việc cha" của dự án; task con -> việc con dưới việc tương ứng (task_parent = id Getfly).
+//   - KHÔNG có cách đánh dấu hoàn thành qua API (task_progress / task_status đều bị từ chối): việc 100% chỉ được
+//     báo để người dùng đánh dấu tay. Không gửi mô tả / ghi chú (người dùng yêu cầu).
+// Cây trên Getfly: việc cha của dự án -> mỗi nhóm việc (danh mục) một việc -> các việc trong nhóm -> task con.
+// Nhóm có thể gắn với một việc có sẵn trên Getfly (getfly_groups) thì dùng luôn việc đó, app không sửa / xoá nó.
+// Việc chưa phân nhóm nằm thẳng dưới việc cha của dự án.
 // Liên kết lưu ở getfly_links (id + mã Getfly + băm nội dung đã gửi) để không tạo trùng / gửi thừa.
 import { createHash } from 'node:crypto';
 import { HTTPException } from 'hono/http-exception';
@@ -91,7 +93,6 @@ type Link = { localId: string; parentLocal: string | null; getflyCode: string; g
 type Item = { localId: string; parentLocal: string | null; info: Json; done: boolean; label: string };
 export type GetflyResult = { created: number; updated: number; completed: number; deleted: number; unchanged: number; errors: string[]; warnings: string[]; syncedAt: string };
 
-const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 const when = (d: string | null, time: string) => (d ? `${d} ${time}` : undefined);
 const hashOf = (o: unknown) => createHash('sha1').update(JSON.stringify(o)).digest('hex');
 const running = new Set<string>();
@@ -112,25 +113,40 @@ export async function syncGetfly(projectId: string): Promise<GetflyResult> {
       for (const n of name.split(',')) { const u = users[n.trim().toLowerCase()]; if (u) return u; }
       return undefined;
     };
-    const groups = new Map(bundle.groups.map((g) => [g.id, g.name]));
-    const scopes = new Map(bundle.scopes.map((s) => [s.id, s]));
     const common = { project_id: p.getflyProjectId || undefined, task_type: '1', task_weight: 1 };
-    const doneNote = '<p><b>✔ Đã xong 100% bên VNLab Project</b> — đánh dấu hoàn thành trên Getfly.</p>';
     const items: Item[] = [];
-    for (const t of bundle.tasks) {
-      const scope = t.scopeId ? scopes.get(t.scopeId) : undefined;
-      const done = t.progress >= 100;
-      const meta = [t.groupId ? `Nhóm: ${groups.get(t.groupId)}` : null, scope ? `Phạm vi: ${scope.name}${scope.owner ? ` (phụ trách ${scope.owner})` : ''}` : null, t.support ? `Hỗ trợ: ${t.support}` : null, `Tiến độ: ${t.progress}%`].filter(Boolean).join(' · ');
+    const mapped = (p.getflyGroups ?? {}) as Record<string, { id: number; code: string; name: string }>;
+    const gKey = (id: string) => `g:${id}`;
+    // Tầng nhóm: nhóm có việc mà chưa gắn việc Getfly có sẵn thì tạo một việc cho nhóm.
+    for (const g of bundle.groups) {
+      const gt = bundle.tasks.filter((t) => t.groupId === g.id);
+      if (!gt.length || mapped[g.id]?.id) continue;
+      const starts = gt.map((t) => t.startDate ?? t.endDate).filter((d): d is string => !!d).sort();
+      const ends = gt.map((t) => t.endDate ?? t.startDate).filter((d): d is string => !!d).sort();
       items.push({
-        localId: t.id, parentLocal: null, done, label: t.name,
+        localId: gKey(g.id), parentLocal: null, done: false, label: `Nhóm ${g.name}`,
+        info: {
+          ...common,
+          task_name: g.name,
+          task_start_date: when(starts[0] ?? null, '08:00'),
+          task_end_date: when(ends[ends.length - 1] ?? null, '17:30'),
+          task_parent: String(p.getflyParentId),
+        },
+      });
+    }
+    for (const t of bundle.tasks) {
+      const done = t.progress >= 100;
+      items.push({
+        localId: t.id, parentLocal: t.groupId ? gKey(t.groupId) : null, done, label: t.name,
         info: {
           ...common,
           task_name: t.name,
           task_start_date: when(t.startDate ?? t.endDate, '08:00'),
           task_end_date: when(t.endDate ?? t.startDate, '17:30'),
-          task_description: `${done ? doneNote : ''}${t.note ? `<p>${esc(t.note).replace(/\n/g, '<br>')}</p>` : ''}<p><i>${esc(meta)} — đồng bộ từ VNLab Project</i></p>`,
+          // Không gửi mô tả / ghi chú: mô tả bên Getfly do người dùng tự quản.
           task_receiver: userOf(t.assignee),
-          task_parent: String(p.getflyParentId),
+          // Nhóm gắn việc có sẵn -> dùng id đó; nhóm tự tạo -> điền lúc chạy; chưa phân nhóm -> việc cha của dự án.
+          task_parent: t.groupId && mapped[t.groupId]?.id ? String(mapped[t.groupId].id) : t.groupId ? undefined : String(p.getflyParentId),
         },
       });
       for (const s of t.subtasks ?? []) {
@@ -142,7 +158,6 @@ export async function syncGetfly(projectId: string): Promise<GetflyResult> {
             task_name: s.name,
             task_start_date: when(t.startDate ?? t.endDate, '08:00'),
             task_end_date: when(t.endDate ?? t.startDate, '17:30'),
-            task_description: `${sDone ? doneNote : ''}<p><i>Task con của “${esc(t.name)}” · Tiến độ: ${s.progress}% — đồng bộ từ VNLab Project</i></p>`,
             task_receiver: userOf(s.assignee),
             // task_parent điền lúc chạy: id Getfly của việc cha vừa tạo / đã có.
           },
@@ -160,9 +175,10 @@ export async function syncGetfly(projectId: string): Promise<GetflyResult> {
           hash = excluded.hash, completed = excluded.completed, synced_at = now()`;
     };
 
-    // 1) Xoá bên Getfly những việc đã xoá bên VNLab (task con trước, việc cha sau).
+    // 1) Xoá bên Getfly những việc đã xoá bên VNLab: task con trước, rồi việc, rồi việc của nhóm.
     const alive = new Set(items.map((i) => i.localId));
-    const gone = [...links.values()].filter((l) => !alive.has(l.localId)).sort((a, b) => Number(!a.parentLocal) - Number(!b.parentLocal));
+    const depth = (l: { localId: string; parentLocal: string | null }) => (l.localId.startsWith('g:') ? 0 : !l.parentLocal || l.parentLocal.startsWith('g:') ? 1 : 2);
+    const gone = [...links.values()].filter((l) => !alive.has(l.localId)).sort((a, b) => depth(b) - depth(a));
     for (const l of gone) {
       if (l.getflyCode) {
         try { await gf('DELETE', '/tasks', { task_code: l.getflyCode }); }
@@ -178,7 +194,7 @@ export async function syncGetfly(projectId: string): Promise<GetflyResult> {
     for (const it of items) {
       try {
         const info: Json = { ...it.info };
-        if (it.parentLocal) {
+        if (it.parentLocal && info.task_parent === undefined) {
           const parent = links.get(it.parentLocal);
           if (!parent?.getflyId) { r.errors.push(`${it.label}: việc cha chưa lên Getfly`); continue; }
           info.task_parent = String(parent.getflyId);
@@ -217,7 +233,7 @@ export async function syncGetfly(projectId: string): Promise<GetflyResult> {
       for (const l of links.values()) if (l.getflyCode && l.getflyId) await save(l);
       if (pendingCode.size) r.warnings.push(`${pendingCode.size} việc vừa tạo chưa tra được mã trên Getfly — lần đồng bộ sau sẽ thử lại`);
     }
-    if (r.completed) r.warnings.push(`${r.completed} việc đã xong 100%: API Getfly không cho đánh dấu hoàn thành — đã ghi chú trong mô tả, anh đánh dấu tay trên Getfly`);
+    if (r.completed) r.warnings.push(`${r.completed} việc đã xong 100%: API Getfly không cho đánh dấu hoàn thành — anh đánh dấu tay trên Getfly`);
     const [row] = await sql<{ getflySyncedAt: Date }[]>`
       update projects set getfly_synced_at = now(), getfly_error = ${r.errors.length ? r.errors.slice(0, 5).join('\n') : null}
       where id = ${projectId} returning getfly_synced_at`;
@@ -232,4 +248,35 @@ export async function syncGetfly(projectId: string): Promise<GetflyResult> {
 export async function getflyLinkCount(projectId: string) {
   const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from getfly_links where project_id = ${projectId}`;
   return n;
+}
+
+/** Gỡ khỏi Getfly: xoá mọi việc app đã tạo cho dự án (task con trước, việc, rồi việc của nhóm) và quên liên kết.
+ *  Không đụng việc cha của dự án hay việc có sẵn đã gắn cho nhóm. */
+export async function unsyncGetfly(projectId: string) {
+  if (running.has(projectId)) throw new GetflyError(409, { message: 'Đang đồng bộ Getfly cho dự án này, đợi chút' });
+  running.add(projectId);
+  try {
+    const links = (await sql<Link[]>`select local_id, parent_local, getfly_code, getfly_id, hash, completed from getfly_links where project_id = ${projectId}`)
+      .map((l) => ({ ...l, getflyId: l.getflyId == null ? null : Number(l.getflyId) }));
+    // Việc vừa tạo mà chưa tra được mã: tra theo id.
+    const noCode = new Map(links.filter((l) => !l.getflyCode && l.getflyId).map((l) => [l.getflyId!, l]));
+    if (noCode.size) await scanTasks((t) => { const l = noCode.get(Number(t.task_id)); if (l) { l.getflyCode = t.task_code; noCode.delete(Number(t.task_id)); } return noCode.size === 0; }, 20);
+    const depth = (l: Link) => (l.localId.startsWith('g:') ? 0 : !l.parentLocal || l.parentLocal.startsWith('g:') ? 1 : 2);
+    let deleted = 0;
+    const errors: string[] = [];
+    for (const l of links.sort((a, b) => depth(b) - depth(a))) {
+      try {
+        if (l.getflyCode) await gf('DELETE', '/tasks', { task_code: l.getflyCode });
+        deleted++;
+      } catch (err) {
+        if (!/không tồn tại/i.test((err as Error).message)) { errors.push(`${l.getflyCode || l.getflyId}: ${(err as Error).message}`); continue; }
+        deleted++;
+      }
+      await sql`delete from getfly_links where project_id = ${projectId} and local_id = ${l.localId}`;
+    }
+    await sql`update projects set getfly_synced_at = null, getfly_error = ${errors.length ? errors.slice(0, 5).join('\n') : null} where id = ${projectId}`;
+    return { deleted, errors };
+  } finally {
+    running.delete(projectId);
+  }
 }

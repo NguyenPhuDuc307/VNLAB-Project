@@ -19,7 +19,7 @@ import { toolList } from './tools.ts';
 import { ALL_COLUMNS, buildPlanLayout, isColKey, normalizeColumns } from './plan-layout.ts';
 import { parseSheetId, sheetStatus, startAutoSync, syncProject } from './sheets.ts';
 import { GoogleError } from './google.ts';
-import { findGetflyTask, getflyLinkCount, getflyStatus, getflyUsers, syncGetfly } from './getfly.ts';
+import { findGetflyTask, getflyLinkCount, getflyStatus, getflyUsers, syncGetfly, unsyncGetfly } from './getfly.ts';
 import { renderXlsx } from './xlsx.ts';
 import type { PermissionKey, ProjectRole } from './permissions.ts';
 
@@ -405,6 +405,8 @@ auth.patch('/projects/:id/getfly', requirePermission('project.project.write'), a
     parent: z.string().trim().max(500).optional(),
     creatorId: z.string().trim().max(20).optional(),
     users: z.record(z.string().max(160), z.string().trim().max(120)).optional(),
+    // Gắn nhóm việc với việc có sẵn trên Getfly: { groupId: link / id / mã } — "" = bỏ gắn (app tự tạo việc cho nhóm).
+    groups: z.record(zId, z.string().trim().max(500)).optional(),
   }));
   const patch: Record<string, unknown> = {};
   if (b.parent !== undefined) {
@@ -416,6 +418,16 @@ auth.patch('/projects/:id/getfly', requirePermission('project.project.write'), a
     }
   }
   if (b.creatorId !== undefined) patch.getflyCreatorId = b.creatorId;
+  if (b.groups !== undefined) {
+    const next = { ...(p.getflyGroups ?? {}) } as Record<string, { id: number; code: string; name: string }>;
+    for (const [gid, ref] of Object.entries(b.groups)) {
+      await D.groupBelongs(p.id, gid);
+      if (!ref) { delete next[gid]; continue; }
+      const t = await findGetflyTask(ref);
+      next[gid] = { id: t.id, code: t.code, name: t.name };
+    }
+    patch.getflyGroups = sql.json(next);
+  }
   if (b.users !== undefined) patch.getflyUsers = sql.json(Object.fromEntries(Object.entries(b.users).filter(([k, v]) => k.trim() && v)));
   if (!Object.keys(patch).length) throw new HTTPException(400, { message: 'Không có gì để sửa' });
   const row = await D.updateProject(p, patch);
@@ -427,6 +439,12 @@ auth.post('/projects/:id/getfly/sync', requirePermission('project.project.write'
   const p = await D.projectOf(c.get('user'), param(c));
   D.editable(p);
   return c.json(await syncGetfly(p.id));
+});
+/** Gỡ khỏi Getfly: xoá các việc app đã tạo trên Getfly cho dự án này. */
+auth.post('/projects/:id/getfly/unsync', requirePermission('project.project.write'), async (c) => {
+  const p = await D.projectOf(c.get('user'), param(c));
+  D.editable(p);
+  return c.json(await unsyncGetfly(p.id));
 });
 auth.get('/projects/:id/getfly', async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));

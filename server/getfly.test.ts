@@ -81,14 +81,25 @@ test('đồng bộ Getfly (API v3): việc cha từ link, tạo / sửa / xoá, 
     assert.deepEqual([cfg.body.getflyParentCode, cfg.body.getflyParentId, cfg.body.getflyProjectId, cfg.body.getflyProjectName], ['CVI/2026-11/008676', 8689, '1', '12. R&D_ Nghiên cứu']);
     assert.equal((await R('PATCH', `/projects/${p.id}/getfly`, { parent: '1' })).status, 404);
 
-    const t1 = (await R('POST', `/projects/${p.id}/tasks`, { name: 'Màn hình giao hàng', assignee: 'Đức', startDate: '2026-11-10', endDate: '2026-11-12', subtasks: [{ name: 'Danh sách chuyến', assignee: 'Quyết', progress: 0 }] })).body;
+    const grp = (await R('POST', `/projects/${p.id}/groups`, { name: 'Giao hàng – Luồng chính' })).body;
+    const grp2 = (await R('POST', `/projects/${p.id}/groups`, { name: 'Kho' })).body;
+    // Nhóm "Kho" gắn với việc có sẵn trên Getfly (id 9001) -> không tạo việc cho nhóm này.
+    assert.equal((await R('PATCH', `/projects/${p.id}/getfly`, { groups: { [grp2.id]: '9001' } })).body.getflyGroups[grp2.id].code, 'CVI/X/1');
+    await R('POST', `/projects/${p.id}/tasks`, { groupId: grp2.id, name: 'Nhập kho', note: 'Ghi chú kho' });
+    const t1 = (await R('POST', `/projects/${p.id}/tasks`, { groupId: grp.id, name: 'Màn hình giao hàng', assignee: 'Đức', startDate: '2026-11-10', endDate: '2026-11-12', subtasks: [{ name: 'Danh sách chuyến', assignee: 'Quyết', progress: 0 }] })).body;
     const t2 = (await R('POST', `/projects/${p.id}/tasks`, { name: 'Việc không có ngày', assignee: 'Người lạ' })).body;
     const s1 = await R('POST', `/projects/${p.id}/getfly/sync`);
     assert.equal(s1.status, 200, JSON.stringify(s1.body));
-    assert.deepEqual([s1.body.created, s1.body.updated, s1.body.errors], [3, 0, []]);
+    assert.deepEqual([s1.body.created, s1.body.updated, s1.body.errors], [5, 0, []]); // 1 việc nhóm + 3 việc + 1 task con
     const made = [...gf.tasks.values()];
     const parent = made.find((t) => t.task_name === 'Màn hình giao hàng');
-    assert.deepEqual([parent.task_parent, parent.project_id, parent.task_receiver, parent.task_creator, parent.task_start_date], ['8689', '1', '25', '25', '2026-11-10 08:00']);
+    const groupTask = made.find((t) => t.task_name === 'Giao hàng – Luồng chính');
+    assert.equal(groupTask.task_parent, '8689'); // nhóm -> dưới việc cha của dự án
+    assert.ok(!made.some((t) => t.task_name === 'Kho')); // nhóm gắn sẵn không tạo việc
+    assert.equal(made.find((t) => t.task_name === 'Nhập kho').task_parent, '9001');
+    assert.equal(made.find((t) => t.task_name === 'Nhập kho').task_description, undefined); // không gửi ghi chú / mô tả
+    assert.equal(made.find((t) => t.task_name === 'Việc không có ngày').task_parent, '8689'); // chưa phân nhóm
+    assert.deepEqual([parent.task_parent, parent.project_id, parent.task_receiver, parent.task_creator, parent.task_start_date], [groupTask.task_id, '1', '25', '25', '2026-11-10 08:00']);
     assert.equal(made.find((t) => t.task_name === 'Danh sách chuyến').task_parent, parent.task_id); // task con dưới đúng việc cha
     assert.equal(made.find((t) => t.task_name === 'Danh sách chuyến').task_receiver, '4');
     assert.equal(made.find((t) => t.task_name === 'Việc không có ngày').task_receiver, undefined);
@@ -97,19 +108,23 @@ test('đồng bộ Getfly (API v3): việc cha từ link, tạo / sửa / xoá, 
     const writes = () => gf.calls.filter((c) => c.method !== 'GET').length;
     const before = writes();
     const s2 = (await R('POST', `/projects/${p.id}/getfly/sync`)).body;
-    assert.deepEqual([s2.created, s2.updated, s2.unchanged], [0, 0, 3]);
+    assert.deepEqual([s2.created, s2.updated, s2.unchanged], [0, 0, 5]);
     assert.equal(writes(), before);
 
     // Sửa tên + task con xong 100% -> PUT theo task_code, ghi chú "đã xong"; xoá việc -> DELETE.
     await R('PATCH', `/projects/${p.id}/tasks/${t1.id}`, { name: 'Màn hình giao hàng (bản 2)', subtasks: [{ ...t1.subtasks[0], progress: 100 }] });
     await R('DELETE', `/projects/${p.id}/tasks/${t2.id}`);
     const s3 = (await R('POST', `/projects/${p.id}/getfly/sync`)).body;
-    assert.deepEqual([s3.updated, s3.completed, s3.deleted, s3.errors], [2, 2, 1, []]);
+    assert.deepEqual([s3.updated, s3.completed, s3.deleted, s3.errors], [1, 2, 1, []]); // chỉ việc cha đổi tên; task con xong 100% không gửi gì (không có mô tả)
     assert.equal(gf.tasks.get(Number(parent.task_id)).task_name, 'Màn hình giao hàng (bản 2)');
-    assert.match(gf.tasks.get(Number(parent.task_id)).task_description, /Đã xong 100%/);
     assert.ok(s3.warnings.some((w: string) => /đánh dấu tay/.test(w)));
     assert.ok(![...gf.tasks.values()].some((t) => t.task_name === 'Việc không có ngày'));
     assert.ok((await R('GET', `/projects/${p.id}`)).body.getflySyncedAt);
+    // Gỡ khỏi Getfly: xoá đúng các việc app đã tạo, giữ việc cha 8689 và việc có sẵn 9001.
+    const un = (await R('POST', `/projects/${p.id}/getfly/unsync`)).body;
+    assert.deepEqual([un.deleted, un.errors], [4, []]);
+    assert.ok(gf.tasks.has(8689) && gf.tasks.has(9001));
+    assert.ok(![...gf.tasks.values()].some((x) => ['Màn hình giao hàng (bản 2)', 'Danh sách chuyến', 'Nhập kho', 'Giao hàng – Luồng chính'].includes(x.task_name)));
   } finally {
     await srv.stop();
     await mem.close();

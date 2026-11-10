@@ -24,6 +24,7 @@ export type Project = {
   getflyParentCode?: string; getflyParentName?: string; getflyProjectName?: string; getflyUsers?: Record<string, string>;
   getflySyncedAt?: string | null; getflyError?: string | null;
   getflyParentId?: number | null; getflyProjectId?: string; getflyCreatorId?: string;
+  getflyGroups?: Record<string, { id: number; code: string; name: string }>;
 };
 export type GoogleStatus = { configured: boolean; email: string | null };
 export type ProjectStats = { taskCount: number; doneCount: number; overdueCount: number; progress: number; firstStart: string | null; lastEnd: string | null };
