@@ -505,7 +505,7 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
                   {collapsedTasks.includes(t.id) ? <CaretRight size={12} /> : <CaretDown size={12} />}
                 </button>}
                 {t.progress >= 100 && !editable(t, 'name') && <CheckCircle size={15} weight="fill" className="shrink-0 text-ok" aria-label="Đã xong" />}
-                {editable(t, 'name') ? <InlineTaskName value={t.name} onCommit={(v) => { setEdit(null); commitEdit(t, 'name', v); }} onCancel={() => setEdit(null)} onNext={(v) => { commitEdit(t, 'name', v); nextField(t, 'name'); }} /> : <div className="min-w-0 flex-1"><TaskName text={t.name} completed={t.progress >= 100} />{t.scopeId && scopeById.get(t.scopeId) && <ScopeChip scope={scopeById.get(t.scopeId)!} className="mt-0.5" />}
+                {editable(t, 'name') ? <InlineTaskName value={t.name} onCommit={(v) => { setEdit(null); commitEdit(t, 'name', v); }} onCancel={() => setEdit(null)} onNext={(v) => { commitEdit(t, 'name', v); nextField(t, 'name'); }} /> : <div className="min-w-0 flex-1"><TaskName text={t.name} completed={t.progress >= 100} prefix={t.scopeId && scopeById.get(t.scopeId) ? <ScopeChip scope={scopeById.get(t.scopeId)!} className="scope-chip-lead" /> : undefined} />
 
                 </div>}
                 {late && !editable(t, 'name') && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-danger" title="Quá hạn" />}
@@ -684,7 +684,8 @@ function InlineTaskName({ value, onCommit, onCancel, onNext }: {
 }
 
 /** Giữ hàng Gantt gọn; vẫn xem được đầy đủ tên và các dòng mô tả. */
-function TaskName({ text, completed }: { text: string; completed: boolean }) {
+/** Tên việc; `prefix` (nhãn phạm vi) đứng đầu dòng, cùng dòng với tên. */
+function TaskName({ text, completed, prefix }: { text: string; completed: boolean; prefix?: React.ReactNode }) {
   const ref = useRef<HTMLSpanElement>(null);
   const [expanded, setExpanded] = useState(false);
   const [long, setLong] = useState(false);
@@ -698,7 +699,7 @@ function TaskName({ text, completed }: { text: string; completed: boolean }) {
     return () => observer.disconnect();
   }, [text]);
   return <div className="min-w-0 flex-1">
-    <span ref={ref} className={cx('gantt-task-name min-w-0 whitespace-pre-wrap break-words text-[13px] font-medium leading-snug', expanded ? 'block' : 'line-clamp-3', completed && 'text-ink-2')} title={text}>{text}</span>
+    <span ref={ref} className={cx('gantt-task-name min-w-0 whitespace-pre-wrap break-words text-[13px] font-medium leading-snug', expanded ? 'block' : 'line-clamp-3', completed && 'text-ink-2')} title={text}>{prefix}{text}</span>
     {long && <button type="button" className="block text-[11px] font-semibold leading-5 text-primary hover:underline" aria-expanded={expanded}
       onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
       onDoubleClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>

@@ -677,3 +677,6 @@ body::before {
   background: color-mix(in srgb, var(--scope) 13%, transparent);
 }
 .scope-chip::before { content: ''; flex-shrink: 0; width: 6px; height: 6px; border-radius: 999px; background: var(--scope); }
+
+/* Nhãn phạm vi đứng đầu tên việc, cùng dòng. */
+.scope-chip-lead { margin-right: 6px; vertical-align: 1px; }
