@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Gantt, spanOf, UNGROUPED, type GanttView, type MenuTarget } from '../components/Gantt';
 import type { MenuItem } from '../components/ContextMenu';
-import { GetflyBox, useGetflyJob, useGetflyStatus } from '../components/GetflyBox';
+import { GetflyBox, useGetflyJob, useGetflyStatus, type GetflyScope } from '../components/GetflyBox';
+import { PhaseBar } from '../components/PhaseBar';
 import { ImportSheet } from '../components/ImportSheet';
 import { MembersSheet, ProjectSheet } from '../components/ProjectSheet';
 import { TaskSheet } from '../components/TaskSheet';
@@ -85,11 +86,17 @@ export function ProjectPage() {
   const [scopeFilter, setScopeFilter] = useState(() => { try { return localStorage.getItem(`project:scope:${id}`) ?? ''; } catch { return ''; } });
   useEffect(() => { try { scopeFilter ? localStorage.setItem(`project:scope:${id}`, scopeFilter) : localStorage.removeItem(`project:scope:${id}`); } catch { /* riêng tư */ } }, [scopeFilter, id]);
   const activeScope = scopeFilter && scopeFilter !== 'none' && !p?.scopes?.some((s) => s.id === scopeFilter) ? '' : scopeFilter;
+  // Phase đang xem: '' = tất cả, 'none' = chưa có phase, còn lại = id phase. Nhớ theo dự án trên máy.
+  const [phaseFilter, setPhaseFilter] = useState(() => { try { return localStorage.getItem(`project:phase:${id}`) ?? ''; } catch { return ''; } });
+  useEffect(() => { try { phaseFilter ? localStorage.setItem(`project:phase:${id}`, phaseFilter) : localStorage.removeItem(`project:phase:${id}`); } catch { /* riêng tư */ } }, [phaseFilter, id]);
+  const activePhase = phaseFilter && phaseFilter !== 'none' && !p?.phases?.some((x) => x.id === phaseFilter) ? '' : phaseFilter;
+  const phaseTasks = useMemo(() => (!p ? [] : !activePhase ? p.tasks : p.tasks.filter((t) => (activePhase === 'none' ? !t.phaseId : t.phaseId === activePhase))), [p, activePhase]);
   const shown = useMemo<ProjectDetail | undefined>(() => p && {
     ...p,
-    groups: p.groups.map((g) => ({ ...g, collapsed: collapsed.includes(g.id) })),
-    tasks: !activeScope ? p.tasks : p.tasks.filter((t) => (activeScope === 'none' ? !t.scopeId : t.scopeId === activeScope)),
-  }, [p, collapsed, activeScope]);
+    // Xem một phase: chỉ hiện nhóm có việc trong phase đó (và nhóm còn trống để thêm việc).
+    groups: p.groups.filter((g) => !activePhase || phaseTasks.some((t) => t.groupId === g.id) || !p.tasks.some((t) => t.groupId === g.id)).map((g) => ({ ...g, collapsed: collapsed.includes(g.id) })),
+    tasks: !activeScope ? phaseTasks : phaseTasks.filter((t) => (activeScope === 'none' ? !t.scopeId : t.scopeId === activeScope)),
+  }, [p, collapsed, activeScope, activePhase, phaseTasks]);
 
   const editor = canEditRole(p?.myRole);
   const canTask = editor && can('project.task.write');
@@ -160,16 +167,59 @@ export function ProjectPage() {
       </div>
     );
   }
-  const span = spanOf(p.tasks);
-  const done = p.tasks.filter((t) => t.progress >= 100).length;
-  const overdue = p.tasks.filter((t) => t.endDate && t.endDate < today && t.progress < 100).length;
-  const avg = p.tasks.length ? Math.round(p.tasks.reduce((s, t) => s + t.progress, 0) / p.tasks.length) : 0;
+  // Số liệu đầu trang theo phase đang xem.
+  const curPhase = p.phases?.find((x) => x.id === activePhase) ?? null;
+  const span = spanOf(phaseTasks);
+  const done = phaseTasks.filter((t) => t.progress >= 100).length;
+  const overdue = phaseTasks.filter((t) => t.endDate && t.endDate < today && t.progress < 100).length;
+  const avg = phaseTasks.length ? Math.round(phaseTasks.reduce((s, t) => s + t.progress, 0) / phaseTasks.length) : 0;
 
   // ---- Cụm nút điều khiển đặt ở khoảng trống đầu bảng (trên cột # / Việc).
   const parentsWithSubs = p.tasks.filter((t) => t.subtasks?.length).map((t) => t.id);
   const allSubsCollapsed = parentsWithSubs.length > 0 && parentsWithSubs.every((x) => collapsedTasks.includes(x));
   // IconButton mặc định h-9 w-9: cx không gộp lớp Tailwind, nên dùng ! để cỡ nhỏ thắng.
   const tb = '!h-7 !w-7 !rounded-lg';
+  const scopeTools = (<>
+        {!!p.scopes?.length && (
+          <span className="inline-flex items-center gap-1">
+            <select aria-label="Lọc theo phạm vi" value={activeScope} onChange={(e) => setScopeFilter(e.target.value)}
+              className={cx('h-7 max-w-[180px] rounded-xl border bg-card px-2.5 text-[12px] font-semibold outline-none transition focus:border-primary', activeScope ? 'border-primary text-primary' : 'border-line text-ink-2')}>
+              <option value="">Mọi phạm vi</option>
+              {p.scopes.map((s) => <option key={s.id} value={s.id}>{s.name}{s.owner ? ` · ${s.owner}` : ''}</option>)}
+              <option value="none">Chưa gắn phạm vi</option>
+            </select>
+            <IconButton label={showScopes ? 'Ẩn nhãn phạm vi' : 'Hiện nhãn phạm vi'} aria-pressed={showScopes} className={cx(tb, showScopes && 'bg-fill text-primary')} onClick={() => setShowScopes((v) => !v)}><Tag size={18} weight={showScopes ? 'fill' : 'regular'} /></IconButton>
+          </span>
+        )}
+  </>);
+  const actionTools = (
+        <span className="inline-flex shrink-0 items-center gap-0.5">
+          {getfly.data?.configured && editor && can('project.project.write') && (
+            <IconButton
+              className={tb}
+              label={getflyJob.running ? `Đang chạy Getfly ${getflyJob.progress}` : !p.getflyCreatorId ? 'Thiết lập đồng bộ Getfly' : p.getflySyncedAt ? `Đồng bộ Getfly (lần cuối ${new Date(p.getflySyncedAt).toLocaleString('vi-VN')})` : 'Đồng bộ Getfly'}
+              disabled={getflyJob.running}
+              onClick={() => {
+                // Chưa chọn người tạo thì mở hộp cấu hình Getfly; xong rồi thì bấm là đồng bộ (chuột phải để mở cấu hình).
+                if (!p.getflyCreatorId) { setGetflyOpen(true); return; }
+                getflyJob.sync();
+              }}
+              onContextMenu={(e) => { e.preventDefault(); setGetflyOpen(true); }}
+            >
+              <CloudArrowUp size={18} className={getflyJob.running ? 'animate-pulse text-primary' : undefined} />
+            </IconButton>
+          )}
+          {p.sheetUrl && editor && can('project.project.write') && (
+            <IconButton className={tb} label="Đồng bộ Sheets" onClick={() => syncSheet.mutate()} disabled={syncSheet.isPending} title={p.sheetSyncedAt ? `Đồng bộ Sheets · lần cuối ${new Date(p.sheetSyncedAt).toLocaleString('vi-VN')}` : 'Đồng bộ Sheets'}>
+              <ArrowsClockwise size={18} className={syncSheet.isPending ? 'animate-spin' : undefined} />
+            </IconButton>
+          )}
+          {can('project.data.export') && <IconButton className={tb} label="Xuất" onClick={() => setExportOpen(true)}><DownloadSimple size={18} /></IconButton>}
+          {canTask && p.tasks.length > 1 && <IconButton className={tb} label="Sắp xếp theo ngày" onClick={sortAll} disabled={sortByDate.isPending} title="Sắp xếp việc trong từng nhóm theo ngày bắt đầu"><SortAscending size={18} /></IconButton>}
+          {canStruct && <IconButton className={tb} label="Thêm nhóm" onClick={() => setGroupSheet({ open: true, group: null })}><FolderPlus size={18} /></IconButton>}
+          {canTask && <Button size="sm" className="!h-7 !w-7 !rounded-lg !px-0" aria-label="Thêm việc" title="Thêm việc" onClick={() => setTaskSheet({ open: true, task: null, groupId: p.groups[0]?.id ?? null })}><ListPlus size={18} /></Button>}
+        </span>
+  );
   const headerTools = (
     <>
       {view === 'gantt' && (
@@ -189,6 +239,7 @@ export function ProjectPage() {
           {allSubsCollapsed ? <ArrowsOutLineVertical size={16} /> : <ArrowsInLineVertical size={16} />}
         </IconButton>
       )}
+      <span className="ml-auto inline-flex shrink-0 items-center gap-2">{scopeTools}{actionTools}</span>
     </>
   );
 
@@ -241,6 +292,20 @@ export function ProjectPage() {
     ...(canTask && p.tasks.length > 1 ? ['sep' as const, { label: 'Sắp xếp tất cả theo ngày', icon: <SortAscending size={14} />, onSelect: () => void sortAll() }] : []),
     'sep', { label: full ? 'Thoát toàn màn hình' : 'Toàn màn hình', icon: full ? <CornersIn size={14} /> : <CornersOut size={14} />, hint: full ? 'Esc' : undefined, onSelect: () => setFull((v) => !v) },
   ];
+  const getflyItems = (scope: GetflyScope, label: string, groupId: string | null): MenuItem[] => {
+    if (!getfly.data?.configured || !editor || !can('project.project.write')) return [];
+    const ready = !!p.getflyCreatorId && !!groupId && !!p.getflyGroups?.[groupId]?.id;
+    return [
+      'sep',
+      { label: 'Đồng bộ lên Getfly', icon: <CloudArrowUp size={14} />, disabled: getflyJob.running, onSelect: () => {
+        if (!ready) { toast('Chọn người tạo và gắn việc cha Getfly cho nhóm trước khi đồng bộ', 'error'); setGetflyOpen(true); return; }
+        getflyJob.syncScope(scope);
+      } },
+      { label: 'Xoá khỏi Getfly…', icon: <Trash size={14} />, danger: true, disabled: getflyJob.running, onSelect: async () => {
+        if (await confirm({ title: 'Xoá khỏi Getfly?', desc: <p>Chỉ xoá các việc app đã tạo trên Getfly cho <b>{label}</b>. Việc cha Getfly được giữ nguyên. Dữ liệu trong VNLab vẫn còn. Không hoàn tác được; lần đồng bộ sau có thể tạo lại.</p>, ok: 'Xoá khỏi Getfly', danger: true })) getflyJob.unsyncScope(scope);
+      } },
+    ];
+  };
   const menuFor = (target: MenuTarget): MenuItem[] => {
     if (target.kind === 'blank') return blankItems(target.date);
     if (target.kind === 'group') {
@@ -251,6 +316,7 @@ export function ProjectPage() {
         ...(canTask ? [{ label: 'Thêm việc vào nhóm', icon: <Plus size={14} />, onSelect: () => setTaskSheet({ open: true, task: null, groupId: gid }) }] : []),
         { label: isCollapsed ? 'Mở nhóm' : 'Thu gọn nhóm', icon: isCollapsed ? <ArrowsOutLineVertical size={14} /> : <ArrowsInLineVertical size={14} />, onSelect: () => toggleCollapse(key, !isCollapsed) },
         ...(canTask && target.tasks.length > 1 ? [{ label: 'Sắp xếp việc trong nhóm theo ngày', icon: <SortAscending size={14} />, onSelect: () => sortByDate.mutate(gid) }] : []),
+        ...(g ? getflyItems({ groupId: g.id }, `nhóm ${g.name}`, g.id) : []),
         ...(g && canStruct ? [
           'sep' as const,
           { label: 'Lên trên', icon: <ArrowUp size={14} />, disabled: gi <= 0, onSelect: () => moveGroup(g, -1) },
@@ -278,9 +344,10 @@ export function ProjectPage() {
     const done = t.progress >= 100;
     const ids = groupIds(t.groupId ?? null), pos = ids.indexOf(t.id);
     const d = target.date;
-    if (!canTask) return [{ label: 'Mở chi tiết', icon: <ArrowSquareOut size={14} />, onSelect: () => setTaskSheet({ open: true, task: t }) }];
+    if (!canTask) return [{ label: 'Mở chi tiết', icon: <ArrowSquareOut size={14} />, onSelect: () => setTaskSheet({ open: true, task: t }) }, ...getflyItems({ taskId: t.id }, t.name, t.groupId)];
     return [
       { label: 'Mở chi tiết', icon: <ArrowSquareOut size={14} />, onSelect: () => setTaskSheet({ open: true, task: t }) },
+      ...getflyItems({ taskId: t.id }, t.name, t.groupId),
       ...(d ? [
         'sep' as const,
         { label: `Bắt đầu từ ${fmtShort(d)}`, icon: <CalendarBlank size={14} />, onSelect: () => patchTask.mutate({ task: t, patch: { startDate: d, endDate: t.endDate && t.endDate >= d ? t.endDate : d } }) },
@@ -293,6 +360,11 @@ export function ProjectPage() {
         ...p.scopes.map((sc) => ({ label: sc.owner ? `${sc.name} · ${sc.owner}` : sc.name, checked: t.scopeId === sc.id, icon: <span className="block h-2.5 w-2.5 rounded-full" style={{ background: sc.color }} />, onSelect: () => patchTask.mutate({ task: t, patch: { scopeId: sc.id } }) })),
         'sep' as const,
         { label: 'Bỏ phạm vi', checked: !t.scopeId, onSelect: () => patchTask.mutate({ task: t, patch: { scopeId: null } }) },
+      ] }] : []),
+      ...(p.phases?.length ? [{ label: 'Phase', icon: <CalendarBlank size={14} />, children: [
+        ...p.phases.map((x) => ({ label: x.name, checked: t.phaseId === x.id, onSelect: () => patchTask.mutate({ task: t, patch: { phaseId: x.id } }) })),
+        'sep' as const,
+        { label: 'Chưa có phase', checked: !t.phaseId, onSelect: () => patchTask.mutate({ task: t, patch: { phaseId: null } }) },
       ] }] : []),
       { label: 'Chuyển nhóm', icon: <FolderSimple size={14} />, children: [
         ...p.groups.map((g) => ({ label: g.name, checked: t.groupId === g.id, onSelect: () => patchTask.mutate({ task: t, patch: { groupId: g.id } }) })),
@@ -324,12 +396,13 @@ export function ProjectPage() {
           <span className="flex flex-wrap items-center gap-1.5">
             {p.customer && <Chip>KH: {p.customer}</Chip>}
             <Chip>PM: {p.owner.name || p.owner.email}</Chip>
-            <Chip tone="primary">{avg}% · {done}/{p.tasks.length} việc</Chip>
+            <Chip tone="primary">{curPhase ? `${curPhase.name}: ` : ''}{avg}% · {done}/{phaseTasks.length} việc</Chip>
             {overdue > 0 && <Chip tone="danger">{overdue} quá hạn</Chip>}
             {/* Bắt đầu = ngày bắt đầu dự án (Cài đặt); chưa đặt thì lấy ngày bắt đầu sớm nhất của việc. Kết thúc = hạn muộn nhất của việc. */}
-            {(p.startDate || span) && (() => {
-              const start = p.startDate ?? span!.start;
-              const end = span?.end;
+            {(p.startDate || span || curPhase?.startDate) && (() => {
+              const start = curPhase ? curPhase.startDate ?? span?.start ?? '' : p.startDate ?? span!.start;
+              const end = curPhase?.endDate ?? span?.end;
+              if (!start) return null;
               return <Chip className="num">{fmtShort(start)}{end ? ` → ${fmtShort(end)}` : ''}{end && end >= today ? ` · còn ${diffDays(today, end)} ngày` : ''}</Chip>;
             })()}
             {p.myRole !== 'owner' && <Chip tone="warning">{ROLE_LABEL[p.myRole]}</Chip>}
@@ -345,44 +418,10 @@ export function ProjectPage() {
       />
 
       <div className={cx(full && 'gantt-full fixed inset-0 z-[45] flex flex-col overflow-hidden p-3 md:p-4')} style={full ? { background: 'var(--bg-grad, var(--bg))' } : undefined}>
+      <PhaseBar project={p} value={activePhase} onChange={setPhaseFilter} canEdit={editor && can('project.project.write')} />
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Segmented size="sm" value={view} onChange={setView} options={[{ value: 'gantt', label: 'Gantt' }, { value: 'list', label: 'Danh sách' }]} className="w-44" />
-        {!!p.scopes?.length && (
-          <span className="inline-flex items-center gap-1">
-            <select aria-label="Lọc theo phạm vi" value={activeScope} onChange={(e) => setScopeFilter(e.target.value)}
-              className={cx('h-9 max-w-[180px] rounded-xl border bg-card px-2.5 text-[13px] font-semibold outline-none transition focus:border-primary', activeScope ? 'border-primary text-primary' : 'border-line text-ink-2')}>
-              <option value="">Mọi phạm vi</option>
-              {p.scopes.map((s) => <option key={s.id} value={s.id}>{s.name}{s.owner ? ` · ${s.owner}` : ''}</option>)}
-              <option value="none">Chưa gắn phạm vi</option>
-            </select>
-            <IconButton label={showScopes ? 'Ẩn nhãn phạm vi' : 'Hiện nhãn phạm vi'} aria-pressed={showScopes} className={cx(showScopes && 'bg-fill text-primary')} onClick={() => setShowScopes((v) => !v)}><Tag size={18} weight={showScopes ? 'fill' : 'regular'} /></IconButton>
-          </span>
-        )}
-        <span className="ml-auto flex flex-wrap items-center gap-2">
-          {getfly.data?.configured && editor && can('project.project.write') && (
-            <IconButton
-              label={getflyJob.running ? `Đang chạy Getfly ${getflyJob.progress}` : !p.getflyCreatorId ? 'Thiết lập đồng bộ Getfly' : p.getflySyncedAt ? `Đồng bộ Getfly (lần cuối ${new Date(p.getflySyncedAt).toLocaleString('vi-VN')})` : 'Đồng bộ Getfly'}
-              disabled={getflyJob.running}
-              onClick={() => {
-                // Chưa chọn người tạo thì mở hộp cấu hình Getfly; xong rồi thì bấm là đồng bộ (chuột phải để mở cấu hình).
-                if (!p.getflyCreatorId) { setGetflyOpen(true); return; }
-                getflyJob.sync();
-              }}
-              onContextMenu={(e) => { e.preventDefault(); setGetflyOpen(true); }}
-            >
-              <CloudArrowUp size={18} className={getflyJob.running ? 'animate-pulse text-primary' : undefined} />
-            </IconButton>
-          )}
-          {p.sheetUrl && editor && can('project.project.write') && (
-            <IconButton label="Đồng bộ Sheets" onClick={() => syncSheet.mutate()} disabled={syncSheet.isPending} title={p.sheetSyncedAt ? `Đồng bộ Sheets · lần cuối ${new Date(p.sheetSyncedAt).toLocaleString('vi-VN')}` : 'Đồng bộ Sheets'}>
-              <ArrowsClockwise size={18} className={syncSheet.isPending ? 'animate-spin' : undefined} />
-            </IconButton>
-          )}
-          {can('project.data.export') && <IconButton label="Xuất" onClick={() => setExportOpen(true)}><DownloadSimple size={18} /></IconButton>}
-          {canTask && p.tasks.length > 1 && <IconButton label="Sắp xếp theo ngày" onClick={sortAll} disabled={sortByDate.isPending} title="Sắp xếp việc trong từng nhóm theo ngày bắt đầu"><SortAscending size={18} /></IconButton>}
-          {canStruct && <IconButton label="Thêm nhóm" onClick={() => setGroupSheet({ open: true, group: null })}><FolderPlus size={18} /></IconButton>}
-          {canTask && <Button size="sm" className="w-9 !px-0" aria-label="Thêm việc" title="Thêm việc" onClick={() => setTaskSheet({ open: true, task: null, groupId: p.groups[0]?.id ?? null })}><ListPlus size={18} /></Button>}
-        </span>
+        {!p.groups.length && !p.tasks.length && <span className="ml-auto flex flex-wrap items-center gap-1">{scopeTools}{actionTools}</span>}
       </div>
 
       {!p.groups.length && !p.tasks.length ? (
@@ -430,7 +469,7 @@ export function ProjectPage() {
       {view === 'gantt' && !full && <p className="mt-2 hidden px-1 text-[12px] text-muted md:block">Bấm đúp vào ô để sửa tại chỗ (Enter lưu, Esc huỷ, Tab sang ô kế); bấm số thứ tự để mở chi tiết, ghi chú, lịch sử. Kéo thanh để dời ngày, kéo hai mép đổi ngày bắt đầu / kết thúc. Khung nét đứt "gốc" là khoảng ngày ban đầu của việc đã dời / gia hạn. Kéo ô số thứ tự để đổi thứ tự trong nhóm; nút ⤢ ở góc bảng để phóng to cả bảng ra toàn màn hình (Esc thoát).</p>}
       </div>
 
-      <TaskSheet open={taskSheet.open} onClose={() => setTaskSheet((s) => ({ ...s, open: false }))} project={p} task={taskSheet.task} groupId={taskSheet.groupId ?? null} canEdit={editor} />
+      <TaskSheet open={taskSheet.open} onClose={() => setTaskSheet((s) => ({ ...s, open: false }))} project={p} task={taskSheet.task} groupId={taskSheet.groupId ?? null} phaseId={activePhase && activePhase !== 'none' ? activePhase : null} canEdit={editor} />
       <GroupSheet open={groupSheet.open} onClose={() => setGroupSheet((s) => ({ ...s, open: false }))} project={p} group={groupSheet.group} confirm={confirm} onSort={(g) => { sortByDate.mutate(g.id); setGroupSheet((s) => ({ ...s, open: false })); }} />
       <Sheet wide open={getflyOpen} onClose={() => setGetflyOpen(false)} title="Đồng bộ Getfly CRM">
         <GetflyBox project={p} canEdit={editor && can('project.project.write')} />

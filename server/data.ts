@@ -18,7 +18,7 @@ export type MemberRole = 'owner' | 'editor' | 'viewer';
 export type ProjectRow = {
   id: string; ownerId: string; name: string; code: string; customer: string; description: string; startDate: string | null;
   color: string; satWeight: number; sunWeight: number; archived: boolean; createdAt: Date; updatedAt: Date;
-  sheetId: string | null; sheetAuto: boolean; sheetSyncedAt: Date | null; sheetError: string | null;
+  sheetId: string | null; sheetAuto: boolean; sheetCollapseSubtasks: boolean; sheetSyncedAt: Date | null; sheetError: string | null;
   exportColumns: string[] | null;
   aiContext: string;
   getflyParentCode: string; getflyParentName: string; getflyProjectName: string; getflyUsers: Record<string, string>;
@@ -33,7 +33,9 @@ export type TaskRow = {
   startDate: string | null; endDate: string | null; days: number | null; note: string; sort: number; createdAt: Date; updatedAt: Date;
   baselineStart: string | null; baselineEnd: string | null;
   scopeId: string | null;
+  phaseId: string | null;
 };
+export type PhaseRow = { id: string; name: string; startDate: string | null; endDate: string | null; note: string; sort: number };
 export type ScopeRow = { id: string; name: string; color: string; owner: string; note: string; sort: number };
 
 export const zId = z.uuid();
@@ -97,7 +99,7 @@ export const projectView = (p: ProjectRow) => ({
   color: p.color, satWeight: Number(p.satWeight), sunWeight: Number(p.sunWeight), archived: p.archived,
   createdAt: new Date(p.createdAt).toISOString(), updatedAt: new Date(p.updatedAt).toISOString(),
   sheetId: p.sheetId ?? null, sheetUrl: p.sheetId ? `https://docs.google.com/spreadsheets/d/${p.sheetId}/edit` : null,
-  sheetAuto: !!p.sheetAuto, sheetSyncedAt: p.sheetSyncedAt ? new Date(p.sheetSyncedAt).toISOString() : null, sheetError: p.sheetError ?? null,
+  sheetAuto: !!p.sheetAuto, sheetCollapseSubtasks: p.sheetCollapseSubtasks ?? true, sheetSyncedAt: p.sheetSyncedAt ? new Date(p.sheetSyncedAt).toISOString() : null, sheetError: p.sheetError ?? null,
   exportColumns: p.exportColumns ?? null,
   aiContext: p.aiContext ?? '',
   getflyParentCode: p.getflyParentCode ?? '', getflyParentName: p.getflyParentName ?? '', getflyProjectName: p.getflyProjectName ?? '',
@@ -110,6 +112,7 @@ export const projectView = (p: ProjectRow) => ({
 export const taskView = (t: Record<string, unknown>) => ({
   id: t.id as string, projectId: t.projectId as string, groupId: (t.groupId as string | null) ?? null, name: t.name as string,
   scopeId: (t.scopeId as string | null) ?? null,
+  phaseId: (t.phaseId as string | null) ?? null,
   subtasks: (t.subtasks ?? []) as Subtask[],
   assignee: t.assignee as string, support: t.support as string, progress: t.progress as number,
   startDate: (t.startDate as string | null) ?? null, endDate: (t.endDate as string | null) ?? null,
@@ -171,7 +174,8 @@ export async function projectBundle(id: string) {
     where t.project_id = ${id}
     order by (t.group_id is null), g.sort, g.created_at, t.sort, t.created_at`;
   const scopes = await sql<ScopeRow[]>`select id, name, color, owner, note, sort from scopes where project_id = ${id} order by sort, created_at`;
-  return { ...projectView(p), groups, scopes, tasks: tasks.map(taskView) };
+  const phases = await sql<PhaseRow[]>`select id, name, to_char(start_date, 'YYYY-MM-DD') as start_date, to_char(end_date, 'YYYY-MM-DD') as end_date, note, sort from phases where project_id = ${id} order by sort, start_date nulls last, created_at`;
+  return { ...projectView(p), groups, scopes, phases, tasks: tasks.map(taskView) };
 }
 
 export async function projectMembers(p: ProjectRow) {
@@ -289,6 +293,7 @@ export const taskFields = z.object({
   subtasks: z.array(subtaskFields).max(100).optional(),
   groupId: zId.nullable(),
   scopeId: zId.nullable(),
+  phaseId: zId.nullable(),
   name: zText(300).min(1, 'Nhập tên việc'),
   assignee: zText(160),
   support: zText(300),
@@ -298,7 +303,7 @@ export const taskFields = z.object({
   days: z.number().min(0).max(9999).nullable(),
   note: zText(4000),
 });
-export const taskCreate = taskFields.partial({ scopeId: true, groupId: true, assignee: true, support: true, progress: true, startDate: true, endDate: true, days: true, note: true });
+export const taskCreate = taskFields.partial({ phaseId: true, scopeId: true, groupId: true, assignee: true, support: true, progress: true, startDate: true, endDate: true, days: true, note: true });
 export type TaskCreate = z.infer<typeof taskCreate>;
 export type TaskPatch = Partial<z.infer<typeof taskFields>>;
 
@@ -310,12 +315,13 @@ export async function insertTask(projectId: string, b: TaskCreate) {
   checkDates(b);
   await groupBelongs(projectId, b.groupId);
   await scopeBelongs(projectId, b.scopeId);
+  await phaseBelongs(projectId, b.phaseId);
   const groupId = b.groupId ?? null;
   const both = !!(b.startDate && b.endDate);
   const subtasks = normalizeSubtasks(b.subtasks ?? []);
   const [t] = await sql`
-    insert into tasks (project_id, group_id, scope_id, name, assignee, support, progress, start_date, end_date, days, note, subtasks, baseline_start, baseline_end, sort)
-    values (${projectId}, ${groupId}, ${b.scopeId ?? null}, ${b.name}, ${b.assignee ?? ''}, ${b.support ?? ''}, ${subtaskProgress(subtasks, b.progress ?? 0)}, ${b.startDate ?? null}, ${b.endDate ?? null}, ${b.days ?? null}, ${b.note ?? ''}, ${sql.json(subtasks)},
+    insert into tasks (project_id, group_id, scope_id, phase_id, name, assignee, support, progress, start_date, end_date, days, note, subtasks, baseline_start, baseline_end, sort)
+    values (${projectId}, ${groupId}, ${b.scopeId ?? null}, ${b.phaseId ?? null}, ${b.name}, ${b.assignee ?? ''}, ${b.support ?? ''}, ${subtaskProgress(subtasks, b.progress ?? 0)}, ${b.startDate ?? null}, ${b.endDate ?? null}, ${b.days ?? null}, ${b.note ?? ''}, ${sql.json(subtasks)},
       ${both ? b.startDate! : null}, ${both ? b.endDate! : null},
       (select coalesce(max(sort), -1) + 1 from tasks where project_id = ${projectId} and group_id is not distinct from ${groupId}))
     returning *`;
@@ -323,14 +329,69 @@ export async function insertTask(projectId: string, b: TaskCreate) {
   return taskView(t);
 }
 
+/** Chuyển việc giữa hai dự án trong một transaction, giữ id / lịch sử / task con / liên kết Getfly. */
+export async function transferTasks(source: ProjectRow, target: ProjectRow, ids: string[], actorId: string) {
+  if (source.id === target.id) throw bad('Dự án nguồn và đích phải khác nhau');
+  if (!ids.length || new Set(ids).size !== ids.length) throw bad('Chọn các mã việc khác nhau');
+  const moved = await sql.begin(async (tx) => {
+    await tx`select id from projects where id in ${tx([source.id, target.id])} order by id for update`;
+    const tasks = await tx<TaskRow[]>`select * from tasks where project_id = ${source.id} and id in ${tx(ids)} order by group_id, sort, id for update`;
+    if (tasks.length !== ids.length) throw bad('Một hoặc nhiều việc không còn thuộc dự án nguồn; chưa chuyển việc nào');
+    const [freshTarget] = await tx<ProjectRow[]>`select * from projects where id = ${target.id}`;
+    const targetParents = { ...(freshTarget.getflyGroups ?? {}) };
+    const groupMap = new Map<string, string>(), scopeMap = new Map<string, string>();
+    const result: Record<string, unknown>[] = [];
+    for (const task of tasks) {
+      let groupId: string | null = null, scopeId: string | null = null;
+      if (task.groupId) {
+        if (!groupMap.has(task.groupId)) {
+          const [group] = await tx`select * from task_groups where id = ${task.groupId} and project_id = ${source.id}`;
+          if (!group) throw bad('Nhóm nguồn không hợp lệ');
+          let [dest] = await tx`select id from task_groups where project_id = ${target.id} and lower(name) = lower(${group.name}) order by sort, id limit 1`;
+          if (!dest) [dest] = await tx`insert into task_groups (project_id, name, sort) values (${target.id}, ${group.name}, (select coalesce(max(sort), -1) + 1 from task_groups where project_id = ${target.id})) returning id`;
+          groupMap.set(task.groupId, dest.id);
+          if (!targetParents[dest.id] && source.getflyGroups?.[task.groupId]) targetParents[dest.id] = source.getflyGroups[task.groupId];
+        }
+        groupId = groupMap.get(task.groupId)!;
+      }
+      if (task.scopeId) {
+        if (!scopeMap.has(task.scopeId)) {
+          const [scope] = await tx<ScopeRow[]>`select * from scopes where id = ${task.scopeId} and project_id = ${source.id}`;
+          if (!scope) throw bad('Phạm vi nguồn không hợp lệ');
+          let [dest] = await tx`select id from scopes where project_id = ${target.id} and lower(name) = lower(${scope.name}) limit 1`;
+          if (!dest) [dest] = await tx`insert into scopes (project_id, name, color, owner, note, sort) values (${target.id}, ${scope.name}, ${scope.color}, ${scope.owner}, ${scope.note}, (select coalesce(max(sort), -1) + 1 from scopes where project_id = ${target.id})) returning id`;
+          scopeMap.set(task.scopeId, dest.id);
+        }
+        scopeId = scopeMap.get(task.scopeId)!;
+      }
+      const [row] = await tx`update tasks set project_id = ${target.id}, group_id = ${groupId}, scope_id = ${scopeId}, phase_id = null, sort = (select coalesce(max(sort), -1) + 1 from tasks where project_id = ${target.id} and group_id is not distinct from ${groupId}), updated_at = now() where id = ${task.id} and project_id = ${source.id} returning *`;
+      await tx`update task_history set project_id = ${target.id} where task_id = ${task.id} and project_id = ${source.id}`;
+      await tx`insert into task_history (task_id, project_id, user_id, field, old_value, new_value) values (${task.id}, ${target.id}, ${actorId}, 'project', ${source.name}, ${target.name})`;
+      result.push(row);
+    }
+    // Chuyển các liên kết của việc được chọn và task con cũ; việc nhóm vẫn thuộc dự án nguồn.
+    const links = await tx<{ localId: string; parentLocal: string | null }[]>`select local_id, parent_local from getfly_links where project_id = ${source.id}`;
+    const moving = new Set(tasks.flatMap((t) => [t.id, ...(t.subtasks ?? []).map((child) => child.id)]));
+    for (let added = true; added;) { added = false; for (const link of links) if (link.parentLocal && moving.has(link.parentLocal) && !moving.has(link.localId)) { moving.add(link.localId); added = true; } }
+    if (moving.size) await tx`update getfly_links set project_id = ${target.id} where project_id = ${source.id} and local_id in ${tx([...moving])}`;
+    for (const row of result) await tx`update getfly_links set parent_local = ${row.groupId ? `g:${row.groupId}` : null} where project_id = ${target.id} and local_id = ${String(row.id)}`;
+    await tx`update projects set getfly_groups = ${tx.json(targetParents)}, updated_at = now() where id = ${target.id}`;
+    await tx`update projects set updated_at = now() where id = ${source.id}`;
+    return result;
+  });
+  emitChanged(source.id); emitChanged(target.id);
+  return moved.map(taskView);
+}
+
 /** Trường được ghi lịch sử khi đổi. */
-const TRACKED: (keyof TaskPatch)[] = ['name', 'groupId', 'scopeId', 'assignee', 'support', 'progress', 'startDate', 'endDate', 'days', 'note', 'subtasks'];
+const TRACKED: (keyof TaskPatch)[] = ['name', 'groupId', 'scopeId', 'phaseId', 'assignee', 'support', 'progress', 'startDate', 'endDate', 'days', 'note', 'subtasks'];
 const asText = (v: unknown) => (v === null || v === undefined || v === '' ? null : typeof v === 'object' ? JSON.stringify(v) : String(v));
 
 export async function updateTask(projectId: string, taskId: string, b: TaskPatch, actorId: string | null = null) {
   if (!Object.keys(b).length) throw bad('Không có gì để sửa');
   if (b.groupId !== undefined) await groupBelongs(projectId, b.groupId);
   if (b.scopeId !== undefined) await scopeBelongs(projectId, b.scopeId);
+  if (b.phaseId !== undefined) await phaseBelongs(projectId, b.phaseId);
   const t = await sql.begin(async (tx) => {
     const [cur] = await tx<TaskRow[]>`select * from tasks where id = ${taskId} and project_id = ${projectId} for update`;
     if (!cur) throw notFound();
@@ -511,6 +572,135 @@ export async function reorderScopes(projectId: string, ids: string[]) {
   await touch(projectId);
 }
 
+// ---------------------------------------------------------------- phase
+
+export const phaseSchema = z.object({
+  name: zText(80).min(1, 'Nhập tên phase'),
+  startDate: zDate.nullable().optional(),
+  endDate: zDate.nullable().optional(),
+  note: zText(1000).optional(),
+});
+const phaseCols = sql`id, name, to_char(start_date, 'YYYY-MM-DD') as start_date, to_char(end_date, 'YYYY-MM-DD') as end_date, note, sort`;
+export async function phaseBelongs(projectId: string, phaseId: string | null | undefined) {
+  if (!phaseId) return;
+  const [m] = await sql`select 1 from phases where id = ${phaseId} and project_id = ${projectId}`;
+  if (!m) throw bad('Phase không thuộc dự án này');
+}
+export async function findPhase(projectId: string, name: string) {
+  const [m] = await sql<PhaseRow[]>`select ${phaseCols} from phases where project_id = ${projectId} and lower(name) = ${name.trim().toLowerCase()}`;
+  return m ?? null;
+}
+export async function createPhase(projectId: string, b: z.infer<typeof phaseSchema>) {
+  checkDates(b);
+  if (await findPhase(projectId, b.name)) throw bad(`Đã có phase "${b.name.trim()}"`);
+  const [m] = await sql<PhaseRow[]>`
+    insert into phases (project_id, name, start_date, end_date, note, sort)
+    values (${projectId}, ${b.name.trim()}, ${b.startDate ?? null}, ${b.endDate ?? null}, ${b.note ?? ''}, (select coalesce(max(sort), -1) + 1 from phases where project_id = ${projectId}))
+    returning ${phaseCols}`;
+  await touch(projectId);
+  return m;
+}
+export async function updatePhase(projectId: string, phaseId: string, patch: Partial<z.infer<typeof phaseSchema>>) {
+  if (!Object.keys(patch).length) throw bad('Không có gì để sửa');
+  if (patch.name) { const dup = await findPhase(projectId, patch.name); if (dup && dup.id !== phaseId) throw bad(`Đã có phase "${patch.name}"`); }
+  const [cur] = await sql<PhaseRow[]>`select ${phaseCols} from phases where id = ${phaseId} and project_id = ${projectId}`;
+  if (!cur) throw notFound();
+  checkDates({ startDate: patch.startDate !== undefined ? patch.startDate : cur.startDate, endDate: patch.endDate !== undefined ? patch.endDate : cur.endDate });
+  const [m] = await sql<PhaseRow[]>`update phases set ${sql(patch)} where id = ${phaseId} returning ${phaseCols}`;
+  await touch(projectId);
+  return m;
+}
+/** Xoá phase: mặc định việc trong phase thành "chưa có phase"; deleteTasks = xoá luôn việc. */
+export async function deletePhase(projectId: string, phaseId: string, deleteTasks = false) {
+  const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from tasks where phase_id = ${phaseId} and project_id = ${projectId}`;
+  await sql.begin(async (tx) => {
+    if (deleteTasks) await tx`delete from tasks where phase_id = ${phaseId} and project_id = ${projectId}`;
+    const rows = await tx`delete from phases where id = ${phaseId} and project_id = ${projectId} returning id`;
+    if (!rows.length) throw notFound();
+  });
+  await touch(projectId);
+  return { tasks: n, deletedTasks: deleteTasks ? n : 0 };
+}
+export async function reorderPhases(projectId: string, ids: string[]) {
+  await sql.begin(async (tx) => {
+    for (const [i, id] of ids.entries()) await tx`update phases set sort = ${i} where id = ${id} and project_id = ${projectId}`;
+  });
+  await touch(projectId);
+}
+/** Gán việc vào một phase (null = bỏ phase): danh sách id, hoặc 'unphased' = mọi việc chưa có phase. */
+export async function setTasksPhase(projectId: string, phaseId: string | null, taskIds: string[] | 'unphased') {
+  await phaseBelongs(projectId, phaseId);
+  const rows = taskIds === 'unphased'
+    ? await sql`update tasks set phase_id = ${phaseId} where project_id = ${projectId} and phase_id is null returning id`
+    : await sql`update tasks set phase_id = ${phaseId} where project_id = ${projectId} and id = any(${taskIds}::uuid[]) returning id`;
+  await touch(projectId);
+  return { moved: rows.length };
+}
+
+/**
+ * Gộp dự án nguồn vào dự án đích thành một phase (hai "dự án" thực ra là hai giai đoạn dùng chung cấu hình).
+ * - Việc chưa có phase của dự án đích được gán `targetPhase` (nếu đặt).
+ * - Mọi việc của nguồn chuyển sang đích, vào phase `sourcePhase` (tạo nếu chưa có); nhóm / phạm vi ghép theo tên (thiếu thì tạo).
+ * - Lịch sử việc đi theo; thành viên của nguồn chưa có ở đích được thêm (giữ vai trò).
+ * - Dự án nguồn được lưu trữ (không xoá) và đổi tên "… (đã gộp vào …)"; liên kết Getfly của nguồn bị bỏ.
+ */
+export async function mergeProjectAsPhase(targetId: string, sourceId: string, sourcePhase: string, targetPhase?: string) {
+  if (targetId === sourceId) throw bad('Không gộp dự án vào chính nó');
+  const out = await sql.begin(async (tx) => {
+    await tx`select id from projects where id in ${tx([targetId, sourceId])} order by id for update`;
+    const [target] = await tx<ProjectRow[]>`select * from projects where id = ${targetId}`;
+    const [source] = await tx<ProjectRow[]>`select * from projects where id = ${sourceId}`;
+    if (!target || !source) throw notFound();
+    const phaseOf = async (name: string) => {
+      const [f] = await tx<{ id: string }[]>`select id from phases where project_id = ${targetId} and lower(name) = ${name.trim().toLowerCase()}`;
+      if (f) return f.id;
+      const [r] = await tx<{ id: string }[]>`insert into phases (project_id, name, sort) values (${targetId}, ${name.trim()}, (select coalesce(max(sort), -1) + 1 from phases where project_id = ${targetId})) returning id`;
+      return r.id;
+    };
+    let tagged = 0;
+    if (targetPhase?.trim()) {
+      const tp = await phaseOf(targetPhase);
+      tagged = (await tx`update tasks set phase_id = ${tp} where project_id = ${targetId} and phase_id is null returning id`).length;
+    }
+    const sp = await phaseOf(sourcePhase);
+    const groupMap = new Map<string, string>();
+    for (const g of await tx<{ id: string; name: string }[]>`select id, name from task_groups where project_id = ${sourceId} order by sort, created_at`) {
+      const [f] = await tx<{ id: string }[]>`select id from task_groups where project_id = ${targetId} and lower(name) = ${g.name.trim().toLowerCase()}`;
+      groupMap.set(g.id, f?.id ?? (await tx<{ id: string }[]>`insert into task_groups (project_id, name, sort) values (${targetId}, ${g.name}, (select coalesce(max(sort), -1) + 1 from task_groups where project_id = ${targetId})) returning id`)[0].id);
+    }
+    const scopeMap = new Map<string, string>();
+    for (const s of await tx<{ id: string; name: string; color: string; owner: string; note: string }[]>`select id, name, color, owner, note from scopes where project_id = ${sourceId} order by sort, created_at`) {
+      const [f] = await tx<{ id: string }[]>`select id from scopes where project_id = ${targetId} and lower(name) = ${s.name.trim().toLowerCase()}`;
+      scopeMap.set(s.id, f?.id ?? (await tx<{ id: string }[]>`insert into scopes (project_id, name, color, owner, note, sort) values (${targetId}, ${s.name}, ${s.color}, ${s.owner}, ${s.note}, (select coalesce(max(sort), -1) + 1 from scopes where project_id = ${targetId})) returning id`)[0].id);
+    }
+    const tasks = await tx<{ id: string; groupId: string | null; scopeId: string | null; sort: number }[]>`select id, group_id, scope_id, sort from tasks where project_id = ${sourceId} order by sort`;
+    const offset = new Map<string | null, number>();
+    for (const t of tasks) {
+      const gid = t.groupId ? groupMap.get(t.groupId)! : null;
+      if (!offset.has(gid)) {
+        const [{ m }] = await tx<{ m: number }[]>`select coalesce(max(sort), -1) + 1 as m from tasks where project_id = ${targetId} and group_id is not distinct from ${gid}`;
+        offset.set(gid, m);
+      }
+      const sort = offset.get(gid)!;
+      offset.set(gid, sort + 1);
+      await tx`update tasks set project_id = ${targetId}, group_id = ${gid}, scope_id = ${t.scopeId ? scopeMap.get(t.scopeId)! : null}, phase_id = ${sp}, sort = ${sort} where id = ${t.id}`;
+    }
+    await tx`update task_history set project_id = ${targetId} where project_id = ${sourceId}`;
+    await tx`
+      insert into project_members (project_id, email, user_id, role, invited_by)
+      select ${targetId}, m.email, m.user_id, m.role, m.invited_by from project_members m where m.project_id = ${sourceId}
+      on conflict (project_id, email) do nothing`;
+    await tx`delete from getfly_links where project_id = ${sourceId}`;
+    await tx`delete from task_groups where project_id = ${sourceId}`;
+    await tx`delete from scopes where project_id = ${sourceId}`;
+    await tx`update projects set archived = true, name = ${`${source.name} (đã gộp vào ${target.name})`.slice(0, 160)}, updated_at = now() where id = ${sourceId}`;
+    return { moved: tasks.length, tagged, phaseId: sp, groupsMapped: groupMap.size, scopesMapped: scopeMap.size, sourceName: source.name };
+  });
+  await touch(targetId);
+  await touch(sourceId);
+  return out;
+}
+
 export async function reorderGroups(projectId: string, ids: string[]) {
   await sql.begin(async (tx) => {
     for (const [i, id] of ids.entries()) await tx`update task_groups set sort = ${i} where id = ${id} and project_id = ${projectId}`;
@@ -577,8 +767,8 @@ export async function importGroups(projectId: string, groups: ImportGroup[]) {
         const both = !!(t.startDate && t.endDate);
         const subtasks = normalizeSubtasks(t.subtasks ?? []);
         await tx`
-          insert into tasks (project_id, group_id, scope_id, name, assignee, support, progress, start_date, end_date, days, note, subtasks, baseline_start, baseline_end, sort)
-          values (${projectId}, ${groupId}, ${t.scopeId ?? null}, ${t.name}, ${t.assignee ?? ''}, ${t.support ?? ''}, ${subtaskProgress(subtasks, t.progress ?? 0)}, ${t.startDate ?? null}, ${t.endDate ?? null}, ${t.days ?? null}, ${t.note ?? ''}, ${tx.json(subtasks)},
+          insert into tasks (project_id, group_id, scope_id, phase_id, name, assignee, support, progress, start_date, end_date, days, note, subtasks, baseline_start, baseline_end, sort)
+          values (${projectId}, ${groupId}, ${t.scopeId ?? null}, ${t.phaseId ?? null}, ${t.name}, ${t.assignee ?? ''}, ${t.support ?? ''}, ${subtaskProgress(subtasks, t.progress ?? 0)}, ${t.startDate ?? null}, ${t.endDate ?? null}, ${t.days ?? null}, ${t.note ?? ''}, ${tx.json(subtasks)},
             ${both ? t.startDate! : null}, ${both ? t.endDate! : null},
             (select coalesce(max(sort), -1) + 1 from tasks where project_id = ${projectId} and group_id is not distinct from ${groupId}))`;
         tasks++;

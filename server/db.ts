@@ -252,6 +252,25 @@ const MIGRATIONS: string[] = [
   `,
   // 14: nhóm việc (danh mục) gắn sẵn với một việc có trên Getfly: { groupId: { id, code, name } }; nhóm không gắn thì app tự tạo.
   `alter table projects add column getfly_groups jsonb not null default '{}'::jsonb;`,
+  // 15: lựa chọn thu gọn task con khi đồng bộ sang Google Sheets, riêng theo dự án.
+  `alter table projects add column sheet_collapse_subtasks boolean not null default true;`,
+  // 16: phase trong dự án (VD AMMS Tháng 10 / Tháng 11) — dùng chung cấu hình dự án (thành viên, phạm vi, nhóm, AI, Getfly…);
+  //     mỗi việc thuộc tối đa một phase. Nhóm việc (danh mục) dùng chung giữa các phase.
+  `
+  create table phases (
+    id uuid primary key default gen_random_uuid(),
+    project_id uuid not null references projects(id) on delete cascade,
+    name text not null,
+    start_date date,
+    end_date date,
+    note text not null default '',
+    sort int not null default 0,
+    created_at timestamptz not null default now()
+  );
+  create unique index phases_project_name on phases (project_id, lower(name));
+  alter table tasks add column phase_id uuid references phases(id) on delete set null;
+  create index on tasks (phase_id);
+  `,
 ];
 
 export async function migrate() {

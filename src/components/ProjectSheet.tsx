@@ -1,8 +1,8 @@
 import { ArrowSquareOut, ArrowsClockwise, Table, Trash, UserPlus, X } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { api, ROLE_LABEL, useAction, useCan, useMe, type GoogleStatus, type Member, type Project, type ProjectDetail } from '../lib/api';
+import { api, ROLE_LABEL, useAction, useCan, useMe, useProjects, type GoogleStatus, type Member, type Project, type ProjectDetail } from '../lib/api';
 import { ColumnPicker, normalizeColumns } from './ColumnPicker';
 import { ScopesEditor } from './ScopesEditor';
 import { GetflyBox } from './GetflyBox';
@@ -11,6 +11,8 @@ import { Avatar, Button, Chip, DateInput, Field, IconButton, Input, Segmented, S
 export const PROJECT_COLORS = ['#4274bc', '#6e9edc', '#0f7c8c', '#1f8a4c', '#b8860b', '#c74a1c', '#5b4bc4', '#a23b8a', '#6b5a52'];
 
 type Form = { name: string; code: string; customer: string; description: string; startDate: string; color: string; satWeight: number; sunWeight: number; archived: boolean; aiContext: string };
+const SETTINGS_TABS = [{ value: 'info', label: 'Thông tin' }, { value: 'scopes', label: 'Phạm vi' }, { value: 'sync', label: 'Đồng bộ' }, { value: 'ai', label: 'AI' }] as const;
+type SettingsTab = typeof SETTINGS_TABS[number]['value'];
 const empty: Form = { name: '', code: '', customer: '', description: '', startDate: '', color: PROJECT_COLORS[0], satWeight: 0.5, sunWeight: 0, archived: false, aiContext: '' };
 
 /** Tạo hoặc sửa dự án; chủ dự án còn lưu trữ / xoá được. */
@@ -19,9 +21,12 @@ export function ProjectSheet({ open, onClose, project, onImport }: { open: boole
   const can = useCan();
   const nav = useNavigate();
   const [f, setF] = useState<Form>(empty);
+  const [tab, setTab] = useState<SettingsTab>('info');
+  const tabId = useId();
+  useEffect(() => { if (open) setTab('info'); }, [open, project?.id]);
   useEffect(() => {
     if (open) setF(project ? { name: project.name, code: project.code, customer: project.customer, description: project.description, startDate: project.startDate ?? '', color: project.color, satWeight: project.satWeight, sunWeight: project.sunWeight, archived: project.archived, aiContext: project.aiContext ?? '' } : empty);
-  }, [open, project]);
+  }, [open, project?.id]);
   const owner = !project || project.myRole === 'owner';
 
   const save = useAction(async (b: Form) => {
@@ -47,11 +52,25 @@ export function ProjectSheet({ open, onClose, project, onImport }: { open: boole
         <div className="flex items-center gap-2">
           {project && owner && can('project.project.delete') && <IconButton label="Xoá dự án" onClick={del} className="text-danger hover:bg-danger-soft" disabled={busy}><Trash size={18} /></IconButton>}
           <Button variant="secondary" className="ml-auto" onClick={onClose}>Huỷ</Button>
-          <Button type="submit" form="project-form" disabled={busy || !f.name.trim()}>{busy ? 'Đang lưu…' : project ? 'Lưu' : 'Tạo dự án'}</Button>
+          {(!project || tab === 'info' || tab === 'ai') && <Button type="submit" form="project-form" disabled={busy || !f.name.trim()}>{busy ? 'Đang lưu…' : project ? 'Lưu' : 'Tạo dự án'}</Button>}
         </div>
       }
     >
+      {project && (
+        <div role="tablist" aria-label="Cài đặt dự án" className="sticky top-0 z-10 mb-4 flex gap-1 overflow-x-auto border-b border-line bg-surface py-2">
+          {SETTINGS_TABS.map((item, i) => (
+            <button key={item.value} type="button" role="tab" id={`${tabId}-tab-${item.value}`} aria-controls={`${tabId}-panel-${item.value}`} aria-selected={tab === item.value} tabIndex={tab === item.value ? 0 : -1}
+              className={cx('shrink-0 rounded-xl px-3 py-2 text-[13px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-primary', tab === item.value ? 'bg-primary-soft text-primary' : 'text-muted hover:bg-fill')}
+              onClick={() => setTab(item.value)} onKeyDown={(e) => {
+                const next = e.key === 'ArrowRight' ? (i + 1) % SETTINGS_TABS.length : e.key === 'ArrowLeft' ? (i + SETTINGS_TABS.length - 1) % SETTINGS_TABS.length : e.key === 'Home' ? 0 : e.key === 'End' ? SETTINGS_TABS.length - 1 : -1;
+                if (next < 0) return;
+                e.preventDefault(); setTab(SETTINGS_TABS[next].value); document.getElementById(`${tabId}-tab-${SETTINGS_TABS[next].value}`)?.focus();
+              }}>{item.label}</button>
+          ))}
+        </div>
+      )}
       <form id="project-form" className="pt-1" onSubmit={(e) => { e.preventDefault(); save.mutate({ ...f, name: f.name.trim() }); }}>
+        <div role={project ? 'tabpanel' : undefined} id={`${tabId}-panel-info`} aria-labelledby={project ? `${tabId}-tab-info` : undefined} hidden={!!project && tab !== 'info'}>
         <Field label="Tên dự án">
           <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required maxLength={160} autoFocus={!project} placeholder="VD: Website bán hàng" />
         </Field>
@@ -82,17 +101,21 @@ export function ProjectSheet({ open, onClose, project, onImport }: { open: boole
         <Field label="Mô tả">
           <Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} maxLength={2000} rows={2} />
         </Field>
+        {project && owner && <Toggle checked={f.archived} onChange={(v) => setF({ ...f, archived: v })} label="Lưu trữ dự án" desc="Ẩn khỏi Tổng quan, vẫn mở được trong danh sách Dự án" />}
+        </div>
         {project && (
+          <div role="tabpanel" id={`${tabId}-panel-ai`} aria-labelledby={`${tabId}-tab-ai`} hidden={tab !== 'ai'}>
           <Field label="Hướng dẫn cho AI (MCP)" hint="AI bên ngoài đọc phần này trước khi tạo / sửa việc: quy ước đặt tên, cách chia phạm vi, ai phụ trách gì… AI cũng tự ghi thêm được khi bạn bảo nó nhớ.">
             <Textarea value={f.aiContext} onChange={(e) => setF({ ...f, aiContext: e.target.value })} maxLength={20000} rows={5} placeholder={'VD:\n- Tên việc bắt đầu bằng động từ.\n- Việc nào cũng gắn phạm vi; phạm vi Kho do Lương phụ trách.'} />
           </Field>
+          </div>
         )}
-        {project && owner && <Toggle checked={f.archived} onChange={(v) => setF({ ...f, archived: v })} label="Lưu trữ dự án" desc="Ẩn khỏi Tổng quan, vẫn mở được trong danh sách Dự án" />}
       </form>
-      {project && <ScopesEditor project={project} canEdit={project.myRole !== 'viewer' && can('project.project.write')} />}
-      {project && <GetflyBox project={project} canEdit={project.myRole !== 'viewer' && can('project.project.write')} />}
+      {project && owner && <div hidden={tab !== 'info'}><MergeBox project={project} /></div>}
+      {project && <div role="tabpanel" id={`${tabId}-panel-scopes`} aria-labelledby={`${tabId}-tab-scopes`} hidden={tab !== 'scopes'}><ScopesEditor project={project} canEdit={project.myRole !== 'viewer' && can('project.project.write')} /></div>}
+
       {project && onImport && (
-        <div className="mt-5 rounded-2xl border border-line bg-fill/40 p-4">
+        <div hidden={tab !== 'info'} className="mt-5 rounded-2xl border border-line bg-fill/40 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[13px] font-bold">Nhập kế hoạch</p>
@@ -102,7 +125,10 @@ export function ProjectSheet({ open, onClose, project, onImport }: { open: boole
           </div>
         </div>
       )}
-      {project && owner && <GoogleSheetBox project={project} />}
+      {project && <div role="tabpanel" id={`${tabId}-panel-sync`} aria-labelledby={`${tabId}-tab-sync`} hidden={tab !== 'sync'}>
+        <GetflyBox project={project} canEdit={project.myRole !== 'viewer' && can('project.project.write')} />
+        {owner && <GoogleSheetBox project={project} />}
+      </div>}
     </Sheet>
   );
 }
@@ -182,7 +208,7 @@ function GoogleSheetBox({ project }: { project: ProjectDetail }) {
   const { toast, confirm } = useFeedback();
   const status = useQuery({ queryKey: ['google-status'], queryFn: () => api<GoogleStatus>('/google/status'), staleTime: Infinity });
   const [url, setUrl] = useState('');
-  const link = useAction((b: { sheetUrl?: string | null; sheetAuto?: boolean }) => api<Project>(`/projects/${project.id}/sheet`, { method: 'PATCH', body: b }), { onSuccess: (_r, b) => { if (b.sheetUrl) { setUrl(''); toast('Đã liên kết sheet, tự đồng bộ đã bật — bấm Đồng bộ ngay để ghi lần đầu'); } } });
+  const link = useAction((b: { sheetUrl?: string | null; sheetAuto?: boolean; sheetCollapseSubtasks?: boolean }) => api<Project>(`/projects/${project.id}/sheet`, { method: 'PATCH', body: b }), { onSuccess: (_r, b) => { if (b.sheetUrl) { setUrl(''); toast('Đã liên kết sheet, tự đồng bộ đã bật — bấm Đồng bộ ngay để ghi lần đầu'); } else if (b.sheetCollapseSubtasks !== undefined) toast('Đã lưu cách hiển thị — bấm Đồng bộ ngay để áp dụng'); } });
   const sync = useAction(() => api<{ sheetUrl: string }>(`/projects/${project.id}/sheet/sync`, { method: 'POST', body: {} }), { onSuccess: () => toast('Đã đồng bộ sang Google Sheet') });
   const unlink = async () => {
     if (await confirm({ title: 'Bỏ liên kết Google Sheet?', desc: <p>Sheet vẫn còn trên Google Drive; app chỉ thôi ghi vào đó.</p>, ok: 'Bỏ liên kết', danger: true })) link.mutate({ sheetUrl: null });
@@ -210,6 +236,9 @@ function GoogleSheetBox({ project }: { project: ProjectDetail }) {
           </div>
           {email && <p className="mt-2 text-[12px] text-muted">Sheet phải Share quyền <b>Người chỉnh sửa</b> cho <code className="rounded bg-fill px-1 py-0.5">{email}</code> <button type="button" onClick={copyEmail} className="font-semibold text-primary hover:underline">Chép</button></p>}
           <div className="mt-3"><Toggle checked={project.sheetAuto} onChange={(v) => link.mutate({ sheetAuto: v })} label="Tự đồng bộ" desc="Sau mỗi thay đổi việc / nhóm, ghi sang sheet (gộp trong 30 giây)" /></div>
+          <fieldset disabled={busy}>
+            <Toggle checked={project.sheetCollapseSubtasks ?? true} onChange={(v) => link.mutate({ sheetCollapseSubtasks: v })} label="Thu gọn task con khi đồng bộ" desc="Bật: chỉ hiện việc chính, bấm +/− để mở chi tiết. Tắt: hiện đầy đủ task con. Áp dụng cho lần đồng bộ tiếp theo." />
+          </fieldset>
           <p className="mb-1.5 text-[12.5px] font-semibold text-ink-2">Cột đồng bộ</p>
           <ColumnPicker value={normalizeColumns(project.exportColumns)} onChange={(v) => saveCols.mutate(v)} disabled={saveCols.isPending} />
         </>
@@ -229,5 +258,46 @@ function GoogleSheetBox({ project }: { project: ProjectDetail }) {
       )}
       {err && <p className="mt-2 text-[12.5px] text-danger">{err.message}</p>}
     </div>
+  );
+}
+
+/** Gộp một dự án khác (của mình) vào dự án này thành một phase — dùng khi hai "dự án" thực ra là hai giai đoạn. */
+function MergeBox({ project }: { project: ProjectDetail }) {
+  const { toast, confirm } = useFeedback();
+  const projects = useProjects();
+  const others = (projects.data ?? []).filter((x) => x.id !== project.id && x.myRole === 'owner' && !x.archived);
+  const unphased = project.tasks.filter((t) => !t.phaseId).length;
+  const [f, setF] = useState({ sourceId: '', sourcePhase: '', targetPhase: '' });
+  const merge = useAction(() => api<{ moved: number; tagged: number; sourceName: string }>(`/projects/${project.id}/merge`, { method: 'POST', body: { sourceId: f.sourceId, sourcePhase: f.sourcePhase.trim(), targetPhase: f.targetPhase.trim() || undefined } }), {
+    onSuccess: (r) => { toast(`Đã gộp “${r.sourceName}”: chuyển ${r.moved} việc${r.tagged ? `, gán phase cho ${r.tagged} việc sẵn có` : ''}`); setF({ sourceId: '', sourcePhase: '', targetPhase: '' }); },
+  });
+  if (!others.length) return null;
+  const src = others.find((x) => x.id === f.sourceId);
+  const go = async () => {
+    if (!src || !f.sourcePhase.trim()) return;
+    if (await confirm({ title: `Gộp “${src.name}” vào “${project.name}”?`, desc: <p>Mọi việc của “{src.name}” chuyển sang đây thành phase <b>{f.sourcePhase.trim()}</b>; nhóm và phạm vi trùng tên được ghép, thành viên được thêm. “{src.name}” sẽ được lưu trữ (không xoá).</p>, ok: 'Gộp dự án' })) merge.mutate(undefined);
+  };
+  return (
+    <section className="mt-5 rounded-2xl border border-line p-4" aria-label="Gộp dự án thành phase">
+      <p className="text-[13px] font-bold">Gộp dự án khác vào đây thành phase</p>
+      <p className="mb-3 mt-0.5 text-[12px] text-muted">Dùng khi hai dự án thực ra là hai giai đoạn (VD tháng 10 / tháng 11) dùng chung cấu hình.</p>
+      <div className="grid gap-x-3 sm:grid-cols-2">
+        <Field label="Dự án được gộp">
+          <Select value={f.sourceId} onChange={(e) => { const x = others.find((o) => o.id === e.target.value); setF({ ...f, sourceId: e.target.value, sourcePhase: f.sourcePhase || (x ? x.name.replace(project.name, '').trim() || x.name : '') }); }}>
+            <option value="">Chọn dự án</option>
+            {others.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </Select>
+        </Field>
+        <Field label="Thành phase">
+          <Input value={f.sourcePhase} onChange={(e) => setF({ ...f, sourcePhase: e.target.value })} maxLength={80} placeholder="VD: Tháng 11" />
+        </Field>
+        {unphased > 0 && (
+          <Field label={`Phase cho ${unphased} việc hiện có ở đây`} hint="Để trống thì giữ là chưa có phase.">
+            <Input value={f.targetPhase} onChange={(e) => setF({ ...f, targetPhase: e.target.value })} maxLength={80} placeholder="VD: Tháng 10" />
+          </Field>
+        )}
+      </div>
+      <Button size="sm" variant="secondary" disabled={!src || !f.sourcePhase.trim() || merge.isPending} onClick={() => void go()}>{merge.isPending ? 'Đang gộp…' : 'Gộp dự án'}</Button>
+    </section>
   );
 }

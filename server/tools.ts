@@ -8,7 +8,7 @@ import * as D from './data.ts';
 import { parseDate, today } from './dates.ts';
 import { effectivePermissions, rolesOf } from './rbac.ts';
 import { parseSheetId, syncProject } from './sheets.ts';
-import { findGetflyTask, getflyJob, getflyUsers, startGetflyJob, waitGetflyJob } from './getfly.ts';
+import { findGetflyTask, getflyJob, getflyUsers, startGetflyJob, waitGetflyJob, withGetflyProjectsLocked } from './getfly.ts';
 import { ALL_COLUMNS, normalizeColumns } from './plan-layout.ts';
 import type { PermissionKey } from './permissions.ts';
 
@@ -46,6 +46,7 @@ const taskBody = {
   days: z.number().min(0).max(9999).optional().describe('Ngày công ước tính; bỏ qua = tự tính từ khoảng ngày (T2–T6 = 1, T7 = ½, CN = 0)'),
   note: z.string().trim().max(4000).optional(),
   scope: z.string().trim().max(80).optional().describe('Tên phạm vi (tag) của việc; chưa có thì tạo; "" = bỏ phạm vi. Xem danh sách phạm vi trong get_project'),
+  phase: z.string().trim().max(80).optional().describe('Tên phase của việc (VD "Tháng 11"); chưa có thì tạo; "" = bỏ phase. Xem phases trong get_project'),
 };
 
 async function resolveProject(user: D.UserRow, args: { projectId?: string; project?: string }) {
@@ -84,12 +85,23 @@ async function scopeByName(perms: Set<PermissionKey>, projectId: string, name: s
   if (!perms.has('project.project.write')) throw new ToolError(`Chưa có phạm vi "${name}" và bạn không có quyền tạo — dùng phạm vi có sẵn`);
   return (await D.createScope(projectId, { name: name.trim() })).id;
 }
-const scopeMap = (scopes: D.ScopeRow[]) => new Map(scopes.map((s) => [s.id, s.name]));
+/** Tên phạm vi + phase theo id (id là uuid nên không trùng giữa hai bảng). */
+const namesOf = (b: { scopes: D.ScopeRow[]; phases: D.PhaseRow[] }) => new Map([...b.scopes.map((s) => [s.id, s.name] as const), ...b.phases.map((x) => [x.id, x.name] as const)]);
+/** Phase theo tên; "" = bỏ phase; chưa có thì tạo (cần quyền sửa dự án). undefined = không đổi. */
+async function phaseByName(perms: Set<PermissionKey>, projectId: string, name: string | undefined): Promise<string | null | undefined> {
+  if (name === undefined) return undefined;
+  if (!name.trim()) return null;
+  const found = await D.findPhase(projectId, name);
+  if (found) return found.id;
+  if (!perms.has('project.project.write')) throw new ToolError(`Chưa có phase "${name}" và bạn không có quyền tạo — dùng phase có sẵn`);
+  return (await D.createPhase(projectId, { name: name.trim() })).id;
+}
 
 const taskOut = (t: ReturnType<typeof D.taskView>, p: { satWeight: number; sunWeight: number }, groups: Map<string, string>, t0: string, scopes: Map<string, string> = new Map()) => ({
   subtasks: t.subtasks,
   id: t.id, name: t.name, group: t.groupId ? groups.get(t.groupId) ?? null : null, groupId: t.groupId,
   scope: t.scopeId ? scopes.get(t.scopeId) ?? null : null, scopeId: t.scopeId,
+  phase: t.phaseId ? scopes.get(t.phaseId) ?? null : null, phaseId: t.phaseId,
   assignee: t.assignee, support: t.support, progress: t.progress, startDate: t.startDate, endDate: t.endDate,
   days: D.effortOf(t, p), daysManual: t.days != null, note: t.note,
   status: t.progress >= 100 ? 'done' : t.endDate && t.endDate < t0 ? 'overdue' : 'open',
@@ -109,18 +121,20 @@ export const TOOLS: Record<string, Tool> = {
   get_project: {
     title: 'Chi tiết dự án',
     description: 'Nhóm việc, việc (phụ trách, tiến độ, ngày bắt đầu/kết thúc, ngày công, trạng thái open/done/overdue) và thành viên của một dự án.',
-    input: z.object({ ...projectRef, includeDone: z.boolean().optional().describe('Gồm cả việc đã xong (mặc định có)') }),
-    run: async (user, a: { projectId?: string; project?: string; includeDone?: boolean }) => {
+    input: z.object({ ...projectRef, includeDone: z.boolean().optional().describe('Gồm cả việc đã xong (mặc định có)'), phase: z.string().trim().max(80).optional().describe('Chỉ việc thuộc phase này (tên)') }),
+    run: async (user, a: { projectId?: string; project?: string; includeDone?: boolean; phase?: string }) => {
       const p = await resolveProject(user, a);
       const [bundle, who] = await Promise.all([D.projectBundle(p.id), D.projectMembers(p)]);
       const groups = new Map(bundle.groups.map((g) => [g.id, g.name]));
       const t0 = today();
-      const scopes = scopeMap(bundle.scopes);
-      const tasks = bundle.tasks.map((t) => taskOut(t, p, groups, t0, scopes)).filter((t) => a.includeDone !== false || t.status !== 'done');
+      const scopes = namesOf(bundle);
+      const tasks = bundle.tasks.map((t) => taskOut(t, p, groups, t0, scopes)).filter((t) => !a.phase || (t.phase ?? '').toLowerCase() === a.phase.toLowerCase()).filter((t) => a.includeDone !== false || t.status !== 'done');
       return {
         today: t0, id: p.id, name: p.name, code: p.code, customer: p.customer, description: p.description, startDate: p.startDate, archived: p.archived, myRole: p.myRole,
         owner: who.owner.name || who.owner.email, members: who.members.map((m) => ({ email: m.email, name: m.name, role: m.role })),
         groups: bundle.groups.map((g) => ({ id: g.id, name: g.name, taskCount: bundle.tasks.filter((t) => t.groupId === g.id).length })),
+        phases: bundle.phases.map((x) => ({ id: x.id, name: x.name, startDate: x.startDate, endDate: x.endDate, note: x.note, taskCount: bundle.tasks.filter((t) => t.phaseId === x.id).length })),
+        unphasedTasks: bundle.tasks.filter((t) => !t.phaseId).length,
         scopes: bundle.scopes.map((s) => ({ id: s.id, name: s.name, owner: s.owner, color: s.color, note: s.note, taskCount: bundle.tasks.filter((t) => t.scopeId === s.id).length })),
         aiContext: p.aiContext || null,
         getfly: p.getflyParentCode || p.getflyProjectName ? { parentCode: p.getflyParentCode, parentName: p.getflyParentName, projectName: p.getflyProjectName, users: p.getflyUsers, syncedAt: p.getflySyncedAt } : null,
@@ -148,9 +162,10 @@ export const TOOLS: Record<string, Tool> = {
       status: z.enum(['open', 'done', 'overdue', 'all']).optional().describe('Mặc định all'),
       dueBefore: zAnyDate.optional().describe('Chỉ việc có hạn trước hoặc bằng ngày này'),
       scope: z.string().trim().max(80).optional().describe('Chỉ việc thuộc phạm vi này (tên)'),
+      phase: z.string().trim().max(80).optional().describe('Chỉ việc thuộc phase này (tên)'),
       limit: z.number().int().min(1).max(200).optional(),
     }),
-    run: async (user, a: { projectId?: string; project?: string; query?: string; assignee?: string; status?: string; dueBefore?: string; scope?: string; limit?: number }) => {
+    run: async (user, a: { projectId?: string; project?: string; query?: string; assignee?: string; status?: string; dueBefore?: string; scope?: string; phase?: string; limit?: number }) => {
       const projects = a.projectId || a.project ? [await resolveProject(user, a)] : await D.myProjects(user);
       const t0 = today();
       const due = date(a.dueBefore);
@@ -160,10 +175,11 @@ export const TOOLS: Record<string, Tool> = {
         if (p.archived && !(a.projectId || a.project)) continue;
         const bundle = await D.projectBundle(p.id);
         const groups = new Map(bundle.groups.map((g) => [g.id, g.name]));
-        const scopes = scopeMap(bundle.scopes);
+        const scopes = namesOf(bundle);
         for (const t of bundle.tasks) {
           const v = taskOut(t, p, groups, t0, scopes);
           if (a.scope && (v.scope ?? '').toLowerCase() !== a.scope.toLowerCase()) continue;
+          if (a.phase && (v.phase ?? '').toLowerCase() !== a.phase.toLowerCase()) continue;
           if (q && !`${t.name} ${t.note}`.toLowerCase().includes(q)) continue;
           if (who && !`${t.assignee} ${t.support}`.toLowerCase().includes(who)) continue;
           if (a.status && a.status !== 'all' && v.status !== a.status) continue;
@@ -238,10 +254,11 @@ export const TOOLS: Record<string, Tool> = {
       const perms = await effectivePermissions(rolesOf(user));
       const groupId = a.groupId ?? (await groupByName(user, perms, p.id, a.group));
       const scopeId = await scopeByName(perms, p.id, a.scope as string | undefined);
-      const t = await D.insertTask(p.id, D.taskCreate.parse({ groupId: groupId ?? null, scopeId: scopeId ?? null, name: a.name, assignee: a.assignee, support: a.support, progress: a.progress, startDate: date(a.startDate as string), endDate: date(a.endDate as string), days: a.days ?? null, note: a.note, subtasks: a.subtasks }));
+      const phaseId = await phaseByName(perms, p.id, a.phase as string | undefined);
+      const t = await D.insertTask(p.id, D.taskCreate.parse({ groupId: groupId ?? null, scopeId: scopeId ?? null, phaseId: phaseId ?? null, name: a.name, assignee: a.assignee, support: a.support, progress: a.progress, startDate: date(a.startDate as string), endDate: date(a.endDate as string), days: a.days ?? null, note: a.note, subtasks: a.subtasks }));
       const bundle = await D.projectBundle(p.id);
       const groups = new Map(bundle.groups.map((g) => [g.id, g.name]));
-      return { project: p.name, task: taskOut(t, p, groups, today(), scopeMap(bundle.scopes)), url: `https://project.vnlab.id.vn/du-an/${p.id}?task=${t.id}` };
+      return { project: p.name, task: taskOut(t, p, groups, today(), namesOf(bundle)), url: `https://project.vnlab.id.vn/du-an/${p.id}?task=${t.id}` };
     },
   },
   create_tasks: {
@@ -249,6 +266,7 @@ export const TOOLS: Record<string, Tool> = {
     description: 'Thêm nhiều việc một lần (VD cả kế hoạch): mỗi việc có thể ghi tên nhóm; nhóm chưa có thì tạo theo thứ tự xuất hiện.',
     input: z.object({
       ...projectRef,
+      phase: z.string().trim().max(80).optional().describe('Phase cho cả lô (từng việc vẫn đặt riêng được)'),
       tasks: z.array(z.object({ name: z.string().trim().min(1).max(300), group: z.string().trim().max(160).optional(), ...taskBody })).min(1).max(500),
     }),
     write: true, destructive: false, perm: 'project.task.write',
@@ -261,7 +279,8 @@ export const TOOLS: Record<string, Tool> = {
         if (key && !(await D.findGroup(p.id, key)) && !perms.has('project.project.write')) throw new ToolError(`Chưa có nhóm "${key}" và bạn không có quyền tạo nhóm`);
         if (!byGroup.has(key)) byGroup.set(key, { name: key, tasks: [] });
         const scopeId = await scopeByName(perms, p.id, t.scope as string | undefined);
-        byGroup.get(key)!.tasks.push(D.taskCreate.omit({ groupId: true }).parse({ scopeId: scopeId ?? null, name: t.name, assignee: t.assignee, support: t.support, progress: t.progress, startDate: date(t.startDate as string), endDate: date(t.endDate as string), days: t.days ?? null, note: t.note, subtasks: t.subtasks }));
+        const phaseId = await phaseByName(perms, p.id, (t.phase as string | undefined) ?? (a as { phase?: string }).phase);
+        byGroup.get(key)!.tasks.push(D.taskCreate.omit({ groupId: true }).parse({ scopeId: scopeId ?? null, phaseId: phaseId ?? null, name: t.name, assignee: t.assignee, support: t.support, progress: t.progress, startDate: date(t.startDate as string), endDate: date(t.endDate as string), days: t.days ?? null, note: t.note, subtasks: t.subtasks }));
       }
       const r = await D.importGroups(p.id, [...byGroup.values()]);
       return { project: p.name, groupsCreated: r.groups, tasksCreated: r.tasks, url: `https://project.vnlab.id.vn/du-an/${p.id}` };
@@ -290,15 +309,16 @@ export const TOOLS: Record<string, Tool> = {
       if (a.endDate !== undefined) patch.endDate = date(a.endDate as string);
       if (a.days !== undefined) patch.days = a.days as number;
       if (a.note !== undefined) patch.note = a.note as string;
-      if (a.group !== undefined || a.scope !== undefined) {
+      if (a.group !== undefined || a.scope !== undefined || a.phase !== undefined) {
         const perms = await effectivePermissions(rolesOf(user));
+        if (a.phase !== undefined) patch.phaseId = await phaseByName(perms, p.id, a.phase as string);
         if (a.group !== undefined) patch.groupId = a.group.trim() ? await groupByName(user, perms, p.id, a.group) : null;
         if (a.scope !== undefined) patch.scopeId = await scopeByName(perms, p.id, a.scope as string);
       }
       const t = await D.updateTask(p.id, task.id, D.taskFields.partial().parse(patch), user.id);
       const bundle = await D.projectBundle(p.id);
       const groups = new Map(bundle.groups.map((g) => [g.id, g.name]));
-      return { project: p.name, task: taskOut(t, p, groups, today(), scopeMap(bundle.scopes)) };
+      return { project: p.name, task: taskOut(t, p, groups, today(), namesOf(bundle)) };
     },
   },
   delete_task: {
@@ -469,6 +489,85 @@ TOOLS.set_ai_context = {
   },
 };
 
+/** Phase theo id hoặc tên. */
+async function phaseRef(p: { id: string; name: string }, a: { phase?: string; phaseId?: string }) {
+  const all = (await D.projectBundle(p.id)).phases;
+  const x = a.phaseId ? all.find((y) => y.id === a.phaseId) : a.phase?.trim() ? all.find((y) => y.name.toLowerCase() === a.phase!.trim().toLowerCase()) : undefined;
+  if (!x) throw new ToolError(a.phase || a.phaseId ? `Không có phase "${a.phase ?? a.phaseId}" trong ${p.name}` : 'Cần `phase` (tên) hoặc `phaseId`');
+  return x;
+}
+const phaseArgs = { phase: z.string().trim().max(80).optional().describe('Tên phase'), phaseId: z.uuid().optional() };
+
+TOOLS.create_phase = {
+  title: 'Tạo phase',
+  description: 'Thêm một phase (giai đoạn, VD "Tháng 11") vào dự án. Các phase dùng chung cấu hình dự án (thành viên, phạm vi, nhóm, hướng dẫn AI, Getfly…). Gắn việc vào phase qua `phase` ở create_task / update_task hoặc set_tasks_phase.',
+  input: z.object({ ...projectRef, name: z.string().trim().min(1).max(80), startDate: zAnyDate.optional(), endDate: zAnyDate.optional(), note: z.string().trim().max(1000).optional() }),
+  write: true, destructive: false, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string; name: string; startDate?: string; endDate?: string; note?: string }) => {
+    const p = await editableProject(user, a);
+    return { project: p.name, phase: await D.createPhase(p.id, { name: a.name, startDate: date(a.startDate), endDate: date(a.endDate), note: a.note }) };
+  },
+};
+
+TOOLS.update_phase = {
+  title: 'Sửa phase',
+  description: 'Đổi tên (`newName`), ngày bắt đầu / kết thúc hoặc ghi chú của một phase.',
+  input: z.object({ ...projectRef, ...phaseArgs, newName: z.string().trim().min(1).max(80).optional(), startDate: zAnyDate.nullable().optional(), endDate: zAnyDate.nullable().optional(), note: z.string().trim().max(1000).optional() }),
+  write: true, destructive: false, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string; phase?: string; phaseId?: string; newName?: string; startDate?: string | null; endDate?: string | null; note?: string }) => {
+    const p = await editableProject(user, a);
+    const x = await phaseRef(p, a);
+    const patch: Record<string, unknown> = {};
+    if (a.newName) patch.name = a.newName;
+    if (a.startDate !== undefined) patch.startDate = date(a.startDate);
+    if (a.endDate !== undefined) patch.endDate = date(a.endDate);
+    if (a.note !== undefined) patch.note = a.note;
+    if (!Object.keys(patch).length) throw new ToolError('Cần newName, startDate, endDate hoặc note');
+    return { project: p.name, phase: await D.updatePhase(p.id, x.id, patch) };
+  },
+};
+
+TOOLS.delete_phase = {
+  title: 'Xoá phase',
+  description: 'Xoá một phase. Mặc định việc trong phase chuyển thành "chưa có phase"; `deleteTasks: true` xoá luôn các việc. Chỉ gọi khi người dùng nói rõ.',
+  input: z.object({ ...projectRef, ...phaseArgs, deleteTasks: z.boolean().optional() }),
+  write: true, destructive: true, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string; phase?: string; phaseId?: string; deleteTasks?: boolean }) => {
+    const p = await editableProject(user, a);
+    const x = await phaseRef(p, a);
+    return { project: p.name, deleted: x.name, ...(await D.deletePhase(p.id, x.id, !!a.deleteTasks)) };
+  },
+};
+
+TOOLS.set_tasks_phase = {
+  title: 'Gán việc vào phase',
+  description: 'Chuyển nhiều việc vào một phase: `taskIds` cụ thể, hoặc `unphased: true` = mọi việc chưa có phase. `phase: ""` = bỏ phase.',
+  input: z.object({ ...projectRef, phase: z.string().trim().max(80).describe('Tên phase đích; "" = bỏ phase'), taskIds: z.array(z.uuid()).max(500).optional(), unphased: z.boolean().optional() }),
+  write: true, destructive: false, perm: 'project.task.write',
+  run: async (user, a: { projectId?: string; project?: string; phase: string; taskIds?: string[]; unphased?: boolean }) => {
+    const p = await editableProject(user, a);
+    if (!a.taskIds?.length && !a.unphased) throw new ToolError('Cần taskIds hoặc unphased: true');
+    const perms = await effectivePermissions(rolesOf(user));
+    const phaseId = (await phaseByName(perms, p.id, a.phase)) ?? null;
+    return { project: p.name, phase: a.phase || null, ...(await D.setTasksPhase(p.id, phaseId, a.unphased ? 'unphased' : a.taskIds!)) };
+  },
+};
+
+TOOLS.merge_project_into_phase = {
+  title: 'Gộp dự án khác vào làm phase',
+  description: 'Gộp `sourceProject` vào dự án đích thành phase `sourcePhase` (VD gộp "AMMS tháng 11" vào "AMMS" thành phase "Tháng 11"). `targetPhase` (tuỳ chọn) gán cho các việc hiện chưa có phase của dự án đích. Nhóm / phạm vi ghép theo tên, thành viên được thêm; dự án nguồn bị lưu trữ (không xoá). Phải là chủ cả hai dự án. Chỉ gọi khi người dùng nói rõ.',
+  input: z.object({ ...projectRef, sourceProject: z.string().trim().min(1).max(160).describe('Tên hoặc id dự án nguồn'), sourcePhase: z.string().trim().min(1).max(80), targetPhase: z.string().trim().max(80).optional() }),
+  write: true, destructive: true, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string; sourceProject: string; sourcePhase: string; targetPhase?: string }) => {
+    const target = await resolveProject(user, a);
+    D.owned(target);
+    const isId = /^[0-9a-f-]{36}$/i.test(a.sourceProject);
+    const source = await resolveProject(user, isId ? { projectId: a.sourceProject } : { project: a.sourceProject });
+    D.owned(source);
+    return { project: target.name, ...(await D.mergeProjectAsPhase(target.id, source.id, a.sourcePhase, a.targetPhase)) };
+  },
+};
+
 TOOLS.delete_project = {
   title: 'Xoá dự án',
   description: 'Xoá hẳn một dự án cùng mọi nhóm, việc và lịch sử (không hoàn tác). Chỉ chủ dự án. Phải gửi `confirmName` đúng tên dự án; chỉ gọi khi người dùng nói rõ muốn xoá.',
@@ -545,6 +644,22 @@ TOOLS.reorder_groups = {
   },
 };
 
+TOOLS.transfer_tasks = {
+  title: 'Chuyển việc sang dự án khác',
+  description: 'Chuyển các việc được chọn từ dự án nguồn sang dự án đích. Đọc get_project của cả hai trước khi gọi, chỉ dùng taskIds người dùng đã chọn. Giữ id, task con, phụ trách, hỗ trợ, tiến độ, ngày, ghi chú, kế hoạch gốc, lịch sử và liên kết Getfly. Giữ nhóm/phạm vi theo tên (tạo ở đích nếu thiếu); không ghi đè cấu hình nhóm đã có. Cần quyền sửa cả hai dự án. Không xoá dự án/nhóm nguồn và không tự gọi Getfly.',
+  input: z.object({ ...projectRef, targetProjectId: z.uuid().optional(), targetProject: z.string().trim().max(160).optional().describe('Tên hoặc mã dự án đích'), taskIds: z.array(z.uuid()).min(1).max(1000).refine((ids) => new Set(ids).size === ids.length, 'Mã việc bị lặp') }),
+  write: true, destructive: false, perm: 'project.task.write',
+  run: async (user, a: { projectId?: string; project?: string; targetProjectId?: string; targetProject?: string; taskIds: string[] }) => {
+    const source = await editableProject(user, a);
+    const target = await editableProject(user, { projectId: a.targetProjectId, project: a.targetProject });
+    const perms = await effectivePermissions(rolesOf(user));
+    if (!perms.has('project.project.write')) throw new ToolError('Cần quyền sửa cấu trúc dự án để chuyển nhóm và phạm vi đi cùng việc');
+    if (getflyJob(source.id)?.status === 'running' || getflyJob(target.id)?.status === 'running') throw new ToolError('Đợi đồng bộ Getfly xong trước khi chuyển việc');
+    const tasks = await withGetflyProjectsLocked([source.id, target.id], () => D.transferTasks(source, target, a.taskIds, user.id));
+    return { sourceProject: { id: source.id, name: source.name }, targetProject: { id: target.id, name: target.name }, moved: tasks.length, tasks, note: 'Đã chuyển việc; Google Sheet tự cập nhật nếu bật tự đồng bộ. Getfly chỉ cập nhật khi bạn bấm đồng bộ ở dự án đích.' };
+  },
+};
+
 TOOLS.move_task = {
   title: 'Chuyển / đổi thứ tự việc',
   description: 'Đổi vị trí một việc như kéo thả: đặt trước `beforeTaskId`, sau `afterTaskId`, hoặc ở `position` (1 = đầu nhóm). Có `group`/`groupId` thì chuyển sang nhóm đó (group: "" = Chưa phân nhóm). Không nêu vị trí thì đặt cuối nhóm.',
@@ -600,10 +715,10 @@ TOOLS.get_task_history = {
 
 TOOLS.set_google_sheet = {
   title: 'Liên kết Google Sheet',
-  description: 'Liên kết dự án với một Google Sheet (link hoặc id; sheet phải chia sẻ quyền Người chỉnh sửa cho email service account trong Cài đặt), bật/tắt tự đồng bộ, hoặc gỡ liên kết (sheetUrl: null). Chỉ chủ dự án.',
-  input: z.object({ ...projectRef, sheetUrl: z.string().trim().max(400).nullable().optional(), auto: z.boolean().optional().describe('Tự đồng bộ sau mỗi thay đổi') }),
+  description: 'Liên kết dự án với một Google Sheet (link hoặc id; sheet phải chia sẻ quyền Người chỉnh sửa cho email service account trong Cài đặt), bật/tắt tự đồng bộ, chọn thu gọn task con, hoặc gỡ liên kết (sheetUrl: null). Chỉ chủ dự án.',
+  input: z.object({ ...projectRef, sheetUrl: z.string().trim().max(400).nullable().optional(), auto: z.boolean().optional().describe('Tự đồng bộ sau mỗi thay đổi'), collapseSubtasks: z.boolean().optional().describe('Thu gọn task con khi đồng bộ; mặc định bật') }),
   write: true, destructive: false, perm: 'project.project.write',
-  run: async (user, a: { projectId?: string; project?: string; sheetUrl?: string | null; auto?: boolean }) => {
+  run: async (user, a: { projectId?: string; project?: string; sheetUrl?: string | null; auto?: boolean; collapseSubtasks?: boolean }) => {
     const p = await resolveProject(user, a);
     D.owned(p);
     const patch: Record<string, unknown> = {};
@@ -616,10 +731,11 @@ TOOLS.set_google_sheet = {
       }
     }
     if (a.auto !== undefined) patch.sheetAuto = a.auto;
-    if (!Object.keys(patch).length) throw new ToolError('Cần sheetUrl hoặc auto');
+    if (a.collapseSubtasks !== undefined) patch.sheetCollapseSubtasks = a.collapseSubtasks;
+    if (!Object.keys(patch).length) throw new ToolError('Cần sheetUrl, auto hoặc collapseSubtasks');
     const row = await D.updateProject(p, patch);
     const v = D.projectView(row);
-    return { project: p.name, sheetUrl: v.sheetUrl, auto: v.sheetAuto, note: v.sheetUrl ? 'Gọi sync_google_sheet để ghi ngay lần đầu' : 'Đã gỡ liên kết' };
+    return { project: p.name, sheetUrl: v.sheetUrl, auto: v.sheetAuto, collapseSubtasks: v.sheetCollapseSubtasks, note: v.sheetUrl ? 'Gọi sync_google_sheet để ghi ngay lần đầu' : 'Đã gỡ liên kết' };
   },
 };
 
@@ -747,6 +863,11 @@ function describeTool(name: string, a: Record<string, unknown> | null): string {
     case 'delete_scope': return `Xoá phạm vi ${q(a?.scope)}`.trim();
     case 'reorder_scopes': return 'Sắp xếp thứ tự phạm vi';
     case 'set_ai_context': return 'Lưu hướng dẫn cho AI';
+    case 'create_phase': return `Tạo phase ${q(a?.name)}`.trim();
+    case 'update_phase': return `Sửa phase ${q(a?.phase)}`.trim();
+    case 'delete_phase': return `Xoá phase ${q(a?.phase)}`.trim();
+    case 'set_tasks_phase': return `Gán việc vào phase ${q(a?.phase)}`.trim();
+    case 'merge_project_into_phase': return `Gộp ${q(a?.sourceProject)} thành phase ${q(a?.sourcePhase)}`;
     case 'set_getfly': return 'Cấu hình Getfly';
     case 'sync_getfly': return 'Đồng bộ Getfly';
     case 'unsync_getfly': return 'Gỡ dự án khỏi Getfly';
@@ -756,6 +877,7 @@ function describeTool(name: string, a: Record<string, unknown> | null): string {
     case 'update_group': return `Sửa nhóm ${q(a?.group)}`.trim();
     case 'reorder_groups': return 'Sắp xếp thứ tự nhóm';
     case 'move_task': return 'Chuyển / đổi thứ tự việc';
+    case 'transfer_tasks': return `Chuyển ${Array.isArray(a?.taskIds) ? a.taskIds.length : ''} việc sang dự án khác`;
     case 'rebaseline_task': return 'Chốt kế hoạch gốc';
     case 'set_google_sheet': return 'Liên kết Google Sheet';
     case 'sort_tasks': return 'Sắp xếp việc theo ngày';

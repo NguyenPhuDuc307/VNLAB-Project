@@ -21,6 +21,8 @@ export type Layout = {
   /** Độ rộng cột tính bằng ký tự (Excel). */
   colWidths: Record<number, number>;
   rowHeights: Record<number, number>;
+  /** Các cụm hàng task con (1-based, hai đầu bao gồm), để Sheets thu gọn dưới việc cha. */
+  subtaskRowGroups: { r1: number; r2: number }[];
   freeze: { rows: number; cols: number };
   /** Lưới ngày + hai luật conditional formatting (cú pháp en-US, tham chiếu ô đầu vùng); null = không xuất lưới. */
   grid: { range: Range; barFormula: string; todayFormula: string; barColor: string; todayColor: string; borderColor: string } | null;
@@ -151,7 +153,7 @@ export function buildPlanLayout(p: LayoutProject, owner: string, groups: LayoutG
       const k = c.key, at = col.get(k)!;
       switch (k) {
         case 'no': put(row, at, childNo ?? (t ? ++no : null), { align: 'center', border: 'box' }); break;
-        case 'task': put(row, at, t?.name ?? null, { border: 'box', wrap: true, bold: !!t?.subtasks?.length, indent: childNo ? 1 : undefined }); break;
+        case 'task': put(row, at, t?.name ?? null, { border: 'box', wrap: true, indent: childNo ? 1 : undefined }); break;
         case 'assignee': put(row, at, t?.assignee || null, { align: 'center', border: 'box' }); break;
         case 'support': put(row, at, t?.support || null, { align: 'center', border: 'box' }); break;
         case 'progress': put(row, at, t ? t.progress / 100 : null, { fmt: 'pct', align: 'center', border: 'box' }); break;
@@ -163,6 +165,7 @@ export function buildPlanLayout(p: LayoutProject, owner: string, groups: LayoutG
     }
     gridRow(row);
   };
+  const subtaskRowGroups: Layout['subtaskRowGroups'] = [];
   const dataRows: (string | number | null)[][] = [];
   let i = 0;
   for (const g of order) {
@@ -186,11 +189,13 @@ export function buildPlanLayout(p: LayoutProject, owner: string, groups: LayoutG
     for (const t of g.tasks) {
       taskRow(r++, t);
       dataRows.push([++i, g.group?.name ?? '', t.name, t.assignee, t.support, t.progress, t.startDate ? serial(t.startDate) : null, t.endDate ? serial(t.endDate) : null, t.days ?? (effort(t, p) || null), t.note, null]);
+      const childStart = r;
       for (const [j, child] of (t.subtasks ?? []).entries()) {
         const childNo = `${no}.${j + 1}`;
         taskRow(r++, { ...child, groupId: t.groupId, support: '', startDate: null, endDate: null, days: null, note: '' }, childNo);
         dataRows.push([`${i}.${j + 1}`, g.group?.name ?? '', child.name, child.assignee, null, child.progress, null, null, null, null, t.name]);
       }
+      if (r > childStart) subtaskRowGroups.push({ r1: childStart, r2: r - 1 });
     }
   }
   for (let k = 0; k < 3; k++) taskRow(r++);
@@ -212,6 +217,7 @@ export function buildPlanLayout(p: LayoutProject, owner: string, groups: LayoutG
     merges,
     colWidths,
     rowHeights,
+    subtaskRowGroups,
     freeze: { rows: HEAD_ROW, cols: withGrid ? lastTableCol : 0 },
     grid,
     data: {

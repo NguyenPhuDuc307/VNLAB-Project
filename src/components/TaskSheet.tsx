@@ -13,22 +13,24 @@ type Props = {
   /** Có task = sửa; không = tạo mới vào nhóm `groupId`. */
   task?: Task | null;
   groupId?: string | null;
+  /** Việc mới: phase mặc định (phase đang xem). */
+  phaseId?: string | null;
   canEdit: boolean;
 };
 
-const empty = (groupId: string | null): TaskInput => ({ subtasks: [], name: '', groupId, scopeId: null, assignee: '', support: '', progress: 0, startDate: null, endDate: null, days: null, note: '' });
+const empty = (groupId: string | null, phaseId: string | null = null): TaskInput => ({ subtasks: [], name: '', groupId, phaseId, scopeId: null, assignee: '', support: '', progress: 0, startDate: null, endDate: null, days: null, note: '' });
 
-export function TaskSheet({ open, onClose, project, task, groupId = null, canEdit }: Props) {
+export function TaskSheet({ open, onClose, project, task, groupId = null, phaseId = null, canEdit }: Props) {
   const { toast, confirm } = useFeedback();
   const can = useCan();
   const [f, setF] = useState<TaskInput>(() => empty(groupId));
   const [daysText, setDaysText] = useState('');
   useEffect(() => {
     if (!open) return;
-    const init = task ? { ...task } : empty(groupId);
+    const init = task ? { ...task } : empty(groupId, phaseId);
     setF(init);
     setDaysText(init.days == null ? '' : String(init.days).replace('.', ','));
-  }, [open, task, groupId]);
+  }, [open, task, groupId, phaseId]);
 
   const auto = f.startDate && f.endDate ? workDays(f.startDate, f.endDate, project.satWeight, project.sunWeight) : null;
   const names = useMemo(() => {
@@ -108,6 +110,14 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, canEdi
           {!readOnly && f.name.includes('\n') && <Button className="mb-3" type="button" size="sm" variant="ghost" onClick={splitName}>Tách các dòng thành task con</Button>}
           <SubtasksEditor items={children} onChange={setChildren} readOnly={readOnly} />
           <div className="grid gap-x-3 sm:grid-cols-2">
+            {(project.phases?.length ?? 0) > 0 && (
+              <Field label="Phase">
+                <Select value={f.phaseId ?? ''} onChange={(e) => setF({ ...f, phaseId: e.target.value || null })}>
+                  <option value="">Chưa có phase</option>
+                  {project.phases.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+                </Select>
+              </Field>
+            )}
             <Field label="Phạm vi" hint={(() => { const s = project.scopes?.find((x) => x.id === f.scopeId); return s?.owner ? `Phụ trách phạm vi: ${s.owner}` : project.scopes?.length ? undefined : 'Tạo phạm vi trong Cài đặt dự án'; })()}>
               <Select value={f.scopeId ?? ''} onChange={(e) => setF({ ...f, scopeId: e.target.value || null })}>
                 <option value="">Chưa gắn phạm vi</option>
@@ -176,7 +186,7 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, canEdi
   );
 }
 
-const FIELD_LABEL: Record<string, string> = { name: 'tên', groupId: 'nhóm', assignee: 'phụ trách', support: 'hỗ trợ', progress: 'tiến độ', startDate: 'bắt đầu', endDate: 'kết thúc', days: 'ngày công', note: 'ghi chú', baseline: 'kế hoạch gốc', subtasks: 'task con' };
+const FIELD_LABEL: Record<string, string> = { project: 'dự án', name: 'tên', groupId: 'nhóm', assignee: 'phụ trách', support: 'hỗ trợ', progress: 'tiến độ', startDate: 'bắt đầu', endDate: 'kết thúc', days: 'ngày công', note: 'ghi chú', baseline: 'kế hoạch gốc', subtasks: 'task con' };
 const fmtVal = (field: string, v: string | null) => {
   if (v === null) return 'trống';
   if (field === 'subtasks') { try { return `${JSON.parse(v).length} task con`; } catch { return v; } }

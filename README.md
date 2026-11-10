@@ -14,7 +14,7 @@ lịch và ngày công của cha; chỉ task cha có thanh Gantt và được t�
 Khi có task con, tiến độ cha tự lấy trung bình cộng (làm tròn %). Sửa task → Task con
 để thêm / sửa / xoá; có thể tách tên nhiều dòng thành các task con trước khi lưu.
 API / MCP nhận `subtasks: [{ id?, name, assignee?, progress? }]`; khi sửa, gửi toàn bộ
-danh sách cần giữ. JSON xuất giữ các task con. Excel / Sheets có hàng task con ngay dưới cha (STT 1.1, 1.2), với phụ trách / tiến độ riêng; ngày và ngày công để trống ở hàng con, thanh Gantt chỉ có ở cha. Tab Dữ liệu có thêm cột Task cha. CSV vẫn là kế hoạch theo task cha.
+danh sách cần giữ. JSON xuất giữ các task con. Excel / Sheets có hàng task con ngay dưới cha (STT 1.1, 1.2), với phụ trách / tiến độ riêng; ngày và ngày công để trống ở hàng con, thanh Gantt chỉ có ở cha. Trên Google Sheets, các hàng task con trong PLAN được nhóm và thu gọn mặc định; bấm +/− bên trái để mở hoặc đóng chi tiết. Tùy chọn **Thu gọn task con khi đồng bộ** nằm ở Cài đặt → Đồng bộ → Google Sheets, lưu riêng theo từng dự án và áp dụng cho lần đồng bộ tiếp theo. Tab Dữ liệu có thêm cột Task cha. CSV vẫn là kế hoạch theo task cha.
 
 
 ## Đăng nhập và quyền
@@ -76,10 +76,12 @@ claude mcp add --transport http vnlab-project https://project.vnlab.id.vn/mcp --
 Công cụ (`server/tools.ts`, dùng chung tầng dữ liệu `server/data.ts` với REST nên AI và giao
 diện không lệch nhau): `list_projects`, `get_project`, `get_overview`, `find_tasks` (đọc);
 `create_project`, `create_group`, `create_task`, `create_tasks` (nhiều việc một lần, tên nhóm
-chưa có thì tạo), `update_task`, `delete_task`, `delete_group`, `sort_tasks`, `update_project`, `delete_project`, `set_member`, `remove_member`, `update_group`, `reorder_groups`, `move_task`, `rebaseline_task`, `set_google_sheet`, `sync_google_sheet`, `create_scope`, `update_scope`, `delete_scope`, `reorder_scopes`, `set_ai_context`; đọc thêm `get_task_history`, `get_export_link`, `get_ai_context`. Phạm vi (scope) là tag gắn vào việc, có người phụ trách phạm vi điền tay; hướng dẫn cho AI lưu theo dự án (`ai_context`). Nguyên tắc: thao tác nào làm được trên giao diện thì phải có công cụ MCP tương ứng (xếp việc trong nhóm theo ngày) (ghi). Ngày nhận `YYYY-MM-DD` lẫn `dd/mm/yyyy`,
+chưa có thì tạo), `update_task`, `delete_task`, `delete_group`, `sort_tasks`, `update_project`, `delete_project`, `set_member`, `remove_member`, `update_group`, `reorder_groups`, `move_task`, `transfer_tasks`, `rebaseline_task`, `set_google_sheet`, `sync_google_sheet`, `create_scope`, `update_scope`, `delete_scope`, `reorder_scopes`, `set_ai_context`; đọc thêm `get_task_history`, `get_export_link`, `get_ai_context`. Phạm vi (scope) là tag gắn vào việc, có người phụ trách phạm vi điền tay; hướng dẫn cho AI lưu theo dự án (`ai_context`). Nguyên tắc: thao tác nào làm được trên giao diện thì phải có công cụ MCP tương ứng (xếp việc trong nhóm theo ngày) (ghi). Ngày nhận `YYYY-MM-DD` lẫn `dd/mm/yyyy`,
 `2-Nov-26`; không hiểu thì báo lỗi chứ không đoán. Quyền tính năng `project.*` và quyền theo dự
 án (chủ / được sửa / chỉ xem) kiểm y như REST; gỡ `project.tokens.manage` ở VNLab Account thì
 mọi token của người đó trả 403 ngay; thu hồi token trong Cài đặt → 401.
+
+Công cụ `transfer_tasks` nhận dự án nguồn (`projectId` hoặc `project`), dự án đích (`targetProjectId` hoặc `targetProject`) và danh sách `taskIds`. Chỉ chuyển đúng các id đã chọn, giữ task con, lịch sử và liên kết Getfly; nhóm/tag được ghép theo tên ở đích. Cần quyền sửa cả hai dự án. Không tự đồng bộ Getfly.
 
 ## Đồng bộ Google Sheets (một chiều app → sheet)
 
@@ -102,9 +104,10 @@ tạo/chia sẻ sheet, tự đồng bộ), test với Google API giả ở `serv
 
 `server/getfly.ts` dùng API Getfly **v3** với `X-API-KEY`. Mỗi nhóm gắn một **việc cha riêng** trên Getfly ngay trong hộp sửa nhóm (dán link `#/tasks/?…task_id=…`, id hoặc mã việc).
 Bấm “Đồng bộ Getfly” (hoặc MCP `sync_getfly`): việc chính được tạo dưới cha của nhóm, dùng dự án Getfly của cha đó. Chỉ đồng bộ nhóm đã gắn cha; báo các nhóm chưa gắn và việc chưa phân nhóm.
-Không tạo, sửa hay tự xoá task con trên Getfly; các bản task con đã đồng bộ trước đây được giữ nguyên. Lệnh gỡ toàn bộ khỏi Getfly vẫn xoá mọi việc app từng tạo sau khi xác nhận.
+Đầu mục task con (chỉ tên, không kèm phụ trách hay tiến độ) được ghi trong mô tả của việc chính, giữ nguyên phần mô tả nhập tay trên Getfly. Không tạo, sửa hay tự xoá task con thành việc riêng trên Getfly; các bản task con đã đồng bộ trước đây được giữ nguyên. Lệnh gỡ toàn bộ khỏi Getfly vẫn xoá mọi việc app từng tạo sau khi xác nhận.
 Việc chính đã đổi được sửa theo băm nội dung, việc chính đã xoá được xoá trên Getfly. Không gửi ghi chú; tiến độ 100% chỉ nhắc đánh dấu hoàn thành tay. Liên kết lưu ở `getfly_links`.
 Người phụ trách ghép sang id người dùng Getfly; phải chọn người tạo việc. Request được giãn cách, lưu đệm tra cha và thử lại có chờ khi Getfly giới hạn số yêu cầu.
+Menu chuột phải trên nhóm và việc có **Đồng bộ lên Getfly** / **Xoá khỏi Getfly** theo đúng mục được chọn. Xoá yêu cầu xác nhận, giữ dữ liệu VNLab và chặn các việc đang được gắn làm cha Getfly.
 Cấu hình máy chủ: `./scripts/getfly-setup.sh` (ghi `GETFLY_BASE_URL`, `GETFLY_API_KEY` vào `.env` trên VPS).
 
 ## Chạy local

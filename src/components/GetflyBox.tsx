@@ -13,8 +13,10 @@ export function getflySummary(r: GetflyResult) {
   return parts.length ? `Getfly: ${parts.join(', ')} việc` : r.warnings.length ? `Getfly: ${r.warnings.length} lưu ý khi đồng bộ` : 'Getfly đã khớp, không có gì thay đổi';
 }
 
+export type GetflyScope = { groupId?: string; taskId?: string };
+
 export type GetflyJob = {
-  id: string; kind: 'sync' | 'unsync'; status: 'running' | 'done' | 'error'; done: number; total: number;
+  id: string; kind: 'sync' | 'unsync'; scope?: GetflyScope; status: 'running' | 'done' | 'error'; done: number; total: number;
   startedAt: string; finishedAt: string | null; result: (GetflyResult | { deleted: number; errors: string[] }) | null; error: string | null;
 };
 
@@ -52,12 +54,12 @@ export function useGetflyJob(projectId: string) {
     }
     void qc.invalidateQueries({ queryKey: ['project', projectId] });
   }, [job.data, projectId, qc, toast]);
-  const start = useAction((kind: 'sync' | 'unsync') => api<GetflyJob>(`/projects/${projectId}/getfly/${kind}`, { method: 'POST', body: {} }), {
+  const start = useAction(({ kind, scope }: { kind: 'sync' | 'unsync'; scope?: GetflyScope }) => api<GetflyJob>(`/projects/${projectId}/getfly/${kind}`, { method: 'POST', body: scope ?? {} }), {
     onSuccess: (j) => { watchingJobs.add(j.id); qc.setQueryData(key, j); },
   });
   const running = job.data?.status === 'running' || start.isPending;
   const progress = job.data?.status === 'running' && job.data.total ? `${job.data.done}/${job.data.total}` : '';
-  return { job: job.data ?? null, running, progress, sync: () => start.mutate('sync'), unsync: () => start.mutate('unsync') };
+  return { job: job.data ?? null, running, progress, sync: () => start.mutate({ kind: 'sync' }), unsync: () => start.mutate({ kind: 'unsync' }), syncScope: (scope: GetflyScope) => start.mutate({ kind: 'sync', scope }), unsyncScope: (scope: GetflyScope) => start.mutate({ kind: 'unsync', scope }) };
 }
 
 type GUser = { id: string; name: string; email: string; dept: string };
@@ -108,7 +110,7 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
         <p className="text-[13px] font-bold">Getfly CRM</p>
         {status.data?.configured && ready && <Button size="sm" variant="secondary" onClick={gj.sync} disabled={gj.running || !canEdit}><CloudArrowUp size={15} className={gj.running ? 'animate-pulse' : undefined} /> {gj.running ? `${gj.job?.kind === 'unsync' ? 'Đang xoá' : 'Đang đồng bộ'}${gj.progress ? ` ${gj.progress}` : '…'}` : 'Đồng bộ ngay'}</Button>}
       </div>
-      <p className="mb-3 mt-0.5 text-[12px] text-muted">Bấm đồng bộ để tạo việc mới, sửa việc đã đổi và xoá việc đã xoá trên Getfly. Mỗi nhóm gắn một việc cha riêng trên Getfly → việc chính. Chỉ đồng bộ nhóm đã gắn cha; không đẩy task con. Không gửi ghi chú. Việc xong 100% thì anh đánh dấu hoàn thành tay trên Getfly (API không cho).</p>
+      <p className="mb-3 mt-0.5 text-[12px] text-muted">Bấm đồng bộ để tạo việc mới, sửa việc đã đổi và xoá việc đã xoá trên Getfly. Mỗi nhóm gắn một việc cha riêng trên Getfly → việc chính. Chỉ đồng bộ nhóm đã gắn cha; task con được ghi vào mô tả của việc chính, không tạo việc riêng. Không gửi ghi chú. Việc xong 100% thì anh đánh dấu hoàn thành tay trên Getfly (API không cho).</p>
       {!status.data?.configured ? (
         <p className="rounded-xl bg-fill px-3 py-2 text-[12px] text-muted">Máy chủ chưa có thông tin Getfly. Chạy <code>./scripts/getfly-setup.sh</code> để lưu API key lên VPS.</p>
       ) : (

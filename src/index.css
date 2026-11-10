@@ -714,3 +714,13 @@ body::before {
 .gantt.has-tools .gantt-head .gantt-left { min-height: 66px; }
 .gantt.list.has-tools .gantt-head .gantt-left { min-height: 70px; }
 .gantt.list.has-tools .gantt-head .gantt-left > *:not(.gantt-tools) { align-items: flex-end !important; padding-bottom: 6px !important; }
+
+/* Thanh phase ở đầu trang dự án. */
+.phase-tab {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 240px; height: 32px; padding: 0 12px;
+  border-radius: 999px; border: 1px solid var(--line); background: var(--card, var(--surface));
+  font-size: 13px; font-weight: 700; color: var(--ink-2); transition: background 120ms, color 120ms, border-color 120ms;
+}
+.phase-tab:hover { border-color: color-mix(in srgb, var(--primary) 40%, var(--line)); color: var(--ink); }
+.phase-tab.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary, #fff); }
+.phase-tab.add { border-style: dashed; color: var(--muted); font-weight: 600; }

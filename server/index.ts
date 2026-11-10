@@ -434,17 +434,35 @@ auth.patch('/projects/:id/getfly', requirePermission('project.project.write'), a
   return c.json({ ...D.projectView(row), myRole: p.myRole, getflyLinks: await getflyLinkCount(p.id) });
 });
 
+const getflyScopeSchema = z.object({ groupId: zId.optional(), taskId: zId.optional() }).strict().refine((v) => !(v.groupId && v.taskId), 'Chỉ chọn nhóm hoặc việc');
+async function readGetflyScope(c: Parameters<typeof body>[0], projectId: string) {
+  const raw = await c.req.text();
+  let value: unknown;
+  try { value = raw ? JSON.parse(raw) : {}; } catch { throw new HTTPException(400, { message: 'Nội dung JSON không hợp lệ' }); }
+  const parsed = getflyScopeSchema.safeParse(value);
+  if (!parsed.success) throw new HTTPException(400, { message: 'Phạm vi Getfly không hợp lệ: chỉ chọn một nhóm hoặc một việc' });
+  const scope = parsed.data;
+  if (scope.groupId) await D.groupBelongs(projectId, scope.groupId);
+  if (scope.taskId) {
+    const [task] = await sql`select id from tasks where id = ${scope.taskId} and project_id = ${projectId}`;
+    if (!task) throw new HTTPException(404, { message: 'Không thấy việc trong dự án' });
+  }
+  return scope;
+}
+
 /** Bấm "Đồng bộ Getfly": tạo / sửa / hoàn thành / xoá việc bên Getfly cho khớp dự án. */
 auth.post('/projects/:id/getfly/sync', requirePermission('project.project.write'), async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
   D.editable(p);
-  return c.json(startGetflyJob(p.id, 'sync'), 202);
+  const scope = await readGetflyScope(c, p.id);
+  return c.json(startGetflyJob(p.id, 'sync', scope), 202);
 });
 /** Gỡ khỏi Getfly: xoá các việc app đã tạo trên Getfly cho dự án này. */
 auth.post('/projects/:id/getfly/unsync', requirePermission('project.project.write'), async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
   D.editable(p);
-  return c.json(startGetflyJob(p.id, 'unsync'), 202);
+  const scope = await readGetflyScope(c, p.id);
+  return c.json(startGetflyJob(p.id, 'unsync', scope), 202);
 });
 /** Job Getfly gần nhất của dự án (đang chạy / xong / lỗi) — giao diện hỏi định kỳ khi đang chạy. */
 auth.get('/projects/:id/getfly/job', async (c) => {
@@ -460,7 +478,7 @@ auth.get('/projects/:id/getfly', async (c) => {
 auth.patch('/projects/:id/sheet', requirePermission('project.project.write'), async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
   D.owned(p);
-  const b = await body(c, z.object({ sheetUrl: z.string().trim().max(400).nullable().optional(), sheetAuto: z.boolean().optional() }));
+  const b = await body(c, z.object({ sheetUrl: z.string().trim().max(400).nullable().optional(), sheetAuto: z.boolean().optional(), sheetCollapseSubtasks: z.boolean().optional() }));
   const patch: Record<string, unknown> = {};
   if (b.sheetUrl !== undefined) {
     if (b.sheetUrl === null || b.sheetUrl === '') Object.assign(patch, { sheetId: null, sheetSyncedAt: null, sheetError: null, sheetAuto: false });
@@ -472,6 +490,7 @@ auth.patch('/projects/:id/sheet', requirePermission('project.project.write'), as
     }
   }
   if (b.sheetAuto !== undefined) patch.sheetAuto = b.sheetAuto;
+  if (b.sheetCollapseSubtasks !== undefined) patch.sheetCollapseSubtasks = b.sheetCollapseSubtasks;
   if (!Object.keys(patch).length) throw new HTTPException(400, { message: 'Không có gì để sửa' });
   const [row] = await sql<D.ProjectRow[]>`update projects set ${sql(patch)} where id = ${p.id} returning *`;
   return c.json({ ...D.projectView(row), myRole: p.myRole });
@@ -569,6 +588,46 @@ auth.delete('/projects/:id/scopes/:sid', requirePermission('project.project.writ
   D.editable(p);
   return c.json(await D.deleteScope(p.id, param(c, 'sid')));
 });
+// ---- phase (giai đoạn trong dự án, dùng chung cấu hình)
+auth.post('/projects/:id/phases', requirePermission('project.project.write'), async (c) => {
+  const p = await D.projectOf(c.get('user'), param(c));
+  D.editable(p);
+  return c.json(await D.createPhase(p.id, await body(c, D.phaseSchema)), 201);
+});
+auth.patch('/projects/:id/phases/:phid', requirePermission('project.project.write'), async (c) => {
+  const p = await D.projectOf(c.get('user'), param(c));
+  D.editable(p);
+  return c.json(await D.updatePhase(p.id, param(c, 'phid'), await body(c, D.phaseSchema.partial())));
+});
+auth.delete('/projects/:id/phases/:phid', requirePermission('project.project.write'), async (c) => {
+  const p = await D.projectOf(c.get('user'), param(c));
+  D.editable(p);
+  return c.json(await D.deletePhase(p.id, param(c, 'phid'), c.req.query('deleteTasks') === '1'));
+});
+auth.put('/projects/:id/phases/order', requirePermission('project.project.write'), async (c) => {
+  const p = await D.projectOf(c.get('user'), param(c));
+  D.editable(p);
+  await D.reorderPhases(p.id, (await body(c, z.object({ ids: z.array(zId).max(100) }))).ids);
+  return c.json({ ok: true });
+});
+/** Gán việc vào phase: { phaseId (null = bỏ), taskIds } hoặc { phaseId, unphased: true } = mọi việc chưa có phase. */
+auth.post('/projects/:id/tasks/phase', requirePermission('project.task.write'), async (c) => {
+  const p = await D.projectOf(c.get('user'), param(c));
+  D.editable(p);
+  const b = await body(c, z.object({ phaseId: zId.nullable(), taskIds: z.array(zId).max(500).optional(), unphased: z.boolean().optional() }));
+  if (!b.taskIds?.length && !b.unphased) throw new HTTPException(400, { message: 'Chọn việc cần gán phase' });
+  return c.json(await D.setTasksPhase(p.id, b.phaseId, b.unphased ? 'unphased' : b.taskIds!));
+});
+/** Gộp dự án khác vào dự án này thành một phase (chủ cả hai dự án). */
+auth.post('/projects/:id/merge', requirePermission('project.project.write'), async (c) => {
+  const target = await D.projectOf(c.get('user'), param(c));
+  D.owned(target);
+  const b = await body(c, z.object({ sourceId: zId, sourcePhase: zText(80).min(1, 'Nhập tên phase cho dự án được gộp'), targetPhase: zText(80).optional() }));
+  const source = await D.projectOf(c.get('user'), b.sourceId);
+  D.owned(source);
+  return c.json(await D.mergeProjectAsPhase(target.id, source.id, b.sourcePhase, b.targetPhase || undefined));
+});
+
 auth.put('/projects/:id/scopes/order', requirePermission('project.project.write'), async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
   D.editable(p);

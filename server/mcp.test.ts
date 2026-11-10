@@ -96,6 +96,9 @@ test('MCP: token vpj_ ở Cài đặt, công cụ dùng chung tầng dữ liệu
     assert.equal(withChildren.task.progress, 50);
     assert.equal(withChildren.task.subtasks.length, 2);
     assert.match(await call(token, 'update_task', { taskId: made1.task.id, startDate: addDays(t0, 9), endDate: addDays(t0, 8) }, true), /kết thúc/);
+    const sheetOptions = await call(token, 'set_google_sheet', { projectId: created.id, collapseSubtasks: false });
+    assert.equal(sheetOptions.collapseSubtasks, false);
+    assert.equal((await R('GET', `/projects/${created.id}`)).body.sheetCollapseSubtasks, false);
     // REST thấy đúng dữ liệu MCP ghi.
     const viaRest = await R('GET', `/projects/${created.id}`);
     assert.equal(viaRest.body.tasks.length, 4);

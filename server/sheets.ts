@@ -59,13 +59,19 @@ export function formulaFor(locale: string | undefined, formula: string) {
 }
 
 /** Request vẽ cả tab PLAN: ghi theo từng hàng (ô trống trong hàng vẫn được xoá định dạng cũ). */
-function planRequests(sheetId: number, layout: Layout, existingRules: number, locale: string | undefined) {
+type RowGroup = { range: { sheetId: number; dimension: string; startIndex: number; endIndex: number }; depth: number; collapsed?: boolean };
+
+function planRequests(sheetId: number, layout: Layout, existingRules: number, locale: string | undefined, existingGroups: RowGroup[], collapseSubtasks: boolean) {
   const reqs: unknown[] = [];
+  // Bỏ nhóm cũ trước khi đổi số hàng, tránh chồng nhóm và ẩn nhầm việc chính sau khi sắp xếp.
+  for (const group of [...existingGroups].sort((a, b) => b.depth - a.depth)) reqs.push({ deleteDimensionGroup: { range: group.range } });
+  reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'ROWS' }, properties: { hiddenByUser: false }, fields: 'hiddenByUser' } });
+
   // Dọn: bỏ merge, xoá giá trị + định dạng, xoá conditional formatting cũ, đủ kích thước lưới.
   reqs.push({ unmergeCells: { range: { sheetId } } });
   reqs.push({ updateCells: { range: { sheetId }, fields: 'userEnteredValue,userEnteredFormat' } });
   for (let i = 0; i < existingRules; i++) reqs.push({ deleteConditionalFormatRule: { sheetId, index: 0 } });
-  reqs.push({ updateSheetProperties: { properties: { sheetId, gridProperties: { rowCount: Math.max(layout.lastRow + 5, 40), columnCount: layout.lastCol + 2, frozenRowCount: layout.freeze.rows, frozenColumnCount: layout.freeze.cols } }, fields: 'gridProperties(rowCount,columnCount,frozenRowCount,frozenColumnCount)' } });
+  reqs.push({ updateSheetProperties: { properties: { sheetId, gridProperties: { rowCount: Math.max(layout.lastRow + 5, 40), columnCount: layout.lastCol + 2, frozenRowCount: layout.freeze.rows, frozenColumnCount: layout.freeze.cols, rowGroupControlAfter: false } }, fields: 'gridProperties(rowCount,columnCount,frozenRowCount,frozenColumnCount,rowGroupControlAfter)' } });
   // Ô theo hàng.
   const byRow = new Map<number, Cell[]>();
   for (const c of layout.cells) byRow.set(c.r, [...(byRow.get(c.r) ?? []), c]);
@@ -84,6 +90,11 @@ function planRequests(sheetId: number, layout: Layout, existingRules: number, lo
   }
   for (const [r, h] of Object.entries(layout.rowHeights)) {
     reqs.push({ updateDimensionProperties: { range: { sheetId, dimension: 'ROWS', startIndex: Number(r) - 1, endIndex: Number(r) }, properties: { pixelSize: Math.round(h * 1.33) }, fields: 'pixelSize' } });
+  }
+  for (const group of layout.subtaskRowGroups) {
+    const range = { sheetId, dimension: 'ROWS', startIndex: group.r1 - 1, endIndex: group.r2 };
+    reqs.push({ addDimensionGroup: { range } });
+    reqs.push({ updateDimensionGroup: { dimensionGroup: { range, depth: 1, collapsed: collapseSubtasks }, fields: 'collapsed' } });
   }
   const g = layout.grid;
   if (g) {
@@ -115,27 +126,27 @@ function dataRequests(sheetId: number, layout: Layout) {
 // ---------------------------------------------------------------- gọi Google
 
 type SheetProps = { sheetId: number; title: string };
-type Spreadsheet = { spreadsheetUrl?: string; properties?: { locale?: string }; sheets?: { properties: SheetProps; conditionalFormats?: unknown[] }[] };
+type Spreadsheet = { spreadsheetUrl?: string; properties?: { locale?: string }; sheets?: { properties: SheetProps; conditionalFormats?: unknown[]; rowGroups?: RowGroup[] }[] };
 
 async function ensureTabs(spreadsheetId: string, titles: string[]) {
-  const ss = await gfetch<Spreadsheet>(`${SHEETS_API()}/spreadsheets/${spreadsheetId}?fields=spreadsheetUrl,properties.locale,sheets(properties(sheetId,title),conditionalFormats)`);
-  const have = new Map((ss.sheets ?? []).map((s) => [s.properties.title, { id: s.properties.sheetId, cf: s.conditionalFormats?.length ?? 0 }]));
+  const ss = await gfetch<Spreadsheet>(`${SHEETS_API()}/spreadsheets/${spreadsheetId}?fields=spreadsheetUrl,properties.locale,sheets(properties(sheetId,title),conditionalFormats,rowGroups)`);
+  const have = new Map((ss.sheets ?? []).map((s) => [s.properties.title, { id: s.properties.sheetId, cf: s.conditionalFormats?.length ?? 0, groups: s.rowGroups ?? [] }]));
   const missing = titles.filter((t) => !have.has(t));
   if (missing.length) {
     const r = await gfetch<{ replies: { addSheet?: { properties: SheetProps } }[] }>(`${SHEETS_API()}/spreadsheets/${spreadsheetId}:batchUpdate`, {
       method: 'POST', body: JSON.stringify({ requests: missing.map((title) => ({ addSheet: { properties: { title } } })) }),
     });
-    for (const rep of r.replies) if (rep.addSheet) have.set(rep.addSheet.properties.title, { id: rep.addSheet.properties.sheetId, cf: 0 });
+    for (const rep of r.replies) if (rep.addSheet) have.set(rep.addSheet.properties.title, { id: rep.addSheet.properties.sheetId, cf: 0, groups: [] });
   }
   return { tabs: have, url: ss.spreadsheetUrl ?? SHEET_URL(spreadsheetId), locale: ss.properties?.locale };
 }
 
 /** Vẽ bố cục vào spreadsheet (tab PLAN + Dữ liệu). */
-export async function writeLayout(spreadsheetId: string, layout: Layout) {
+export async function writeLayout(spreadsheetId: string, layout: Layout, collapseSubtasks = true) {
   const { tabs, url, locale } = await ensureTabs(spreadsheetId, ['PLAN', 'Dữ liệu']);
   const plan = tabs.get('PLAN')!, data = tabs.get('Dữ liệu')!;
   await gfetch(`${SHEETS_API()}/spreadsheets/${spreadsheetId}:batchUpdate`, {
-    method: 'POST', body: JSON.stringify({ requests: [...planRequests(plan.id, layout, plan.cf, locale), ...dataRequests(data.id, layout)] }),
+    method: 'POST', body: JSON.stringify({ requests: [...planRequests(plan.id, layout, plan.cf, locale, plan.groups, collapseSubtasks), ...dataRequests(data.id, layout)] }),
   });
   return url;
 }
@@ -156,7 +167,7 @@ export async function syncProject(projectId: string): Promise<SyncResult> {
   const bundle = await D.projectBundle(projectId);
   const layout = buildPlanLayout(p, owner?.name || owner?.email || '', bundle.groups, bundle.tasks, D.effortOf, p.exportColumns);
   try {
-    const url = await writeLayout(p.sheetId, layout);
+    const url = await writeLayout(p.sheetId, layout, p.sheetCollapseSubtasks ?? true);
     const [row] = await sql<{ sheetSyncedAt: Date }[]>`update projects set sheet_synced_at = now(), sheet_error = null where id = ${projectId} returning sheet_synced_at`;
     return { url, syncedAt: new Date(row.sheetSyncedAt).toISOString() };
   } catch (err) {
