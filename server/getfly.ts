@@ -4,6 +4,7 @@
 //   - Tạo: POST /api/v3/tasks { task_info: { task_name, task_start_date "Y-m-d H:i", task_end_date, task_description,
 //          project_id, task_parent (id việc cha), task_type, task_weight, task_creator (bắt buộc), task_receiver } } -> { task_id }.
 //   - Sửa: PUT /api/v3/tasks { task_code, task_info: {...} }. Xoá: DELETE /api/v3/tasks { task_code }.
+//   - Người liên quan: people_involved: [id người dùng] nằm ngoài task_info, nhận cả khi tạo lẫn khi sửa.
 //   - KHÔNG có cách đánh dấu hoàn thành qua API (task_progress / task_status đều bị từ chối): việc 100% chỉ được
 //     báo để người dùng đánh dấu tay. Không gửi mô tả / ghi chú (người dùng yêu cầu).
 // Cây trên Getfly: việc cha của dự án -> mỗi nhóm việc (danh mục) một việc -> các việc trong nhóm -> task con.
@@ -90,7 +91,7 @@ export async function getflyUsers() {
 }
 
 type Link = { localId: string; parentLocal: string | null; getflyCode: string; getflyId: number | null; hash: string; completed: boolean };
-type Item = { localId: string; parentLocal: string | null; info: Json; done: boolean; label: string };
+type Item = { localId: string; parentLocal: string | null; info: Json; done: boolean; label: string; people: string[] };
 export type GetflyResult = { created: number; updated: number; completed: number; deleted: number; unchanged: number; errors: string[]; warnings: string[]; syncedAt: string };
 
 const when = (d: string | null, time: string) => (d ? `${d} ${time}` : undefined);
@@ -144,6 +145,8 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
       for (const n of name.split(',')) { const u = users[n.trim().toLowerCase()]; if (u) return u; }
       return undefined;
     };
+    /** "Người liên quan" trên Getfly: mọi người (phụ trách + hỗ trợ) đã ghép được, không trùng. */
+    const peopleOf = (...names: string[]) => [...new Set(names.flatMap((s) => s.split(',')).map((n) => users[n.trim().toLowerCase()]).filter((u): u is string => !!u))].sort();
     const common = { project_id: p.getflyProjectId || undefined, task_type: '1', task_weight: 1 };
     const items: Item[] = [];
     const mapped = (p.getflyGroups ?? {}) as Record<string, { id: number; code: string; name: string }>;
@@ -156,6 +159,7 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
       const ends = gt.map((t) => t.endDate ?? t.startDate).filter((d): d is string => !!d).sort();
       items.push({
         localId: gKey(g.id), parentLocal: null, done: false, label: `Nhóm ${g.name}`,
+        people: peopleOf(...gt.flatMap((t) => [t.assignee, t.support, ...(t.subtasks ?? []).map((s) => s.assignee)])),
         info: {
           ...common,
           task_name: g.name,
@@ -169,6 +173,7 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
       const done = t.progress >= 100;
       items.push({
         localId: t.id, parentLocal: t.groupId ? gKey(t.groupId) : null, done, label: t.name,
+        people: peopleOf(t.assignee, t.support),
         info: {
           ...common,
           task_name: t.name,
@@ -184,6 +189,7 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
         const sDone = s.progress >= 100;
         items.push({
           localId: s.id, parentLocal: t.id, done: sDone, label: `${t.name} › ${s.name}`,
+          people: peopleOf(s.assignee),
           info: {
             ...common,
             task_name: s.name,
@@ -236,11 +242,13 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
           info.task_parent = String(parent.getflyId);
         }
         for (const k of Object.keys(info)) if (info[k] === undefined) delete info[k];
-        const hash = hashOf(info);
+        // people_involved nằm ngoài task_info (như giao diện Getfly gửi); đổi người liên quan cũng tính là đổi.
+        const people = it.people.length ? { people_involved: it.people } : {};
+        const hash = hashOf({ ...info, ...people });
         const cur = links.get(it.localId);
         let link: Link;
         if (!cur) {
-          const res = await gf<{ task_id?: number | string }>('POST', '/tasks', { task_info: { ...info, task_creator: p.getflyCreatorId } });
+          const res = await gf<{ task_id?: number | string }>('POST', '/tasks', { ...people, task_info: { ...info, task_creator: p.getflyCreatorId } });
           const id = Number(res.task_id);
           if (!id) throw new GetflyError(502, { message: 'Getfly không trả id việc' });
           link = { localId: it.localId, parentLocal: it.parentLocal, getflyCode: '', getflyId: id, hash, completed: false };
@@ -248,7 +256,7 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
           r.created++;
         } else if (cur.hash !== hash) {
           if (!cur.getflyCode) throw new GetflyError(502, { message: 'Chưa biết mã việc trên Getfly — bấm đồng bộ lại sau' });
-          await gf('PUT', '/tasks', { task_code: cur.getflyCode, task_info: info });
+          await gf('PUT', '/tasks', { task_code: cur.getflyCode, ...people, task_info: info });
           link = { ...cur, parentLocal: it.parentLocal, hash };
           r.updated++;
         } else { link = cur; r.unchanged++; }

@@ -36,7 +36,7 @@ async function fakeGetfly() {
         if (info.task_start_date && !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(info.task_start_date)) return json({ message: 'Thời gian bắt đầu công việc không đúng định dạng (Y-m-d H:i)' }, 400);
         if (info.task_parent && !tasks.has(Number(info.task_parent))) return json({ message: 'Công việc cha không tồn tại' }, 400);
         const id = ++next;
-        tasks.set(id, { task_id: String(id), task_code: `CVI/2026-11/${id}`, task_status: '11', ...info });
+        tasks.set(id, { task_id: String(id), task_code: `CVI/2026-11/${id}`, task_status: '11', ...info, people_involved: body.people_involved });
         return json({ message: 'Thêm mới công việc thành công', task_id: id });
       }
       const t = [...tasks.values()].find((x) => x.task_code === body?.task_code);
@@ -44,6 +44,7 @@ async function fakeGetfly() {
         if (!t) return json({ message: 'Công việc không tồn tại' }, 400);
         if ('task_progress' in info || 'task_status' in info) return json({ message: 'task_info thuộc tính không hợp lệ' }, 400);
         Object.assign(t, info);
+        if (body.people_involved) t.people_involved = body.people_involved;
         return json({ message: 'Cập nhật công việc thành công', task_id: t.task_id });
       }
       if (req.method === 'DELETE') {
@@ -98,7 +99,7 @@ test('đồng bộ Getfly (API v3): việc cha từ link, tạo / sửa / xoá, 
     // Nhóm "Kho" gắn với việc có sẵn trên Getfly (id 9001) -> không tạo việc cho nhóm này.
     assert.equal((await R('PATCH', `/projects/${p.id}/getfly`, { groups: { [grp2.id]: '9001' } })).body.getflyGroups[grp2.id].code, 'CVI/X/1');
     await R('POST', `/projects/${p.id}/tasks`, { groupId: grp2.id, name: 'Nhập kho', note: 'Ghi chú kho' });
-    const t1 = (await R('POST', `/projects/${p.id}/tasks`, { groupId: grp.id, name: 'Màn hình giao hàng', assignee: 'Đức', startDate: '2026-11-10', endDate: '2026-11-12', subtasks: [{ name: 'Danh sách chuyến', assignee: 'Quyết', progress: 0 }] })).body;
+    const t1 = (await R('POST', `/projects/${p.id}/tasks`, { groupId: grp.id, name: 'Màn hình giao hàng', assignee: 'Đức', support: 'Quyết, Người lạ', startDate: '2026-11-10', endDate: '2026-11-12', subtasks: [{ name: 'Danh sách chuyến', assignee: 'Quyết', progress: 0 }] })).body;
     const t2 = (await R('POST', `/projects/${p.id}/tasks`, { name: 'Việc không có ngày', assignee: 'Người lạ' })).body;
     const s1 = await run(`/projects/${p.id}/getfly/sync`);
     assert.deepEqual([s1.created, s1.updated, s1.errors], [5, 0, []]); // 1 việc nhóm + 3 việc + 1 task con
@@ -112,6 +113,8 @@ test('đồng bộ Getfly (API v3): việc cha từ link, tạo / sửa / xoá, 
     assert.equal(made.find((t) => t.task_name === 'Việc không có ngày').task_parent, '8689'); // chưa phân nhóm
     assert.deepEqual([parent.task_parent, parent.project_id, parent.task_receiver, parent.task_creator, parent.task_start_date], [groupTask.task_id, '1', '25', '25', '2026-11-10 08:00']);
     assert.equal(made.find((t) => t.task_name === 'Danh sách chuyến').task_parent, parent.task_id); // task con dưới đúng việc cha
+    assert.deepEqual(parent.people_involved, ['25', '4']); // phụ trách + hỗ trợ đã ghép -> người liên quan
+    assert.deepEqual(groupTask.people_involved, ['25', '4']);
     assert.equal(made.find((t) => t.task_name === 'Danh sách chuyến').task_receiver, '4');
     assert.equal(made.find((t) => t.task_name === 'Việc không có ngày').task_receiver, undefined);
 
