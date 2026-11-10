@@ -406,7 +406,7 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
         return (
           <div key={t.id} data-task-row={t.id} data-group={t.groupId ?? UNGROUPED} className={cx('gantt-row group border-b border-line last:border-b-0 hover:bg-fill/40', rowDrag?.active && rowDrag.task.id === t.id && 'is-dragging', rowDrag?.active && rowDrag.overId === t.id && (rowDrag.after ? 'drop-after' : 'drop-before'))}>
             <div className={cx('gantt-left min-h-10 py-1.5', !canEdit && 'cursor-pointer')} onClick={canEdit ? undefined : () => onEditTask(t)} onDoubleClick={canEdit ? () => onEditTask(t) : undefined} role={canEdit ? undefined : 'button'} tabIndex={canEdit ? undefined : 0} onKeyDown={canEdit ? undefined : (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onEditTask(t))}>
-              <button type="button" className={cx('c-no group/no relative mx-auto flex h-7 w-7 items-center justify-center rounded-lg text-[12px] text-muted hover:bg-fill hover:text-ink', canEdit && 'cursor-grab active:cursor-grabbing')} title={canEdit ? 'Bấm: mở chi tiết · Kéo: đổi thứ tự trong nhóm' : 'Mở chi tiết'} style={{ touchAction: 'none' }}
+              <button type="button" className={cx('c-no group/no relative flex h-7 w-full items-center justify-start rounded-lg pl-1 text-[12px] text-muted hover:bg-fill hover:text-ink', canEdit && 'cursor-grab active:cursor-grabbing')} title={canEdit ? 'Bấm: mở chi tiết · Kéo: đổi thứ tự trong nhóm' : 'Mở chi tiết'} style={{ touchAction: 'none' }}
                 onPointerDown={(e) => beginRow(e, t)} onPointerMove={moveRow} onPointerUp={endRow} onPointerCancel={() => setRowDrag(null)} onClick={(e) => e.stopPropagation()}>
                 <span className="num group-hover/no:hidden">{r.index}</span>
                 <DotsSixVertical size={16} weight="bold" className="hidden group-hover/no:block" />
@@ -634,7 +634,7 @@ function SubtaskRow({ parent, subtask, index, canEdit, onPatch, children }: {
   const edit = (field: 'name' | 'assignee' | 'progress') => { if (canEdit) setEditing(field); };
   return <div className="gantt-row border-b border-line" data-subtask-row={subtask.id}>
     <div className="gantt-left min-h-10 bg-fill/30 py-1.5">
-      <span className="c-no num text-center text-[12px] text-muted">{index}</span>
+      <span className="c-no num pl-1 text-left text-[12px] text-muted">{index}</span>
       {/* Task con thụt vào sâu hơn tên task cha (cha: lề 6px + nút mũi tên 16px + khoảng cách 6px = 28px; con: 44px).
           Dùng style trực tiếp vì lớp padding của Tailwind nằm trong layer, bị rule `.gantt-left > *` đè. */}
       <div className={cx('flex min-w-0 items-center', canEdit && 'cursor-text')} style={{ paddingLeft: 44 }} onClick={() => edit('name')}>
