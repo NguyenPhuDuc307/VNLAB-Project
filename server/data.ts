@@ -356,6 +356,55 @@ export async function reorderTasks(projectId: string, groupId: string | null, id
 }
 
 /** Sắp xếp việc trong nhóm theo ngày bắt đầu (trống xếp cuối), rồi kết thúc, rồi tên. groupId undefined = mọi nhóm. */
+// ---------------------------------------------------------------- dùng chung REST / MCP: dự án, thành viên, nhóm
+
+/** Sửa thông tin dự án (đã kiểm quyền ở nơi gọi). Phát `changed` để giao diện / Google Sheet cập nhật. */
+export async function updateProject(p: ProjectRow & { myRole: MemberRole }, patch: Record<string, unknown>) {
+  if (!Object.keys(patch).length) return p;
+  const [row] = await sql<ProjectRow[]>`update projects set ${sql({ ...patch, updatedAt: new Date() })} where id = ${p.id} returning *`;
+  projectEvents.emit('changed', p.id, actorContext.getStore() ?? null);
+  return { ...row, myRole: p.myRole };
+}
+
+/** Mời / đổi vai trò thành viên theo email (chỉ chủ dự án). */
+export async function upsertMember(p: ProjectRow, email: string, role: 'editor' | 'viewer', invitedBy: string) {
+  email = email.trim().toLowerCase();
+  const [owner] = await sql`select email from users where id = ${p.ownerId}`;
+  if (owner.email.toLowerCase() === email) throw bad('Đây là chủ dự án rồi');
+  const [existing] = await sql`select id from users where lower(email) = ${email} order by last_login_at desc nulls last limit 1`;
+  await sql`
+    insert into project_members (project_id, email, user_id, role, invited_by) values (${p.id}, ${email}, ${existing?.id ?? null}, ${role}, ${invitedBy})
+    on conflict (project_id, email) do update set role = excluded.role`;
+  await touch(p.id);
+  return { email, role, known: !!existing };
+}
+
+export async function setMemberRole(p: ProjectRow, email: string, role: 'editor' | 'viewer') {
+  const rows = await sql`update project_members set role = ${role} where project_id = ${p.id} and lower(email) = ${email.trim().toLowerCase()} returning email`;
+  if (!rows.length) throw notFound();
+  await touch(p.id);
+}
+
+export async function removeMember(p: ProjectRow, email: string, selfId?: string) {
+  const e = email.trim().toLowerCase();
+  const rows = await sql`delete from project_members where project_id = ${p.id} and (lower(email) = ${e} ${selfId ? sql`or user_id = ${selfId}` : sql``}) returning email`;
+  if (!rows.length) throw notFound();
+  await touch(p.id);
+}
+
+/** Đổi tên / thu gọn nhóm. Chỉ đổi tên mới phát `changed` (thu gọn là trạng thái hiển thị). */
+export async function updateGroup(projectId: string, groupId: string, patch: { name?: string; collapsed?: boolean }) {
+  const [g] = await sql`update task_groups set ${sql(patch)} where id = ${groupId} and project_id = ${projectId} returning id, name, sort, collapsed`;
+  if (!g) throw notFound();
+  if (patch.name !== undefined) await touch(projectId);
+  return g as { id: string; name: string; sort: number; collapsed: boolean };
+}
+
+export async function deleteProject(projectId: string) {
+  await sql`delete from projects where id = ${projectId}`;
+  projectEvents.emit('changed', projectId, actorContext.getStore() ?? null);
+}
+
 export async function reorderGroups(projectId: string, ids: string[]) {
   await sql.begin(async (tx) => {
     for (const [i, id] of ids.entries()) await tx`update task_groups set sort = ${i} where id = ${id} and project_id = ${projectId}`;

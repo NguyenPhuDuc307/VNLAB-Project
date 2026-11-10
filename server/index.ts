@@ -39,7 +39,7 @@ const SESSION_DAYS = 30;
 
 type Env = { Variables: Record<string, never> };
 const app = new Hono<Env>();
-const { zId, zText, notFound, forbidden } = D;
+const { zId, zText, forbidden } = D;
 type UserRow = D.UserRow;
 
 // ---------------------------------------------------------------- helpers
@@ -351,14 +351,14 @@ auth.patch('/projects/:id', requirePermission('project.project.write'), async (c
   if (b.archived !== undefined) D.owned(p);
   if (b.exportColumns) b.exportColumns = normalizeColumns(b.exportColumns) as typeof b.exportColumns;
   if (!Object.keys(b).length) return c.json(D.projectView(p));
-  const [row] = await sql<D.ProjectRow[]>`update projects set ${sql({ ...b, updatedAt: new Date() })} where id = ${p.id} returning *`;
+  const row = await D.updateProject(p, b);
   return c.json({ ...D.projectView(row), myRole: p.myRole });
 });
 
 auth.delete('/projects/:id', requirePermission('project.project.delete'), async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
   D.owned(p);
-  await sql`delete from projects where id = ${p.id}`;
+  await D.deleteProject(p.id);
   return c.json({ ok: true });
 });
 
@@ -403,25 +403,15 @@ auth.post('/projects/:id/members', requirePermission('project.project.write'), a
   const p = await D.projectOf(c.get('user'), param(c));
   D.owned(p);
   const b = await body(c, memberSchema);
-  const email = b.email.toLowerCase();
-  const [owner] = await sql`select email from users where id = ${p.ownerId}`;
-  if (owner.email.toLowerCase() === email) throw new HTTPException(400, { message: 'Đây là chủ dự án rồi' });
-  const [existing] = await sql`select id from users where lower(email) = ${email} order by last_login_at desc nulls last limit 1`;
-  await sql`
-    insert into project_members (project_id, email, user_id, role, invited_by) values (${p.id}, ${email}, ${existing?.id ?? null}, ${b.role}, ${c.get('userId')})
-    on conflict (project_id, email) do update set role = excluded.role`;
-  await D.touch(p.id);
-  return c.json({ ok: true, email, role: b.role, known: !!existing }, 201);
+  const r = await D.upsertMember(p, b.email, b.role, c.get('userId'));
+  return c.json({ ok: true, ...r }, 201);
 });
 
 auth.patch('/projects/:id/members/:email', requirePermission('project.project.write'), async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
   D.owned(p);
   const b = await body(c, z.object({ role: z.enum(['editor', 'viewer']) }));
-  const email = decodeURIComponent(c.req.param('email')).toLowerCase();
-  const rows = await sql`update project_members set role = ${b.role} where project_id = ${p.id} and lower(email) = ${email} returning email`;
-  if (!rows.length) throw notFound();
-  await D.touch(p.id);
+  await D.setMemberRole(p, decodeURIComponent(c.req.param('email')), b.role);
   return c.json({ ok: true });
 });
 
@@ -435,9 +425,7 @@ auth.delete('/projects/:id/members/:email', async (c) => {
     if (!c.get('permissions').has('project.project.write')) throw forbidden('Bạn chưa có quyền sửa thành viên dự án');
     D.owned(p);
   } else if (p.myRole === 'owner') throw new HTTPException(400, { message: 'Chủ dự án không rút được — hãy xoá dự án hoặc đổi chủ' });
-  const rows = await sql`delete from project_members where project_id = ${p.id} and (lower(email) = ${email} ${raw === 'me' ? sql`or user_id = ${u.id}` : sql``}) returning email`;
-  if (!rows.length) throw notFound();
-  await D.touch(p.id);
+  await D.removeMember(p, email, raw === 'me' ? u.id : undefined);
   return c.json({ ok: true });
 });
 
@@ -457,10 +445,7 @@ auth.patch('/projects/:id/groups/:gid', requirePermission('project.project.write
   D.editable(p);
   const b = await body(c, groupSchema.partial().extend({ collapsed: z.boolean().optional() }));
   if (!Object.keys(b).length) throw new HTTPException(400, { message: 'Không có gì để sửa' });
-  const [g] = await sql`update task_groups set ${sql(b)} where id = ${param(c, 'gid')} and project_id = ${p.id} returning id, name, sort, collapsed`;
-  if (!g) throw notFound();
-  if (b.name !== undefined) await D.touch(p.id);
-  return c.json(g);
+  return c.json(await D.updateGroup(p.id, param(c, 'gid'), b));
 });
 
 // ?keepTasks=1: giữ lại việc trong nhóm (chuyển thành "chưa phân nhóm"); mặc định xoá cả việc.

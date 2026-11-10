@@ -7,7 +7,8 @@ import { z } from 'zod';
 import * as D from './data.ts';
 import { parseDate, today } from './dates.ts';
 import { effectivePermissions, rolesOf } from './rbac.ts';
-import { syncProject } from './sheets.ts';
+import { parseSheetId, syncProject } from './sheets.ts';
+import { ALL_COLUMNS, normalizeColumns } from './plan-layout.ts';
 import type { PermissionKey } from './permissions.ts';
 
 export class ToolError extends Error {}
@@ -290,7 +291,7 @@ export const TOOLS: Record<string, Tool> = {
 
 TOOLS.sort_tasks = {
   title: 'Sắp xếp việc theo ngày',
-  description: 'Sắp xếp lại thứ tự việc trong một nhóm (hoặc mọi nhóm) theo ngày bắt đầu, rồi kết thúc, rồi tên. Chỉ đổi thứ tự hiển thị, không đổi ngày.',
+  description: 'Sắp xếp theo ngày: có `group` thì chỉ xếp việc trong nhóm đó; bỏ trống thì xếp việc trong mọi nhóm VÀ xếp các nhóm theo ngày bắt đầu sớm nhất. Xếp theo ngày bắt đầu, rồi kết thúc, rồi tên. Chỉ đổi thứ tự hiển thị, không đổi ngày. Muốn đặt thứ tự tuỳ ý thì dùng move_task / reorder_groups.',
   input: z.object({ ...projectRef, group: z.string().trim().max(160).optional().describe('Tên nhóm; bỏ trống = mọi nhóm') }),
   write: true, destructive: false, perm: 'project.task.write',
   run: async (user, a: { projectId?: string; project?: string; group?: string }) => {
@@ -303,6 +304,212 @@ TOOLS.sort_tasks = {
     }
     const r = await D.sortTasksByDate(p.id, groupId);
     return { project: p.name, groupsSorted: r.groups, tasksMoved: r.moved };
+  },
+};
+
+/** Tìm nhóm theo id hoặc tên trong dự án. */
+async function groupRef(p: { id: string; name: string }, a: { group?: string; groupId?: string }) {
+  if (a.groupId) {
+    const g = (await D.projectBundle(p.id)).groups.find((x) => x.id === a.groupId);
+    if (g) return g;
+  } else if (a.group?.trim()) {
+    const g = await D.findGroup(p.id, a.group);
+    if (g) return g;
+  }
+  throw new ToolError(a.group || a.groupId ? `Không có nhóm "${a.group ?? a.groupId}" trong ${p.name}` : 'Cần `group` (tên) hoặc `groupId`');
+}
+const groupArgs = { group: z.string().trim().max(160).optional().describe('Tên nhóm'), groupId: z.uuid().optional() };
+
+TOOLS.update_project = {
+  title: 'Sửa thông tin dự án',
+  description: 'Sửa tên, mã, khách hàng, mô tả, ngày bắt đầu, màu, trọng số ngày công T7/CN, lưu trữ (chỉ chủ dự án) và cột mặc định khi xuất / đồng bộ. Chỉ gửi trường cần đổi.',
+  input: z.object({
+    ...projectRef,
+    name: z.string().trim().min(1).max(160).optional(), code: z.string().trim().max(40).optional(), customer: z.string().trim().max(160).optional(),
+    description: z.string().trim().max(2000).optional(), startDate: zAnyDate.nullable().optional(),
+    color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional().describe('Màu #RRGGBB'),
+    satWeight: z.number().min(0).max(1).optional().describe('Ngày công thứ 7 (0, 0.5, 1)'), sunWeight: z.number().min(0).max(1).optional().describe('Ngày công chủ nhật'),
+    archived: z.boolean().optional().describe('Lưu trữ / bỏ lưu trữ (chỉ chủ dự án)'),
+    exportColumns: z.array(z.enum(ALL_COLUMNS)).max(20).nullable().optional().describe(`Cột khi xuất Excel / đồng bộ Sheet: ${ALL_COLUMNS.join(', ')}; null = tất cả`),
+  }),
+  write: true, destructive: false, perm: 'project.project.write',
+  run: async (user, a: Record<string, unknown> & { projectId?: string; project?: string }) => {
+    const p = await editableProject(user, a);
+    const { projectId: _i, project: _n, ...rest } = a;
+    const patch: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(rest)) if (v !== undefined) patch[k] = v;
+    if ('startDate' in patch) patch.startDate = date(patch.startDate as string | null);
+    if (patch.archived !== undefined) D.owned(p);
+    if (Array.isArray(patch.exportColumns)) patch.exportColumns = normalizeColumns(patch.exportColumns as string[]);
+    if (!Object.keys(patch).length) throw new ToolError('Không có gì để sửa');
+    const row = await D.updateProject(p, patch);
+    return { project: D.projectView(row), changed: Object.keys(patch) };
+  },
+};
+
+TOOLS.delete_project = {
+  title: 'Xoá dự án',
+  description: 'Xoá hẳn một dự án cùng mọi nhóm, việc và lịch sử (không hoàn tác). Chỉ chủ dự án. Phải gửi `confirmName` đúng tên dự án; chỉ gọi khi người dùng nói rõ muốn xoá.',
+  input: z.object({ ...projectRef, confirmName: z.string().trim().min(1).max(160).describe('Gõ lại đúng tên dự án để xác nhận') }),
+  write: true, destructive: true, perm: 'project.project.delete',
+  run: async (user, a: { projectId?: string; project?: string; confirmName: string }) => {
+    const p = await resolveProject(user, a);
+    D.owned(p);
+    if (a.confirmName.trim().toLowerCase() !== p.name.trim().toLowerCase()) throw new ToolError(`confirmName phải đúng tên dự án "${p.name}"`);
+    await D.deleteProject(p.id);
+    return { deleted: p.name };
+  },
+};
+
+TOOLS.set_member = {
+  title: 'Mời / đổi quyền thành viên',
+  description: 'Mời người vào dự án theo email VNLab ID, hoặc đổi vai trò nếu đã là thành viên: editor (được sửa) hoặc viewer (chỉ xem). Chỉ chủ dự án.',
+  input: z.object({ ...projectRef, email: z.email().max(200), role: z.enum(['editor', 'viewer']) }),
+  write: true, destructive: false, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string; email: string; role: 'editor' | 'viewer' }) => {
+    const p = await resolveProject(user, a);
+    D.owned(p);
+    return { project: p.name, ...(await D.upsertMember(p, a.email, a.role, user.id)) };
+  },
+};
+
+TOOLS.remove_member = {
+  title: 'Gỡ thành viên',
+  description: 'Gỡ một thành viên khỏi dự án theo email (chỉ chủ dự án). Chỉ gọi khi người dùng nói rõ.',
+  input: z.object({ ...projectRef, email: z.email().max(200) }),
+  write: true, destructive: true, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string; email: string }) => {
+    const p = await resolveProject(user, a);
+    D.owned(p);
+    await D.removeMember(p, a.email);
+    return { project: p.name, removed: a.email.toLowerCase() };
+  },
+};
+
+TOOLS.update_group = {
+  title: 'Sửa nhóm việc',
+  description: 'Đổi tên nhóm (`newName`) và/hoặc thu gọn / mở nhóm trên Gantt (`collapsed`).',
+  input: z.object({ ...projectRef, ...groupArgs, newName: z.string().trim().min(1).max(160).optional(), collapsed: z.boolean().optional() }),
+  write: true, destructive: false, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string; group?: string; groupId?: string; newName?: string; collapsed?: boolean }) => {
+    const p = await editableProject(user, a);
+    const g = await groupRef(p, a);
+    const patch: { name?: string; collapsed?: boolean } = {};
+    if (a.newName) patch.name = a.newName;
+    if (a.collapsed !== undefined) patch.collapsed = a.collapsed;
+    if (!Object.keys(patch).length) throw new ToolError('Cần newName hoặc collapsed');
+    return { project: p.name, group: await D.updateGroup(p.id, g.id, patch) };
+  },
+};
+
+TOOLS.reorder_groups = {
+  title: 'Sắp xếp thứ tự nhóm',
+  description: 'Đặt thứ tự nhóm việc như kéo thả trên Gantt. `order` là danh sách tên (hoặc id) nhóm theo thứ tự mong muốn; nhóm không nêu giữ thứ tự cũ và xếp sau.',
+  input: z.object({ ...projectRef, order: z.array(z.string().trim().min(1).max(160)).min(1).max(500) }),
+  write: true, destructive: false, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string; order: string[] }) => {
+    const p = await editableProject(user, a);
+    const groups = (await D.projectBundle(p.id)).groups;
+    const picked: string[] = [];
+    for (const key of a.order) {
+      const k = key.toLowerCase();
+      const g = groups.find((x) => x.id === key) ?? groups.find((x) => x.name.trim().toLowerCase() === k);
+      if (!g) throw new ToolError(`Không có nhóm "${key}" trong ${p.name}`);
+      if (!picked.includes(g.id)) picked.push(g.id);
+    }
+    const ids = [...picked, ...groups.map((g) => g.id).filter((id) => !picked.includes(id))];
+    await D.reorderGroups(p.id, ids);
+    return { project: p.name, groups: ids.map((id) => groups.find((g) => g.id === id)!.name) };
+  },
+};
+
+TOOLS.move_task = {
+  title: 'Chuyển / đổi thứ tự việc',
+  description: 'Đổi vị trí một việc như kéo thả: đặt trước `beforeTaskId`, sau `afterTaskId`, hoặc ở `position` (1 = đầu nhóm). Có `group`/`groupId` thì chuyển sang nhóm đó (group: "" = Chưa phân nhóm). Không nêu vị trí thì đặt cuối nhóm.',
+  input: z.object({
+    taskId: z.uuid(), group: z.string().trim().max(160).optional().describe('Nhóm đích (tên); "" = Chưa phân nhóm'), groupId: z.uuid().optional(),
+    beforeTaskId: z.uuid().optional(), afterTaskId: z.uuid().optional(), position: z.number().int().min(1).optional(),
+  }),
+  write: true, destructive: false, perm: 'project.task.write',
+  run: async (user, a: { taskId: string; group?: string; groupId?: string; beforeTaskId?: string; afterTaskId?: string; position?: number }) => {
+    const { task, project: p } = await D.taskOf(user, a.taskId);
+    D.editable(p);
+    const bundle = await D.projectBundle(p.id);
+    const anchorId = a.beforeTaskId ?? a.afterTaskId;
+    const anchor = anchorId ? bundle.tasks.find((t) => t.id === anchorId) : undefined;
+    if (anchorId && !anchor) throw new ToolError('Không thấy việc mốc (beforeTaskId / afterTaskId) trong cùng dự án');
+    let groupId: string | null = task.groupId ?? null;
+    if (a.groupId || a.group !== undefined) groupId = a.group === '' && !a.groupId ? null : (await groupRef(p, a)).id;
+    else if (anchor) groupId = anchor.groupId ?? null;
+    if (anchor && (anchor.groupId ?? null) !== groupId) throw new ToolError('Việc mốc nằm ở nhóm khác nhóm đích');
+    const ids = bundle.tasks.filter((t) => (t.groupId ?? null) === groupId && t.id !== task.id).map((t) => t.id);
+    let at = ids.length;
+    if (anchor) at = ids.indexOf(anchor.id) + (a.afterTaskId ? 1 : 0);
+    else if (a.position) at = Math.min(ids.length, a.position - 1);
+    ids.splice(at, 0, task.id);
+    await D.reorderTasks(p.id, groupId, ids);
+    const groupName = groupId ? bundle.groups.find((g) => g.id === groupId)?.name ?? null : null;
+    return { project: p.name, task: task.name, group: groupName ?? 'Chưa phân nhóm', position: at + 1, of: ids.length };
+  },
+};
+
+TOOLS.rebaseline_task = {
+  title: 'Chốt kế hoạch gốc',
+  description: 'Lấy ngày bắt đầu / kết thúc hiện tại của việc làm kế hoạch gốc mới (xoá dấu "+N ngày" dời / gia hạn). Chỉ gọi khi người dùng muốn chốt lại kế hoạch.',
+  input: z.object({ taskId: z.uuid() }),
+  write: true, destructive: false, perm: 'project.task.write',
+  run: async (user, a: { taskId: string }) => {
+    const { task, project: p } = await D.taskOf(user, a.taskId);
+    D.editable(p);
+    await D.rebaselineTask(p.id, task.id, user.id);
+    return { project: p.name, task: task.name, baseline: { start: task.startDate, end: task.endDate } };
+  },
+};
+
+TOOLS.get_task_history = {
+  title: 'Lịch sử thay đổi của việc',
+  description: 'Các lần đổi tên, ngày, tiến độ, phụ trách… của một việc: ai đổi, lúc nào, giá trị cũ → mới.',
+  input: z.object({ taskId: z.uuid(), limit: z.number().int().min(1).max(100).optional() }),
+  run: async (user, a: { taskId: string; limit?: number }) => {
+    const { task, project: p } = await D.taskOf(user, a.taskId);
+    return { project: p.name, task: task.name, history: await D.taskHistory(p.id, task.id, a.limit ?? 50) };
+  },
+};
+
+TOOLS.set_google_sheet = {
+  title: 'Liên kết Google Sheet',
+  description: 'Liên kết dự án với một Google Sheet (link hoặc id; sheet phải chia sẻ quyền Người chỉnh sửa cho email service account trong Cài đặt), bật/tắt tự đồng bộ, hoặc gỡ liên kết (sheetUrl: null). Chỉ chủ dự án.',
+  input: z.object({ ...projectRef, sheetUrl: z.string().trim().max(400).nullable().optional(), auto: z.boolean().optional().describe('Tự đồng bộ sau mỗi thay đổi') }),
+  write: true, destructive: false, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string; sheetUrl?: string | null; auto?: boolean }) => {
+    const p = await resolveProject(user, a);
+    D.owned(p);
+    const patch: Record<string, unknown> = {};
+    if (a.sheetUrl !== undefined) {
+      if (!a.sheetUrl) Object.assign(patch, { sheetId: null, sheetSyncedAt: null, sheetError: null, sheetAuto: false });
+      else {
+        const id = parseSheetId(a.sheetUrl);
+        if (!id) throw new ToolError('Không nhận ra link Google Sheet (dạng https://docs.google.com/spreadsheets/d/…)');
+        Object.assign(patch, { sheetId: id, sheetError: null, sheetAuto: a.auto ?? true });
+      }
+    }
+    if (a.auto !== undefined) patch.sheetAuto = a.auto;
+    if (!Object.keys(patch).length) throw new ToolError('Cần sheetUrl hoặc auto');
+    const row = await D.updateProject(p, patch);
+    const v = D.projectView(row);
+    return { project: p.name, sheetUrl: v.sheetUrl, auto: v.sheetAuto, note: v.sheetUrl ? 'Gọi sync_google_sheet để ghi ngay lần đầu' : 'Đã gỡ liên kết' };
+  },
+};
+
+TOOLS.get_export_link = {
+  title: 'Link xuất Excel / CSV',
+  description: 'Trả link tải file kế hoạch (Excel theo mẫu Gantt, CSV hoặc JSON) để người dùng mở trên trình duyệt đã đăng nhập.',
+  input: z.object({ ...projectRef, format: z.enum(['xlsx', 'csv', 'json']).optional(), columns: z.array(z.enum(ALL_COLUMNS)).max(20).optional() }),
+  run: async (user, a: { projectId?: string; project?: string; format?: 'xlsx' | 'csv' | 'json'; columns?: string[] }) => {
+    const p = await resolveProject(user, a);
+    const q = new URLSearchParams({ format: a.format ?? 'xlsx' });
+    if (a.columns?.length) q.set('cols', normalizeColumns(a.columns).join(','));
+    return { project: p.name, url: `https://project.vnlab.id.vn/api/projects/${p.id}/export?${q}` };
   },
 };
 
@@ -337,6 +544,15 @@ function describeTool(name: string, a: Record<string, unknown> | null): string {
     }
     case 'delete_task': return 'Xoá việc';
     case 'delete_group': return `Xoá nhóm ${q(a?.group)}`.trim();
+    case 'update_project': return 'Sửa thông tin dự án';
+    case 'delete_project': return 'Xoá dự án';
+    case 'set_member': return `Mời / đổi quyền ${typeof a?.email === 'string' ? a.email : ''}`.trim();
+    case 'remove_member': return `Gỡ thành viên ${typeof a?.email === 'string' ? a.email : ''}`.trim();
+    case 'update_group': return `Sửa nhóm ${q(a?.group)}`.trim();
+    case 'reorder_groups': return 'Sắp xếp thứ tự nhóm';
+    case 'move_task': return 'Chuyển / đổi thứ tự việc';
+    case 'rebaseline_task': return 'Chốt kế hoạch gốc';
+    case 'set_google_sheet': return 'Liên kết Google Sheet';
     case 'sort_tasks': return 'Sắp xếp việc theo ngày';
     case 'sync_google_sheet': return 'Đồng bộ Google Sheet';
     default: return TOOLS[name]?.title ?? name;

@@ -48,7 +48,7 @@ test('MCP: token vpj_ ở Cài đặt, công cụ dùng chung tầng dữ liệu
     // Danh sách công cụ + annotation.
     const listed = (await rpc(token, 'tools/list', {})).body.result;
     const byName = Object.fromEntries(listed.tools.map((t: { name: string }) => [t.name, t]));
-    for (const n of ['list_projects', 'get_project', 'get_overview', 'find_tasks', 'create_project', 'create_group', 'create_task', 'create_tasks', 'update_task', 'delete_task', 'sort_tasks', 'delete_group']) assert.ok(byName[n], n);
+    for (const n of ['list_projects', 'get_project', 'get_overview', 'find_tasks', 'create_project', 'create_group', 'create_task', 'create_tasks', 'update_task', 'delete_task', 'sort_tasks', 'delete_group', 'update_project', 'delete_project', 'set_member', 'remove_member', 'update_group', 'reorder_groups', 'move_task', 'rebaseline_task', 'get_task_history', 'set_google_sheet', 'get_export_link']) assert.ok(byName[n], n);
     assert.equal(byName.list_projects.annotations.readOnlyHint, true);
     assert.equal(byName.create_task.annotations.destructiveHint, false);
     assert.equal(byName.delete_task.annotations.destructiveHint, true);
@@ -154,6 +154,32 @@ test('MCP: token vpj_ ở Cài đặt, công cụ dùng chung tầng dữ liệu
     const after2 = (await R('GET', `/projects/${created.id}`)).body;
     assert.deepEqual(after2.groups.map((g: { name: string }) => g.name), ['Lập trình']);
     assert.equal(after2.tasks.length, 4);
+    // Đủ thao tác như giao diện: sửa dự án, nhóm, thứ tự nhóm, chuyển việc, thành viên, kế hoạch gốc, lịch sử, link xuất.
+    const up = await call(token, 'update_project', { projectId: created.id, customer: 'Khách thử', satWeight: 1, exportColumns: ['assignee', 'grid'] });
+    assert.equal(up.project.customer, 'Khách thử');
+    assert.deepEqual(up.changed.sort(), ['customer', 'exportColumns', 'satWeight']);
+    await call(token, 'create_group', { projectId: created.id, name: 'Kiểm thử' });
+    assert.equal((await call(token, 'update_group', { projectId: created.id, group: 'kiểm thử', newName: 'QA' })).group.name, 'QA');
+    assert.deepEqual((await call(token, 'reorder_groups', { projectId: created.id, order: ['QA'] })).groups, ['QA', 'Lập trình']);
+    const loose = (await R('GET', `/projects/${created.id}`)).body.tasks.filter((t: { groupId: string | null }) => !t.groupId);
+    const mv = await call(token, 'move_task', { taskId: loose[0].id, group: 'QA', position: 1 });
+    assert.deepEqual([mv.group, mv.position], ['QA', 1]);
+    const lapIds = (await R('GET', `/projects/${created.id}`)).body.tasks.filter((t: { groupId: string | null }) => t.groupId === lap.id).map((t: { id: string }) => t.id);
+    await call(token, 'move_task', { taskId: lapIds[1], beforeTaskId: lapIds[0] });
+    assert.deepEqual((await R('GET', `/projects/${created.id}`)).body.tasks.filter((t: { groupId: string | null }) => t.groupId === lap.id).map((t: { id: string }) => t.id), [lapIds[1], lapIds[0]]);
+    assert.equal((await call(token, 'set_member', { projectId: created.id, email: 'ban@vnlab.local', role: 'viewer' })).role, 'viewer');
+    assert.equal((await call(token, 'set_member', { projectId: created.id, email: 'ban@vnlab.local', role: 'editor' })).role, 'editor');
+    assert.equal((await call(token, 'remove_member', { projectId: created.id, email: 'ban@vnlab.local' })).removed, 'ban@vnlab.local');
+    const dated = (await R('GET', `/projects/${created.id}`)).body.tasks.find((t: { startDate: string | null; endDate: string | null }) => t.startDate && t.endDate);
+    await call(token, 'update_task', { taskId: dated.id, endDate: addDays(dated.endDate, 2) });
+    assert.ok((await call(token, 'get_task_history', { taskId: dated.id })).history.some((h: { field: string }) => h.field === 'endDate'));
+    await call(token, 'rebaseline_task', { taskId: dated.id });
+    assert.equal((await R('GET', `/projects/${created.id}`)).body.tasks.find((t: { id: string }) => t.id === dated.id).baselineEnd, addDays(dated.endDate, 2));
+    assert.match((await call(token, 'get_export_link', { projectId: created.id, format: 'csv' })).url, /\/export\?format=csv/);
+    // Xoá dự án: phải gõ đúng tên.
+    const tmp = await call(token, 'create_project', { name: 'Dự án nháp' });
+    assert.match(await call(token, 'delete_project', { projectId: tmp.id, confirmName: 'sai tên' }, true), /confirmName/);
+    assert.equal((await call(token, 'delete_project', { projectId: tmp.id, confirmName: 'Dự án nháp' })).deleted, 'Dự án nháp');
 
     // Thành viên chỉ xem: đọc được, không ghi được qua MCP.
     assert.equal((await R('POST', `/projects/${created.id}/members`, { email: 'xem@x.vn', role: 'viewer' })).status, 201);
