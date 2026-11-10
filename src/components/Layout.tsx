@@ -1,4 +1,4 @@
-import { CaretDoubleLeft, CaretDoubleRight, FolderSimple, GearSix, SquaresFour, type Icon } from '@phosphor-icons/react';
+import { CaretDoubleLeft, CaretDoubleRight, FolderSimple, GearSix, Robot, SquaresFour, type Icon } from '@phosphor-icons/react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useLiveEvents, useMe } from '../lib/api';
@@ -32,7 +32,7 @@ export function Layout() {
   useLiveEvents((ev) => {
     if (ev.source !== 'mcp') return;
     const what = ev.deleted ? 'Xoá dự án' : ev.action ?? 'Cập nhật dự án';
-    toast(`MCP · ${ev.actor ?? 'AI'}: ${what}${ev.projectName ? ` — ${ev.projectName}` : ''}`);
+    toast(what, 'ok', { title: `AI qua MCP · ${ev.actor ?? 'AI'}`, meta: ev.projectName ? `Dự án ${ev.projectName}` : undefined, icon: <Robot size={18} weight="fill" /> });
   });
   const wide = useSyncExternalStore(subscribeWide, () => matchMedia(WIDE).matches);
   const [collapsed, setCollapsed] = useState(readCollapsed);

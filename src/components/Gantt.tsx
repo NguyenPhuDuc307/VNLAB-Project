@@ -318,10 +318,12 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
     const el = box.current;
     if (!el) return;
     if (view !== 'gantt') { el.scrollTo({ left: 0 }); return; }
-    const target = !focus.tick ? range.start : focus.date >= range.start && focus.date <= range.end ? focus.date : today;
+    // Mở trang / F5: luôn về hôm nay (nếu hôm nay nằm trong lịch), còn lại về ngày được yêu cầu.
+    const inRange = (d: string) => d >= range.start && d <= range.end;
+    const target = inRange(focus.date) ? focus.date : inRange(today) ? today : range.start;
     el.scrollTo({ left: Math.max(0, x(target) - dayWidth * 2), behavior: focus.tick ? 'smooth' : 'auto' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [focus.tick, view, range.start]);
+  }, [focus.tick, view, range.start, width > 0]);
 
   // ---- kéo thanh: di chuyển hoặc kéo dài/ngắn
   type Drag = { task: Task; mode: 'move' | 'l' | 'r'; x0: number; delta: number; start: string; end: string };

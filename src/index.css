@@ -618,10 +618,38 @@ body::before {
 /* Hiện đầy đủ tên việc và giữ các dòng người dùng nhập. */
 .gantt-task-name { overflow-wrap: anywhere; }
 
-/* Thông báo: tông màu nhận diện (xanh thép) nhạt, vạch trái đậm — không dùng nền tối. */
-.toast-ok {
-  background: color-mix(in srgb, var(--primary) 10%, var(--surface));
-  border-color: color-mix(in srgb, var(--primary) 30%, transparent);
-  box-shadow: inset 3px 0 0 var(--primary), var(--shadow-lg);
-  color: var(--ink);
+/* Thông báo: thẻ sáng tông xanh thép của app, icon tròn, vạch thời gian chạy ở đáy, trượt vào từ phải. */
+.toast {
+  --toast-accent: var(--primary);
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: min(360px, calc(100vw - 32px));
+  padding: 12px 12px 14px;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--toast-accent) 22%, var(--line));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--toast-accent) 9%, var(--surface)), var(--surface) 70%);
+  box-shadow: 0 10px 30px -8px color-mix(in srgb, var(--toast-accent) 35%, transparent), var(--shadow-lg);
+  backdrop-filter: blur(10px);
+  animation: toast-in 220ms cubic-bezier(.2,.8,.2,1);
 }
+.toast-error { --toast-accent: var(--danger); }
+.toast-icon {
+  display: grid; place-items: center; flex-shrink: 0;
+  width: 30px; height: 30px; border-radius: 10px;
+  color: var(--toast-accent);
+  background: color-mix(in srgb, var(--toast-accent) 14%, transparent);
+}
+.toast-bar {
+  position: absolute; left: 0; bottom: 0; height: 3px; width: 100%;
+  background: linear-gradient(90deg, var(--toast-accent), color-mix(in srgb, var(--toast-accent) 45%, var(--accent)));
+  transform-origin: left;
+  animation: toast-bar var(--toast-ms, 3000ms) linear forwards;
+}
+.toast-leave { animation: toast-out 180ms ease-in forwards; }
+@keyframes toast-in { from { opacity: 0; transform: translateX(24px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes toast-out { to { opacity: 0; transform: translateX(24px); } }
+@keyframes toast-bar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+@media (prefers-reduced-motion: reduce) { .toast, .toast-leave, .toast-bar { animation: none; } }

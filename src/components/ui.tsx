@@ -1,4 +1,4 @@
-import { CalendarBlank, X } from '@phosphor-icons/react';
+import { CalendarBlank, CheckCircle, WarningCircle, X } from '@phosphor-icons/react';
 import { createContext, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { initials } from '../lib/api';
@@ -279,18 +279,24 @@ export function Chip({ children, tone = 'neutral', className }: { children: Reac
 
 // ------------------------------------------------------------------ Toast & confirm
 
-type ToastT = { id: number; text: string; tone: 'ok' | 'error' };
+type ToastOpts = { title?: string; meta?: string; icon?: ReactNode; duration?: number };
+type ToastT = { id: number; text: string; tone: 'ok' | 'error'; leaving?: boolean; duration: number } & ToastOpts;
 type ConfirmReq = { title: string; desc?: ReactNode; ok?: string; danger?: boolean; resolve: (v: boolean) => void };
-const FeedbackCtx = createContext<{ toast: (text: string, tone?: 'ok' | 'error') => void; confirm: (o: Omit<ConfirmReq, 'resolve'>) => Promise<boolean> }>(null!);
+const FeedbackCtx = createContext<{ toast: (text: string, tone?: 'ok' | 'error', opts?: ToastOpts) => void; confirm: (o: Omit<ConfirmReq, 'resolve'>) => Promise<boolean> }>(null!);
 
 export function FeedbackProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<ToastT[]>([]);
   const [req, setReq] = useState<ConfirmReq | null>(null);
-  const toast = useCallback((text: string, tone: 'ok' | 'error' = 'ok') => {
-    const id = Date.now() + Math.random();
-    setToasts((t) => [...t, { id, text, tone }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), tone === 'error' ? 4500 : 2500);
+  const dismiss = useCallback((id: number) => {
+    setToasts((t) => t.map((x) => (x.id === id ? { ...x, leaving: true } : x)));
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 180);
   }, []);
+  const toast = useCallback((text: string, tone: 'ok' | 'error' = 'ok', opts: ToastOpts = {}) => {
+    const id = Date.now() + Math.random();
+    const duration = opts.duration ?? (tone === 'error' ? 5000 : opts.title ? 5000 : 3000);
+    setToasts((t) => [...t.slice(-3), { id, text, tone, duration, ...opts }]);
+    setTimeout(() => dismiss(id), duration);
+  }, [dismiss]);
   const confirm = useCallback((o: Omit<ConfirmReq, 'resolve'>) => new Promise<boolean>((resolve) => setReq({ ...o, resolve })), []);
   const close = (v: boolean) => {
     req?.resolve(v);
@@ -302,7 +308,16 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
       {/* Thông báo ở góc dưới bên phải (trên thanh điều hướng đáy ở điện thoại). */}
       <div aria-live="polite" className="pointer-events-none fixed bottom-[calc(env(safe-area-inset-bottom)+84px)] right-4 z-[60] flex max-w-[calc(100vw-32px)] flex-col items-end gap-2 md:bottom-5 md:right-5">
         {toasts.map((t) => (
-          <div key={t.id} className={cx('anim-sheet max-w-sm rounded-2xl border px-4 py-3 text-sm font-semibold shadow-[var(--shadow-lg)]', t.tone === 'error' ? 'border-danger/30 bg-danger-soft text-danger' : 'toast-ok')}>{t.text}</div>
+          <div key={t.id} role={t.tone === 'error' ? 'alert' : 'status'} className={cx('toast pointer-events-auto', t.tone === 'error' ? 'toast-error' : 'toast-ok', t.leaving && 'toast-leave')} style={{ ['--toast-ms' as string]: `${t.duration}ms` }}>
+            <span className="toast-icon" aria-hidden="true">{t.icon ?? (t.tone === 'error' ? <WarningCircle size={18} weight="fill" /> : <CheckCircle size={18} weight="fill" />)}</span>
+            <div className="min-w-0 flex-1">
+              {t.title && <p className="truncate text-[12px] font-bold uppercase tracking-wide text-[var(--toast-accent)]">{t.title}</p>}
+              <p className="text-[13.5px] font-semibold leading-snug text-ink">{t.text}</p>
+              {t.meta && <p className="mt-0.5 truncate text-[12px] text-muted">{t.meta}</p>}
+            </div>
+            <button type="button" className="-mr-1 -mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted hover:bg-fill hover:text-ink" aria-label="Đóng thông báo" onClick={() => dismiss(t.id)}><X size={13} weight="bold" /></button>
+            <span className="toast-bar" aria-hidden="true" />
+          </div>
         ))}
       </div>
       <Sheet
