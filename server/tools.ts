@@ -8,7 +8,7 @@ import * as D from './data.ts';
 import { parseDate, today } from './dates.ts';
 import { effectivePermissions, rolesOf } from './rbac.ts';
 import { parseSheetId, syncProject } from './sheets.ts';
-import { findGetflyTask, getflyUsers, syncGetfly, unsyncGetfly } from './getfly.ts';
+import { findGetflyTask, getflyJob, getflyUsers, startGetflyJob, waitGetflyJob } from './getfly.ts';
 import { ALL_COLUMNS, normalizeColumns } from './plan-layout.ts';
 import type { PermissionKey } from './permissions.ts';
 
@@ -676,6 +676,16 @@ TOOLS.get_getfly_users = {
   run: async () => ({ users: await getflyUsers() }),
 };
 
+TOOLS.get_getfly_job = {
+  title: 'Tiến độ đồng bộ Getfly',
+  description: 'Job đồng bộ / gỡ Getfly gần nhất của dự án: running / done / error, đã xử lý bao nhiêu trên tổng, kết quả.',
+  input: z.object({ ...projectRef }),
+  run: async (user, a: { projectId?: string; project?: string }) => {
+    const p = await resolveProject(user, a);
+    return { project: p.name, job: getflyJob(p.id) };
+  },
+};
+
 TOOLS.unsync_getfly = {
   title: 'Gỡ dự án khỏi Getfly',
   description: 'Xoá mọi việc app đã tạo trên Getfly cho dự án (không đụng việc cha hay việc có sẵn đã gắn cho nhóm). Chỉ gọi khi người dùng nói rõ.',
@@ -683,7 +693,8 @@ TOOLS.unsync_getfly = {
   write: true, destructive: true, perm: 'project.project.write',
   run: async (user, a: { projectId?: string; project?: string }) => {
     const p = await editableProject(user, a);
-    return { project: p.name, ...(await unsyncGetfly(p.id)) };
+    const job = await waitGetflyJob(startGetflyJob(p.id, 'unsync'), 20_000);
+    return { project: p.name, job, note: job.status === 'running' ? 'Đang chạy nền — gọi get_getfly_job để xem tiến độ' : undefined };
   },
 };
 
@@ -694,7 +705,8 @@ TOOLS.sync_getfly = {
   write: true, destructive: false, perm: 'project.project.write',
   run: async (user, a: { projectId?: string; project?: string }) => {
     const p = await editableProject(user, a);
-    return { project: p.name, ...(await syncGetfly(p.id)) };
+    const job = await waitGetflyJob(startGetflyJob(p.id, 'sync'), 20_000);
+    return { project: p.name, job, note: job.status === 'running' ? 'Đang chạy nền — gọi get_getfly_job để xem tiến độ' : undefined };
   },
 };
 

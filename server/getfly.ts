@@ -96,9 +96,40 @@ export type GetflyResult = { created: number; updated: number; completed: number
 const when = (d: string | null, time: string) => (d ? `${d} ${time}` : undefined);
 const hashOf = (o: unknown) => createHash('sha1').update(JSON.stringify(o)).digest('hex');
 const running = new Set<string>();
+type Progress = (done: number, total: number) => void;
+
+// ---------------------------------------------------------------- job chạy nền
+// Đồng bộ / gỡ có thể mất vài phút (mỗi việc một request, tra mã phải lật danh sách) nên chạy nền:
+// API trả job ngay, giao diện hỏi tiến độ qua GET …/getfly/job. Mỗi dự án giữ job gần nhất (trong bộ nhớ).
+export type GetflyJob = {
+  id: string; kind: 'sync' | 'unsync'; status: 'running' | 'done' | 'error';
+  done: number; total: number; startedAt: string; finishedAt: string | null;
+  result: GetflyResult | { deleted: number; errors: string[] } | null; error: string | null;
+};
+const jobs = new Map<string, GetflyJob>();
+export const getflyJob = (projectId: string) => jobs.get(projectId) ?? null;
+export function startGetflyJob(projectId: string, kind: 'sync' | 'unsync'): GetflyJob {
+  const cur = jobs.get(projectId);
+  if (cur?.status === 'running') return cur;
+  const job: GetflyJob = { id: crypto.randomUUID(), kind, status: 'running', done: 0, total: 0, startedAt: new Date().toISOString(), finishedAt: null, result: null, error: null };
+  jobs.set(projectId, job);
+  const progress: Progress = (done, total) => { job.done = done; job.total = total; };
+  (kind === 'sync' ? syncGetfly(projectId, progress) : unsyncGetfly(projectId, progress))
+    .then((r) => { job.result = r; job.status = 'done'; })
+    .catch((err: Error) => { job.error = err.message; job.status = 'error'; })
+    // Không phát `changed`: dữ liệu dự án không đổi (tránh kích hoạt tự đồng bộ Google Sheet). Giao diện tự hỏi job.
+    .finally(() => { job.finishedAt = new Date().toISOString(); });
+  return job;
+}
+/** Chờ job xong tối đa `ms` (cho MCP: lệnh ngắn trả kết quả luôn, lệnh dài trả tiến độ). */
+export async function waitGetflyJob(job: GetflyJob, ms: number) {
+  const until = Date.now() + ms;
+  while (job.status === 'running' && Date.now() < until) await new Promise((r) => setTimeout(r, 300));
+  return job;
+}
 
 /** Đẩy toàn bộ dự án sang Getfly. Lỗi từng việc không dừng cả lượt; trả số liệu + danh sách lỗi. */
-export async function syncGetfly(projectId: string): Promise<GetflyResult> {
+export async function syncGetfly(projectId: string, onProgress: Progress = () => {}): Promise<GetflyResult> {
   if (running.has(projectId)) throw new GetflyError(409, { message: 'Đang đồng bộ Getfly cho dự án này, đợi chút' });
   running.add(projectId);
   try {
@@ -179,7 +210,11 @@ export async function syncGetfly(projectId: string): Promise<GetflyResult> {
     const alive = new Set(items.map((i) => i.localId));
     const depth = (l: { localId: string; parentLocal: string | null }) => (l.localId.startsWith('g:') ? 0 : !l.parentLocal || l.parentLocal.startsWith('g:') ? 1 : 2);
     const gone = [...links.values()].filter((l) => !alive.has(l.localId)).sort((a, b) => depth(b) - depth(a));
+    const total = gone.length + items.length;
+    let step = 0;
+    onProgress(0, total);
     for (const l of gone) {
+      onProgress(++step, total);
       if (l.getflyCode) {
         try { await gf('DELETE', '/tasks', { task_code: l.getflyCode }); }
         catch (err) { if (!/không tồn tại/i.test((err as Error).message)) { r.errors.push(`Xoá ${l.getflyCode}: ${(err as Error).message}`); continue; } }
@@ -192,6 +227,7 @@ export async function syncGetfly(projectId: string): Promise<GetflyResult> {
     // 2) Tạo / sửa (việc cha trước, task con sau để có id cha).
     const pendingCode = new Map<number, Link>(); // việc vừa tạo: API chỉ trả id, tra mã sau
     for (const it of items) {
+      onProgress(++step, total);
       try {
         const info: Json = { ...it.info };
         if (it.parentLocal && info.task_parent === undefined) {
@@ -252,7 +288,7 @@ export async function getflyLinkCount(projectId: string) {
 
 /** Gỡ khỏi Getfly: xoá mọi việc app đã tạo cho dự án (task con trước, việc, rồi việc của nhóm) và quên liên kết.
  *  Không đụng việc cha của dự án hay việc có sẵn đã gắn cho nhóm. */
-export async function unsyncGetfly(projectId: string) {
+export async function unsyncGetfly(projectId: string, onProgress: Progress = () => {}) {
   if (running.has(projectId)) throw new GetflyError(409, { message: 'Đang đồng bộ Getfly cho dự án này, đợi chút' });
   running.add(projectId);
   try {
@@ -264,7 +300,10 @@ export async function unsyncGetfly(projectId: string) {
     const depth = (l: Link) => (l.localId.startsWith('g:') ? 0 : !l.parentLocal || l.parentLocal.startsWith('g:') ? 1 : 2);
     let deleted = 0;
     const errors: string[] = [];
+    let step = 0;
+    onProgress(0, links.length);
     for (const l of links.sort((a, b) => depth(b) - depth(a))) {
+      onProgress(++step, links.length);
       try {
         if (l.getflyCode) await gf('DELETE', '/tasks', { task_code: l.getflyCode });
         deleted++;

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Gantt, spanOf, UNGROUPED, type GanttView, type MenuTarget } from '../components/Gantt';
 import type { MenuItem } from '../components/ContextMenu';
-import { GetflyBox, useGetflyStatus, useGetflySync } from '../components/GetflyBox';
+import { GetflyBox, useGetflyJob, useGetflyStatus } from '../components/GetflyBox';
 import { ImportSheet } from '../components/ImportSheet';
 import { MembersSheet, ProjectSheet } from '../components/ProjectSheet';
 import { TaskSheet } from '../components/TaskSheet';
@@ -28,7 +28,7 @@ export function ProjectPage() {
   const [params, setParams] = useSearchParams();
   const q = useProject(id);
   const getfly = useGetflyStatus();
-  const getflySync = useGetflySync(id);
+  const getflyJob = useGetflyJob(id);
   const qc = useQueryClient();
   const can = useCan();
   const { toast, confirm } = useFeedback();
@@ -361,16 +361,16 @@ export function ProjectPage() {
         <span className="ml-auto flex flex-wrap items-center gap-2">
           {getfly.data?.configured && editor && can('project.project.write') && (
             <IconButton
-              label={!p.getflyParentCode || !p.getflyCreatorId ? 'Thiết lập đồng bộ Getfly' : p.getflySyncedAt ? `Đồng bộ Getfly (lần cuối ${new Date(p.getflySyncedAt).toLocaleString('vi-VN')})` : 'Đồng bộ Getfly'}
-              disabled={getflySync.isPending}
+              label={getflyJob.running ? `Đang chạy Getfly ${getflyJob.progress}` : !p.getflyParentCode || !p.getflyCreatorId ? 'Thiết lập đồng bộ Getfly' : p.getflySyncedAt ? `Đồng bộ Getfly (lần cuối ${new Date(p.getflySyncedAt).toLocaleString('vi-VN')})` : 'Đồng bộ Getfly'}
+              disabled={getflyJob.running}
               onClick={() => {
                 // Chưa đặt việc cha / người tạo thì mở hộp cấu hình Getfly; xong rồi thì bấm là đồng bộ (chuột phải để mở cấu hình).
                 if (!p.getflyParentCode || !p.getflyCreatorId) { setGetflyOpen(true); return; }
-                getflySync.mutate(undefined);
+                getflyJob.sync();
               }}
               onContextMenu={(e) => { e.preventDefault(); setGetflyOpen(true); }}
             >
-              <CloudArrowUp size={18} className={getflySync.isPending ? 'animate-pulse text-primary' : undefined} />
+              <CloudArrowUp size={18} className={getflyJob.running ? 'animate-pulse text-primary' : undefined} />
             </IconButton>
           )}
           {p.sheetUrl && editor && can('project.project.write') && (

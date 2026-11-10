@@ -13,16 +13,51 @@ export function getflySummary(r: GetflyResult) {
   return parts.length ? `Getfly: ${parts.join(', ')} việc` : 'Getfly đã khớp, không có gì thay đổi';
 }
 
-/** Hook nút "Đồng bộ Getfly" (dùng chung ở thanh công cụ và Cài đặt). */
-export function useGetflySync(projectId: string) {
+export type GetflyJob = {
+  id: string; kind: 'sync' | 'unsync'; status: 'running' | 'done' | 'error'; done: number; total: number;
+  startedAt: string; finishedAt: string | null; result: (GetflyResult | { deleted: number; errors: string[] }) | null; error: string | null;
+};
+
+/**
+ * Job Getfly chạy nền của dự án: bắt đầu (sync / unsync), hỏi tiến độ mỗi 1,2 giây khi đang chạy,
+ * xong thì báo kết quả ở góc màn hình và tải lại dự án. Dùng chung cho thanh công cụ và hộp Getfly.
+ */
+// Dùng chung giữa các nơi gọi hook (thanh công cụ + hộp Getfly) để mỗi job chỉ báo kết quả một lần.
+const watchingJobs = new Set<string>();
+const reportedJobs = new Set<string>();
+
+export function useGetflyJob(projectId: string) {
   const { toast } = useFeedback();
   const qc = useQueryClient();
-  return useAction(() => api<GetflyResult>(`/projects/${projectId}/getfly/sync`, { method: 'POST', body: {} }), {
-    onSuccess: (r) => {
-      toast(getflySummary(r), r.errors.length ? 'error' : 'ok', r.errors.length || r.warnings.length ? { title: r.errors.length ? `${r.errors.length} việc lỗi` : 'Lưu ý', meta: (r.errors[0] ?? r.warnings[0]).slice(0, 160) } : undefined);
-      void qc.invalidateQueries({ queryKey: ['project', projectId] });
-    },
+  const key = ['getfly-job', projectId];
+  const job = useQuery({
+    queryKey: key,
+    queryFn: () => api<GetflyJob | null>(`/projects/${projectId}/getfly/job`),
+    refetchInterval: (q) => (q.state.data?.status === 'running' ? 1200 : false),
   });
+  useEffect(() => {
+    const j = job.data;
+    if (!j) return;
+    if (j.status === 'running') { watchingJobs.add(j.id); return; }
+    // Chỉ báo job đã thấy chạy trong phiên này (không báo lại job cũ khi mở trang), và chỉ một lần.
+    if (!watchingJobs.has(j.id) || reportedJobs.has(j.id)) return;
+    reportedJobs.add(j.id);
+    if (j.status === 'error') toast(j.error ?? 'Đồng bộ Getfly lỗi', 'error');
+    else if (j.kind === 'unsync') {
+      const r = j.result as { deleted: number; errors: string[] };
+      toast(r.errors.length ? `Đã xoá ${r.deleted} việc, ${r.errors.length} lỗi` : `Đã xoá ${r.deleted} việc khỏi Getfly`, r.errors.length ? 'error' : 'ok', r.errors.length ? { meta: r.errors[0] } : undefined);
+    } else {
+      const r = j.result as GetflyResult;
+      toast(getflySummary(r), r.errors.length ? 'error' : 'ok', r.errors.length || r.warnings.length ? { title: r.errors.length ? `${r.errors.length} việc lỗi` : 'Lưu ý', meta: (r.errors[0] ?? r.warnings[0]).slice(0, 160) } : undefined);
+    }
+    void qc.invalidateQueries({ queryKey: ['project', projectId] });
+  }, [job.data, projectId, qc, toast]);
+  const start = useAction((kind: 'sync' | 'unsync') => api<GetflyJob>(`/projects/${projectId}/getfly/${kind}`, { method: 'POST', body: {} }), {
+    onSuccess: (j) => { watchingJobs.add(j.id); qc.setQueryData(key, j); },
+  });
+  const running = job.data?.status === 'running' || start.isPending;
+  const progress = job.data?.status === 'running' && job.data.total ? `${job.data.done}/${job.data.total}` : '';
+  return { job: job.data ?? null, running, progress, sync: () => start.mutate('sync'), unsync: () => start.mutate('unsync') };
 }
 
 type GUser = { id: string; name: string; email: string; dept: string };
@@ -40,13 +75,10 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
   const save = useAction((b: { parent?: string; creatorId?: string; users?: Record<string, string>; groups?: Record<string, string> }) => api(`/projects/${project.id}/getfly`, { method: 'PATCH', body: b }), {
     onSuccess: (_r, b) => { toast(b.parent !== undefined ? (b.parent ? 'Đã đặt việc cha trên Getfly' : 'Đã bỏ việc cha') : 'Đã lưu cấu hình Getfly'); setParent(''); setGroupRef({}); void qc.invalidateQueries({ queryKey: ['project', project.id] }); },
   });
-  const sync = useGetflySync(project.id);
+  const gj = useGetflyJob(project.id);
   const { confirm } = useFeedback();
-  const unsync = useAction(() => api<{ deleted: number; errors: string[] }>(`/projects/${project.id}/getfly/unsync`, { method: 'POST', body: {} }), {
-    onSuccess: (r) => { toast(r.errors.length ? `Đã xoá ${r.deleted} việc, ${r.errors.length} lỗi` : `Đã xoá ${r.deleted} việc khỏi Getfly`, r.errors.length ? 'error' : 'ok', r.errors.length ? { meta: r.errors[0] } : undefined); void qc.invalidateQueries({ queryKey: ['project', project.id] }); },
-  });
   const askUnsync = async () => {
-    if (await confirm({ title: 'Gỡ dự án khỏi Getfly?', desc: <p>Xoá trên Getfly mọi việc app đã tạo cho dự án này (việc của nhóm, việc, task con). Việc cha và việc có sẵn đã gắn cho nhóm được giữ nguyên. Không hoàn tác được.</p>, ok: 'Xoá khỏi Getfly', danger: true })) unsync.mutate(undefined);
+    if (await confirm({ title: 'Gỡ dự án khỏi Getfly?', desc: <p>Xoá trên Getfly mọi việc app đã tạo cho dự án này (việc của nhóm, việc, task con). Việc cha và việc có sẵn đã gắn cho nhóm được giữ nguyên. Không hoàn tác được.</p>, ok: 'Xoá khỏi Getfly', danger: true })) gj.unsync();
   };
   // Mọi tên người phụ trách / hỗ trợ trong dự án (cả task con) để ghép người dùng Getfly.
   const names = useMemo(() => {
@@ -73,7 +105,7 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
     <section className="mt-5 rounded-2xl border border-line p-4" aria-label="Getfly CRM">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-[13px] font-bold">Getfly CRM</p>
-        {status.data?.configured && ready && <Button size="sm" variant="secondary" onClick={() => sync.mutate(undefined)} disabled={sync.isPending || !canEdit}><CloudArrowUp size={15} className={sync.isPending ? 'animate-pulse' : undefined} /> {sync.isPending ? 'Đang đồng bộ…' : 'Đồng bộ ngay'}</Button>}
+        {status.data?.configured && ready && <Button size="sm" variant="secondary" onClick={gj.sync} disabled={gj.running || !canEdit}><CloudArrowUp size={15} className={gj.running ? 'animate-pulse' : undefined} /> {gj.running ? `${gj.job?.kind === 'unsync' ? 'Đang xoá' : 'Đang đồng bộ'}${gj.progress ? ` ${gj.progress}` : '…'}` : 'Đồng bộ ngay'}</Button>}
       </div>
       <p className="mb-3 mt-0.5 text-[12px] text-muted">Bấm đồng bộ để tạo việc mới, sửa việc đã đổi và xoá việc đã xoá trên Getfly. Cây trên Getfly: việc cha → nhóm việc → việc → task con. Không gửi ghi chú. Việc xong 100% thì anh đánh dấu hoàn thành tay trên Getfly (API không cho).</p>
       {!status.data?.configured ? (
@@ -140,10 +172,11 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
             </Field>
           )}
           {gUsers.error && <p className="text-[12px] text-danger">{(gUsers.error as Error).message}</p>}
+          {gj.running && <p className="mb-1 text-[12px] font-semibold text-primary">{gj.job?.kind === 'unsync' ? 'Đang xoá trên Getfly' : 'Đang đồng bộ'} {gj.progress} — chạy nền, đóng hộp này cũng không sao.</p>}
           {project.getflySyncedAt && <p className="text-[12px] text-muted">Đồng bộ lần cuối {new Date(project.getflySyncedAt).toLocaleString('vi-VN')}</p>}
           {canEdit && project.getflyParentCode && (
-            <button type="button" className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-semibold text-danger hover:underline disabled:opacity-50" disabled={unsync.isPending} onClick={() => void askUnsync()}>
-              <Trash size={13} /> {unsync.isPending ? 'Đang xoá trên Getfly…' : 'Gỡ khỏi Getfly (xoá các việc app đã tạo)'}
+            <button type="button" className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-semibold text-danger hover:underline disabled:opacity-50" disabled={gj.running} onClick={() => void askUnsync()}>
+              <Trash size={13} /> {gj.running && gj.job?.kind === 'unsync' ? `Đang xoá trên Getfly ${gj.progress}` : 'Gỡ khỏi Getfly (xoá các việc app đã tạo)'}
             </button>
           )}
           {project.getflyError && <p className="mt-1 whitespace-pre-wrap text-[12px] text-danger">{project.getflyError}</p>}

@@ -19,7 +19,7 @@ import { toolList } from './tools.ts';
 import { ALL_COLUMNS, buildPlanLayout, isColKey, normalizeColumns } from './plan-layout.ts';
 import { parseSheetId, sheetStatus, startAutoSync, syncProject } from './sheets.ts';
 import { GoogleError } from './google.ts';
-import { findGetflyTask, getflyLinkCount, getflyStatus, getflyUsers, syncGetfly, unsyncGetfly } from './getfly.ts';
+import { findGetflyTask, getflyJob, getflyLinkCount, getflyStatus, getflyUsers, startGetflyJob } from './getfly.ts';
 import { renderXlsx } from './xlsx.ts';
 import type { PermissionKey, ProjectRole } from './permissions.ts';
 
@@ -438,13 +438,18 @@ auth.patch('/projects/:id/getfly', requirePermission('project.project.write'), a
 auth.post('/projects/:id/getfly/sync', requirePermission('project.project.write'), async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
   D.editable(p);
-  return c.json(await syncGetfly(p.id));
+  return c.json(startGetflyJob(p.id, 'sync'), 202);
 });
 /** Gỡ khỏi Getfly: xoá các việc app đã tạo trên Getfly cho dự án này. */
 auth.post('/projects/:id/getfly/unsync', requirePermission('project.project.write'), async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
   D.editable(p);
-  return c.json(await unsyncGetfly(p.id));
+  return c.json(startGetflyJob(p.id, 'unsync'), 202);
+});
+/** Job Getfly gần nhất của dự án (đang chạy / xong / lỗi) — giao diện hỏi định kỳ khi đang chạy. */
+auth.get('/projects/:id/getfly/job', async (c) => {
+  const p = await D.projectOf(c.get('user'), param(c));
+  return c.json(getflyJob(p.id));
 });
 auth.get('/projects/:id/getfly', async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
