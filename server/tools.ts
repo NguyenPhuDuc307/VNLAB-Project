@@ -183,6 +183,29 @@ export const TOOLS: Record<string, Tool> = {
       return { id: g.id, name: g.name, existed: false };
     },
   },
+  delete_group: {
+    title: 'Xoá nhóm việc',
+    description: 'Xoá một nhóm việc (theo `group` là tên hoặc `groupId`). Nhóm còn việc thì mặc định TỪ CHỐI; `keepTasks: true` chuyển các việc sang "Chưa phân nhóm" rồi xoá nhóm, `deleteTasks: true` xoá luôn cả việc. Chỉ xoá khi người dùng nói rõ.',
+    input: z.object({
+      ...projectRef,
+      group: z.string().trim().max(160).optional().describe('Tên nhóm'),
+      groupId: z.uuid().optional(),
+      keepTasks: z.boolean().optional().describe('Giữ việc, chuyển sang Chưa phân nhóm'),
+      deleteTasks: z.boolean().optional().describe('Xoá cả các việc trong nhóm'),
+    }),
+    write: true, destructive: true, perm: 'project.project.write',
+    run: async (user, a: { projectId?: string; project?: string; group?: string; groupId?: string; keepTasks?: boolean; deleteTasks?: boolean }) => {
+      const p = await editableProject(user, a);
+      if (a.keepTasks && a.deleteTasks) throw new ToolError('Chọn một trong keepTasks hoặc deleteTasks');
+      const bundle = await D.projectBundle(p.id);
+      const g = a.groupId ? bundle.groups.find((x) => x.id === a.groupId) : a.group?.trim() ? await D.findGroup(p.id, a.group) : null;
+      if (!g) throw new ToolError(a.groupId || a.group ? `Không có nhóm "${a.group ?? a.groupId}" trong ${p.name}` : 'Cần `group` (tên) hoặc `groupId`');
+      const count = bundle.tasks.filter((t) => t.groupId === g.id).length;
+      if (count && !a.keepTasks && !a.deleteTasks) throw new ToolError(`Nhóm "${g.name}" còn ${count} việc — truyền keepTasks: true (chuyển sang Chưa phân nhóm) hoặc deleteTasks: true (xoá cả việc) nếu người dùng đồng ý`);
+      await D.deleteGroup(p.id, g.id, !!a.keepTasks);
+      return { project: p.name, deleted: g.name, tasksMoved: a.keepTasks ? count : 0, tasksDeleted: a.deleteTasks ? count : 0 };
+    },
+  },
   create_task: {
     title: 'Tạo việc',
     description: 'Thêm một việc vào dự án. `group` là tên nhóm (chưa có thì tạo); không có thì việc nằm ở "Chưa phân nhóm". Không tự bịa ngày: chỉ đặt ngày khi người dùng nói.',
@@ -313,6 +336,7 @@ function describeTool(name: string, a: Record<string, unknown> | null): string {
       return `Sửa việc${fields.length ? ` (${fields.join(', ')})` : ''}`;
     }
     case 'delete_task': return 'Xoá việc';
+    case 'delete_group': return `Xoá nhóm ${q(a?.group)}`.trim();
     case 'sort_tasks': return 'Sắp xếp việc theo ngày';
     case 'sync_google_sheet': return 'Đồng bộ Google Sheet';
     default: return TOOLS[name]?.title ?? name;

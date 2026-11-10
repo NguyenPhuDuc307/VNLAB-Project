@@ -76,7 +76,7 @@ claude mcp add --transport http vnlab-project https://project.vnlab.id.vn/mcp --
 Công cụ (`server/tools.ts`, dùng chung tầng dữ liệu `server/data.ts` với REST nên AI và giao
 diện không lệch nhau): `list_projects`, `get_project`, `get_overview`, `find_tasks` (đọc);
 `create_project`, `create_group`, `create_task`, `create_tasks` (nhiều việc một lần, tên nhóm
-chưa có thì tạo), `update_task`, `delete_task`, `sort_tasks` (xếp việc trong nhóm theo ngày) (ghi). Ngày nhận `YYYY-MM-DD` lẫn `dd/mm/yyyy`,
+chưa có thì tạo), `update_task`, `delete_task`, `delete_group`, `sort_tasks` (xếp việc trong nhóm theo ngày) (ghi). Ngày nhận `YYYY-MM-DD` lẫn `dd/mm/yyyy`,
 `2-Nov-26`; không hiểu thì báo lỗi chứ không đoán. Quyền tính năng `project.*` và quyền theo dự
 án (chủ / được sửa / chỉ xem) kiểm y như REST; gỡ `project.tokens.manage` ở VNLab Account thì
 mọi token của người đó trả 403 ngay; thu hồi token trong Cài đặt → 401.

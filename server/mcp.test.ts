@@ -48,7 +48,7 @@ test('MCP: token vpj_ ở Cài đặt, công cụ dùng chung tầng dữ liệu
     // Danh sách công cụ + annotation.
     const listed = (await rpc(token, 'tools/list', {})).body.result;
     const byName = Object.fromEntries(listed.tools.map((t: { name: string }) => [t.name, t]));
-    for (const n of ['list_projects', 'get_project', 'get_overview', 'find_tasks', 'create_project', 'create_group', 'create_task', 'create_tasks', 'update_task', 'delete_task', 'sort_tasks']) assert.ok(byName[n], n);
+    for (const n of ['list_projects', 'get_project', 'get_overview', 'find_tasks', 'create_project', 'create_group', 'create_task', 'create_tasks', 'update_task', 'delete_task', 'sort_tasks', 'delete_group']) assert.ok(byName[n], n);
     assert.equal(byName.list_projects.annotations.readOnlyHint, true);
     assert.equal(byName.create_task.annotations.destructiveHint, false);
     assert.equal(byName.delete_task.annotations.destructiveHint, true);
@@ -145,6 +145,15 @@ test('MCP: token vpj_ ở Cài đặt, công cụ dùng chung tầng dữ liệu
     await R('PUT', `/projects/${created.id}/groups/order`, { ids: gs0.map((g: { id: string }) => g.id) });
     await R('POST', `/projects/${created.id}/tasks/sort`, {});
     assert.deepEqual((await R('GET', `/projects/${created.id}`)).body.groups.map((g: { name: string }) => g.name), ['Lập trình', 'Thiết kế']);
+    // delete_group: nhóm rỗng xoá thẳng; nhóm còn việc thì từ chối nếu không nói rõ giữ hay xoá việc.
+    await call(token, 'create_group', { projectId: created.id, name: 'Nhóm rỗng' });
+    assert.equal((await call(token, 'delete_group', { projectId: created.id, group: 'nhóm rỗng' })).deleted, 'Nhóm rỗng');
+    assert.match(await call(token, 'delete_group', { projectId: created.id, group: 'Thiết kế' }, true), /còn 1 việc/);
+    const kept = await call(token, 'delete_group', { projectId: created.id, group: 'Thiết kế', keepTasks: true });
+    assert.equal(kept.tasksMoved, 1);
+    const after2 = (await R('GET', `/projects/${created.id}`)).body;
+    assert.deepEqual(after2.groups.map((g: { name: string }) => g.name), ['Lập trình']);
+    assert.equal(after2.tasks.length, 4);
 
     // Thành viên chỉ xem: đọc được, không ghi được qua MCP.
     assert.equal((await R('POST', `/projects/${created.id}/members`, { email: 'xem@x.vn', role: 'viewer' })).status, 201);
