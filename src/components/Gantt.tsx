@@ -210,7 +210,6 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
   const compactRef = useRef(false);
   // Màn hẹp (điện thoại): ô sửa tại chỗ quá nhỏ để chạm và cột số bị ẩn -> chạm vào hàng là mở chi tiết việc.
   const startEdit = (t: Task, field: EditField) => (e: React.MouseEvent) => {
-    if (compactRef.current) { e.stopPropagation(); onEditTask(t); return; }
     if (field === 'progress' && t.subtasks?.length) return; if (!canEdit) return; e.stopPropagation(); setEdit({ id: t.id, field });
   };
   const inputFor = (t: Task, field: EditField, type: 'text' | 'number' | 'date', value: string, extra: Record<string, unknown> = {}) => (
@@ -492,13 +491,13 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
         const shift = planShift(t);
         return (
           <div key={t.id} data-task-row={t.id} data-group={t.groupId ?? UNGROUPED} className={cx('gantt-row group border-b border-line last:border-b-0 hover:bg-fill/40', inWeek(t) && 'this-week', rowDrag?.active && rowDrag.task.id === t.id && 'is-dragging', rowDrag?.active && rowDrag.overId === t.id && (rowDrag.after ? 'drop-after' : 'drop-before'))}>
-            <div className={cx('gantt-left min-h-10 py-1.5', !canEdit && 'cursor-pointer')} onClick={canEdit ? undefined : () => onEditTask(t)} onDoubleClick={canEdit ? () => onEditTask(t) : undefined} role={canEdit ? undefined : 'button'} tabIndex={canEdit ? undefined : 0} onKeyDown={canEdit ? undefined : (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onEditTask(t))}>
+            <div className={cx('gantt-left min-h-10 py-1.5', (!canEdit || compact) && 'cursor-pointer')} onClick={canEdit && !compact ? undefined : () => onEditTask(t)} role={canEdit ? undefined : 'button'} tabIndex={canEdit ? undefined : 0} onKeyDown={canEdit ? undefined : (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onEditTask(t))}>
               <button type="button" className={cx('c-no group/no relative flex h-7 w-full items-center justify-start rounded-lg pl-1 text-[12px] text-muted hover:bg-fill hover:text-ink', canEdit && 'cursor-grab active:cursor-grabbing')} title={canEdit ? 'Bấm: mở chi tiết · Kéo: đổi thứ tự trong nhóm' : 'Mở chi tiết'} style={{ touchAction: 'none' }}
                 onPointerDown={(e) => beginRow(e, t)} onPointerMove={moveRow} onPointerUp={endRow} onPointerCancel={() => setRowDrag(null)} onClick={(e) => e.stopPropagation()}>
                 <span className="num group-hover:hidden">{r.index}</span>
                 <DotsSixVertical size={16} weight="bold" className="hidden group-hover:block" />
               </button>
-              <div className={cx('flex min-w-0 items-center gap-1.5 px-2', canEdit && 'cursor-text')} onClick={startEdit(t, 'name')}>
+              <div className={cx('flex min-w-0 items-center gap-1.5 px-2', canEdit && 'cursor-text')} onDoubleClick={startEdit(t, 'name')}>
                 {!!t.subtasks?.length && <button type="button" className="flex h-5 w-4 shrink-0 items-center justify-center rounded text-primary hover:bg-fill"
                   aria-label={collapsedTasks.includes(t.id) ? 'Mở rộng task con' : 'Thu gọn task con'} aria-expanded={!collapsedTasks.includes(t.id)}
                   onClick={(e) => { e.stopPropagation(); onToggleTask(t.id); }} onDoubleClick={(e) => e.stopPropagation()}>
@@ -510,13 +509,13 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
                 </div>}
                 {late && !editable(t, 'name') && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-danger" title="Quá hạn" />}
               </div>
-              <div className={cx('c-asg min-w-0 px-2 text-[12px] text-ink-2', canEdit && 'cursor-text')} title={t.assignee} onClick={startEdit(t, 'assignee')}>
+              <div className={cx('c-asg min-w-0 px-2 text-[12px] text-ink-2', canEdit && 'cursor-text')} title={t.assignee} onDoubleClick={startEdit(t, 'assignee')}>
                 {editable(t, 'assignee') ? inputFor(t, 'assignee', 'text', t.assignee) : <span className="block truncate">{t.assignee || (canEdit ? <span className="text-muted/60">—</span> : '')}</span>}
               </div>
-              <div className={cx('c-sup min-w-0 px-2 text-[12px] text-muted', canEdit && 'cursor-text')} title={t.support} onClick={startEdit(t, 'support')}>
+              <div className={cx('c-sup min-w-0 px-2 text-[12px] text-muted', canEdit && 'cursor-text')} title={t.support} onDoubleClick={startEdit(t, 'support')}>
                 {editable(t, 'support') ? inputFor(t, 'support', 'text', t.support) : <span className="block truncate">{t.support || (canEdit ? <span className="text-muted/60">—</span> : '')}</span>}
               </div>
-              <div className={cx('flex items-center gap-2 px-2', canEdit && 'cursor-text')} onClick={startEdit(t, 'progress')}>
+              <div className={cx('flex items-center gap-2 px-2', canEdit && 'cursor-text')} onDoubleClick={startEdit(t, 'progress')}>
                 {editable(t, 'progress') ? inputFor(t, 'progress', 'number', String(t.progress), { min: 0, max: 100, step: 5 }) : (
                   <>
                     <span className="prog-bar h-1.5 flex-1 overflow-hidden rounded-full bg-fill"><span className="block h-full rounded-full" style={{ width: `${t.progress}%`, background: color }} /></span>
@@ -524,10 +523,10 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
                   </>
                 )}
               </div>
-              <div className={cx('c-start num px-2 text-[12px]', t.startDate ? 'text-ink-2' : 'text-muted', canEdit && 'cursor-text')} onClick={startEdit(t, 'startDate')}>
+              <div className={cx('c-start num px-2 text-[12px]', t.startDate ? 'text-ink-2' : 'text-muted', canEdit && 'cursor-text')} onDoubleClick={startEdit(t, 'startDate')}>
                 {editable(t, 'startDate') ? inputFor(t, 'startDate', 'date', t.startDate ?? '') : fmtShort(t.startDate)}
               </div>
-              <div className={cx('c-end num flex items-center gap-1 px-2 text-[12px]', late ? 'font-semibold text-danger' : t.endDate ? 'text-ink-2' : 'text-muted', canEdit && 'cursor-text')} onClick={startEdit(t, 'endDate')}>
+              <div className={cx('c-end num flex items-center gap-1 px-2 text-[12px]', late ? 'font-semibold text-danger' : t.endDate ? 'text-ink-2' : 'text-muted', canEdit && 'cursor-text')} onDoubleClick={startEdit(t, 'endDate')}>
                 {editable(t, 'endDate') ? inputFor(t, 'endDate', 'date', t.endDate ?? '', { min: t.startDate ?? undefined }) : (
                   <>
                     {fmtShort(t.endDate)}
@@ -537,7 +536,7 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
                   </>
                 )}
               </div>
-              <div className={cx('c-days num px-2 text-right text-[12px]', t.days == null ? 'text-muted' : 'font-semibold text-ink-2', canEdit && 'cursor-text')} title={t.days == null ? 'Tự tính từ ngày bắt đầu/kết thúc — gõ số để nhập tay, xoá trống để tự tính' : 'Ngày công nhập tay'} onClick={startEdit(t, 'days')}>
+              <div className={cx('c-days num px-2 text-right text-[12px]', t.days == null ? 'text-muted' : 'font-semibold text-ink-2', canEdit && 'cursor-text')} title={t.days == null ? 'Tự tính từ ngày bắt đầu/kết thúc — gõ số để nhập tay, xoá trống để tự tính' : 'Ngày công nhập tay'} onDoubleClick={startEdit(t, 'days')}>
                 {editable(t, 'days') ? inputFor(t, 'days', 'text', t.days == null ? '' : String(t.days).replace('.', ','), { placeholder: effort ? fmtNum(effort) : '' }) : (effort ? fmtNum(effort) : '')}
               </div>
             </div>
@@ -723,7 +722,7 @@ function SubtaskRow({ parent, subtask, index, canEdit, onPatch, children, drag, 
     if (field === 'name' && !v || typeof v === 'number' && !Number.isFinite(v)) return;
     if (v !== subtask[field]) onPatch(parent, { subtasks: (parent.subtasks ?? []).map((s) => s.id === subtask.id ? { ...s, [field]: v } : s) });
   };
-  const edit = (field: 'name' | 'assignee' | 'progress') => { if (onOpen) { onOpen(); return; } if (canEdit) setEditing(field); };
+  const edit = (field: 'name' | 'assignee' | 'progress') => { if (onOpen) return; if (canEdit) setEditing(field); };
   return <div className={cx('gantt-row group/sub border-b border-line', drag)} data-subtask-row={subtask.id} data-parent={parent.id}>
     <div className="gantt-left min-h-10 bg-fill/30 py-1.5">
       {/* Số 1.1: rê chuột hiện tay kéo, kéo để đổi thứ tự task con trong task cha. */}
@@ -734,14 +733,14 @@ function SubtaskRow({ parent, subtask, index, canEdit, onPatch, children, drag, 
       </span>
       {/* Task con thụt vào sâu hơn tên task cha (cha: lề 6px + nút mũi tên 16px + khoảng cách 6px = 28px; con: 44px).
           Dùng style trực tiếp vì lớp padding của Tailwind nằm trong layer, bị rule `.gantt-left > *` đè. */}
-      <div className={cx('flex min-w-0 items-center', canEdit && 'cursor-text')} style={{ paddingLeft: 44 }} onClick={() => edit('name')}>
+      <div className={cx('flex min-w-0 items-center', canEdit && 'cursor-text')} style={{ paddingLeft: 44 }} onClick={onOpen} onDoubleClick={() => edit('name')}>
         {editing === 'name' ? <InlineTaskName value={subtask.name} onCommit={(v) => commit('name', v)} onCancel={() => setEditing(null)} onNext={(v) => commit('name', v)} /> : <span className="min-w-0 whitespace-pre-wrap break-words text-[13px] font-medium leading-snug [overflow-wrap:anywhere]" title={subtask.name}>{subtask.name}</span>}
       </div>
-      <div className={cx('c-asg min-w-0 px-2 text-[12px] text-ink-2', canEdit && 'cursor-text')} onClick={() => edit('assignee')}>
+      <div className={cx('c-asg min-w-0 px-2 text-[12px] text-ink-2', canEdit && 'cursor-text')} onClick={onOpen} onDoubleClick={() => edit('assignee')}>
         {editing === 'assignee' ? <InlineInput type="text" value={subtask.assignee} list="gantt-names" onCommit={(v) => commit('assignee', v)} onCancel={() => setEditing(null)} onNext={(v) => commit('assignee', v)} /> : <span className="block truncate" title={subtask.assignee}>{subtask.assignee || <span className="text-muted/60">—</span>}</span>}
       </div>
       <span className="c-sup" />
-      <div className={cx('flex items-center gap-2 px-2', canEdit && 'cursor-text')} onClick={() => edit('progress')}>
+      <div className={cx('flex items-center gap-2 px-2', canEdit && 'cursor-text')} onClick={onOpen} onDoubleClick={() => edit('progress')}>
         {editing === 'progress' ? <InlineInput type="number" value={String(subtask.progress)} min={0} max={100} onCommit={(v) => commit('progress', v)} onCancel={() => setEditing(null)} onNext={(v) => commit('progress', v)} /> : <><span className="prog-bar h-1.5 flex-1 overflow-hidden rounded-full bg-fill"><span className="block h-full rounded-full bg-primary" style={{ width: `${subtask.progress}%` }} /></span><span className="num w-8 shrink-0 text-right text-[12px] font-semibold">{subtask.progress}%</span></>}
       </div>
       <span className="c-start px-2 text-[12px] text-muted/60" title="Lịch do task cha quản lý">—</span>
