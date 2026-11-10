@@ -635,8 +635,9 @@ function SubtaskRow({ parent, subtask, index, canEdit, onPatch, children }: {
   return <div className="gantt-row border-b border-line" data-subtask-row={subtask.id}>
     <div className="gantt-left min-h-10 bg-fill/30 py-1.5">
       <span className="c-no num text-center text-[12px] text-muted">{index}</span>
-      {/* Task con: tên thụt vào rõ rệt so với tên task cha (cha có nút mũi tên + lề ~36px, con ~54px). */}
-      <div className={cx('flex min-w-0 items-center pl-12 pr-2', canEdit && 'cursor-text')} onClick={() => edit('name')}>
+      {/* Task con thụt vào sâu hơn tên task cha (cha: lề 6px + nút mũi tên 16px + khoảng cách 6px = 28px; con: 44px).
+          Dùng style trực tiếp vì lớp padding của Tailwind nằm trong layer, bị rule `.gantt-left > *` đè. */}
+      <div className={cx('flex min-w-0 items-center', canEdit && 'cursor-text')} style={{ paddingLeft: 44 }} onClick={() => edit('name')}>
         {editing === 'name' ? <InlineTaskName value={subtask.name} onCommit={(v) => commit('name', v)} onCancel={() => setEditing(null)} onNext={(v) => commit('name', v)} /> : <span className="min-w-0 whitespace-pre-wrap break-words text-[13px] font-medium leading-snug [overflow-wrap:anywhere]" title={subtask.name}>{subtask.name}</span>}
       </div>
       <div className={cx('c-asg min-w-0 px-2 text-[12px] text-ink-2', canEdit && 'cursor-text')} onClick={() => edit('assignee')}>
