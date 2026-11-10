@@ -170,7 +170,12 @@ export function ProjectPage() {
             <Chip>PM: {p.owner.name || p.owner.email}</Chip>
             <Chip tone="primary">{avg}% · {done}/{p.tasks.length} việc</Chip>
             {overdue > 0 && <Chip tone="danger">{overdue} quá hạn</Chip>}
-            {span && <Chip className="num">{fmtShort(span.start)} → {fmtShort(span.end)}{span.end >= today ? ` · còn ${diffDays(today, span.end)} ngày` : ''}</Chip>}
+            {/* Bắt đầu = ngày bắt đầu dự án (Cài đặt); chưa đặt thì lấy ngày bắt đầu sớm nhất của việc. Kết thúc = hạn muộn nhất của việc. */}
+            {(p.startDate || span) && (() => {
+              const start = p.startDate ?? span!.start;
+              const end = span?.end;
+              return <Chip className="num">{fmtShort(start)}{end ? ` → ${fmtShort(end)}` : ''}{end && end >= today ? ` · còn ${diffDays(today, end)} ngày` : ''}</Chip>;
+            })()}
             {p.myRole !== 'owner' && <Chip tone="warning">{ROLE_LABEL[p.myRole]}</Chip>}
             {p.archived && <Chip tone="warning">Đã lưu trữ</Chip>}
           </span>
