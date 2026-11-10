@@ -9,6 +9,7 @@ import { ApiError, useMe } from './lib/api';
 import { Home } from './pages/Home';
 import { Consent, Login } from './pages/Login';
 import { ProjectPage } from './pages/Project';
+import { ProjectHome } from './pages/ProjectHome';
 import { Projects } from './pages/Projects';
 import { Settings } from './pages/Settings';
 
@@ -34,7 +35,8 @@ function App() {
       <Route element={<Layout />}>
         <Route index element={<Home />} />
         <Route path="du-an" element={<Projects />} />
-        <Route path="du-an/:id" element={<ProjectPage />} />
+        <Route path="du-an/:id" element={<ProjectHome />} />
+        <Route path="du-an/:id/phase/:phase" element={<ProjectPage />} />
         <Route path="cai-dat" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

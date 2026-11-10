@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { ArrowDown, ArrowSquareOut, ArrowUp, ArrowsClockwise, ArrowsDownUp, ArrowsInLineVertical, ArrowsOutLineVertical, CalendarBlank, CaretLeft, CheckCircle, ClockCounterClockwise, CloudArrowUp, Copy, CornersIn, CornersOut, CrosshairSimple, DownloadSimple, Flag, FolderPlus, FolderSimple, GearSix, ListPlus, Minus, PencilSimple, Percent, Plus, SortAscending, TableIcon, Tag, Trash, Users } from '@phosphor-icons/react';
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Gantt, spanOf, UNGROUPED, type GanttView, type MenuTarget } from '../components/Gantt';
 import type { MenuItem } from '../components/ContextMenu';
 import { GetflyBox, useGetflyJob, useGetflyStatus, type GetflyScope } from '../components/GetflyBox';
@@ -25,7 +25,9 @@ const pref = <T,>(key: string, fallback: T, ok: (v: unknown) => v is T): T => {
 const savePref = (key: string, v: unknown) => { try { localStorage.setItem(key, JSON.stringify(v)); } catch { /* riêng tư */ } };
 
 export function ProjectPage() {
-  const { id = '' } = useParams();
+  const { id = '', phase: phaseKey } = useParams();
+  const navigate = useNavigate();
+  const loc = useLocation();
   const [params, setParams] = useSearchParams();
   const q = useProject(id);
   const getfly = useGetflyStatus();
@@ -87,8 +89,9 @@ export function ProjectPage() {
   useEffect(() => { try { scopeFilter ? localStorage.setItem(`project:scope:${id}`, scopeFilter) : localStorage.removeItem(`project:scope:${id}`); } catch { /* riêng tư */ } }, [scopeFilter, id]);
   const activeScope = scopeFilter && scopeFilter !== 'none' && !p?.scopes?.some((s) => s.id === scopeFilter) ? '' : scopeFilter;
   // Phase đang xem: '' = tất cả, 'none' = chưa có phase, còn lại = id phase. Nhớ theo dự án trên máy.
-  const [phaseFilter, setPhaseFilter] = useState(() => { try { return localStorage.getItem(`project:phase:${id}`) ?? ''; } catch { return ''; } });
-  useEffect(() => { try { phaseFilter ? localStorage.setItem(`project:phase:${id}`, phaseFilter) : localStorage.removeItem(`project:phase:${id}`); } catch { /* riêng tư */ } }, [phaseFilter, id]);
+  // Phase lấy từ đường dẫn /du-an/:id/phase/:phase ('all' = tất cả, 'none' = chưa có phase); đổi phase = đổi đường dẫn.
+  const phaseFilter = phaseKey && phaseKey !== 'all' ? phaseKey : '';
+  const setPhaseFilter = (v: string) => navigate(`/du-an/${id}/phase/${v || 'all'}${loc.search}`, { replace: true });
   const activePhase = phaseFilter && phaseFilter !== 'none' && !p?.phases?.some((x) => x.id === phaseFilter) ? '' : phaseFilter;
   const phaseTasks = useMemo(() => (!p ? [] : !activePhase ? p.tasks : p.tasks.filter((t) => (activePhase === 'none' ? !t.phaseId : t.phaseId === activePhase))), [p, activePhase]);
   const shown = useMemo<ProjectDetail | undefined>(() => p && {
@@ -388,7 +391,9 @@ export function ProjectPage() {
 
   return (
     <div>
-      <Link to="/du-an" className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold text-ink-2 hover:text-ink"><CaretLeft size={14} weight="bold" /> Dự án</Link>
+      {p.phases?.length
+        ? <Link to={`/du-an/${p.id}`} className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold text-ink-2 hover:text-ink"><CaretLeft size={14} weight="bold" /> Các phase · {p.name}</Link>
+        : <Link to="/du-an" className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold text-ink-2 hover:text-ink"><CaretLeft size={14} weight="bold" /> Dự án</Link>}
       <PageHeader
         eyebrow={`VNLab / Project${p.code ? ` / ${p.code}` : ''}`}
         title={<span className="flex items-center gap-2.5"><span className="h-3.5 w-3.5 shrink-0 rounded-full" style={{ background: p.color }} />{p.name}</span>}

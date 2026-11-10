@@ -44,7 +44,7 @@ export function PhaseBar({ project, value, onChange, canEdit }: { project: Proje
   );
 }
 
-function PhaseSheet({ open, phase, project, unphased, onClose, onCreated, onDeleted }: {
+export function PhaseSheet({ open, phase, project, unphased, onClose, onCreated, onDeleted }: {
   open: boolean; phase: Phase | null; project: ProjectDetail; unphased: number; onClose: () => void; onCreated: (p: Phase) => void; onDeleted: () => void;
 }) {
   const { toast, confirm } = useFeedback();
