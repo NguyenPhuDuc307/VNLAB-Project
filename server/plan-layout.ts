@@ -9,7 +9,7 @@ export type Fmt = 'text' | 'date' | 'ddate' | 'daynum' | 'pct' | 'num';
 export type CellStyle = {
   bold?: boolean; color?: string; fill?: string; align?: 'left' | 'center' | 'right'; fmt?: Fmt;
   border?: 'box' | 'grid'; wrap?: boolean; size?: number;
-  /** Thụt lề (mức, ~3 ký tự/mức) cho task con: Excel dùng alignment.indent, Sheets đệm khoảng trắng đầu dòng. */
+  /** Thụt lề (mức) cho task con: Excel dùng alignment.indent; Sheets không có thuộc tính này nên bỏ qua. */
   indent?: number;
 };
 export type Cell = { r: number; c: number; v: string | number | null; s: CellStyle };

@@ -146,7 +146,7 @@ test('đồng bộ Google Sheets: tạo sheet mới + chia sẻ, ghi PLAN/Dữ l
     assert.equal(groupRow[8].userEnteredValue.numberValue, 5.5);
     const childRow = childReqs.find((r) => r.updateCells?.range?.sheetId === planId && r.updateCells.range.startRowIndex === 9).updateCells.rows[0].values;
     assert.equal(childRow[0].userEnteredValue.stringValue, '1.1');
-    assert.equal(childRow[1].userEnteredValue.stringValue, '\u00a0\u00a0\u00a0\u00a0API đăng nhập'); // thụt lề bằng khoảng trắng, không có ↳
+    assert.equal(childRow[1].userEnteredValue.stringValue, 'API đăng nhập'); // tên task con để nguyên, không ↳, không khoảng trắng đệm
     assert.equal(childRow[2].userEnteredValue.stringValue, 'An');
     assert.equal(childRow[4].userEnteredValue.numberValue, 1);
     for (const index of [5, 6, 8]) assert.equal(childRow[index].userEnteredValue, undefined);
