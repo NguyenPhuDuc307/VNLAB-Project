@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Gantt, spanOf, UNGROUPED, type GanttView, type MenuTarget } from '../components/Gantt';
 import type { MenuItem } from '../components/ContextMenu';
-import { useGetflyStatus, useGetflySync } from '../components/GetflyBox';
+import { GetflyBox, useGetflyStatus, useGetflySync } from '../components/GetflyBox';
 import { ImportSheet } from '../components/ImportSheet';
 import { MembersSheet, ProjectSheet } from '../components/ProjectSheet';
 import { TaskSheet } from '../components/TaskSheet';
@@ -61,6 +61,7 @@ export function ProjectPage() {
   const [taskSheet, setTaskSheet] = useState<{ open: boolean; task?: Task | null; groupId?: string | null }>({ open: false });
   const [groupSheet, setGroupSheet] = useState<{ open: boolean; group?: Group | null }>({ open: false });
   const [settings, setSettings] = useState(false);
+  const [getflyOpen, setGetflyOpen] = useState(false);
   const [members, setMembers] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
@@ -359,13 +360,18 @@ export function ProjectPage() {
         )}
         <span className="ml-auto flex flex-wrap items-center gap-2">
           {getfly.data?.configured && editor && can('project.project.write') && (
-            <Button variant="ghost" size="sm" onClick={() => {
-              // Chưa đặt việc cha / người tạo thì mở Cài đặt (mục Getfly CRM) thay vì đồng bộ.
-              if (!p.getflyParentCode || !p.getflyCreatorId) { toast('Đặt việc cha và người tạo trên Getfly trước (Cài đặt → Getfly CRM)'); setSettings(true); return; }
-              getflySync.mutate(undefined);
-            }} disabled={getflySync.isPending} title={p.getflySyncedAt ? `Đồng bộ Getfly lần cuối ${new Date(p.getflySyncedAt).toLocaleString('vi-VN')}` : 'Chưa đồng bộ Getfly'}>
-              <CloudArrowUp size={15} className={getflySync.isPending ? 'animate-pulse' : undefined} /> <span className="hidden sm:inline">Đồng bộ Getfly</span><span className="sm:hidden">Getfly</span>
-            </Button>
+            <IconButton
+              label={!p.getflyParentCode || !p.getflyCreatorId ? 'Thiết lập đồng bộ Getfly' : p.getflySyncedAt ? `Đồng bộ Getfly (lần cuối ${new Date(p.getflySyncedAt).toLocaleString('vi-VN')})` : 'Đồng bộ Getfly'}
+              disabled={getflySync.isPending}
+              onClick={() => {
+                // Chưa đặt việc cha / người tạo thì mở hộp cấu hình Getfly; xong rồi thì bấm là đồng bộ (chuột phải để mở cấu hình).
+                if (!p.getflyParentCode || !p.getflyCreatorId) { setGetflyOpen(true); return; }
+                getflySync.mutate(undefined);
+              }}
+              onContextMenu={(e) => { e.preventDefault(); setGetflyOpen(true); }}
+            >
+              <CloudArrowUp size={18} className={getflySync.isPending ? 'animate-pulse text-primary' : undefined} />
+            </IconButton>
           )}
           {p.sheetUrl && editor && can('project.project.write') && (
             <IconButton label="Đồng bộ Sheets" onClick={() => syncSheet.mutate()} disabled={syncSheet.isPending} title={p.sheetSyncedAt ? `Đồng bộ Sheets · lần cuối ${new Date(p.sheetSyncedAt).toLocaleString('vi-VN')}` : 'Đồng bộ Sheets'}>
@@ -426,6 +432,9 @@ export function ProjectPage() {
 
       <TaskSheet open={taskSheet.open} onClose={() => setTaskSheet((s) => ({ ...s, open: false }))} project={p} task={taskSheet.task} groupId={taskSheet.groupId ?? null} canEdit={editor} />
       <GroupSheet open={groupSheet.open} onClose={() => setGroupSheet((s) => ({ ...s, open: false }))} project={p} group={groupSheet.group} confirm={confirm} onSort={(g) => { sortByDate.mutate(g.id); setGroupSheet((s) => ({ ...s, open: false })); }} />
+      <Sheet open={getflyOpen} onClose={() => setGetflyOpen(false)} title="Đồng bộ Getfly CRM">
+        <GetflyBox project={p} canEdit={editor && can('project.project.write')} />
+      </Sheet>
       <ProjectSheet open={settings} onClose={() => setSettings(false)} project={p} onImport={canTask && can('project.data.import') ? () => { setSettings(false); setImportOpen(true); } : undefined} />
       <MembersSheet open={members} onClose={() => setMembers(false)} project={p} />
       <ImportSheet open={importOpen} onClose={() => setImportOpen(false)} project={p} />
