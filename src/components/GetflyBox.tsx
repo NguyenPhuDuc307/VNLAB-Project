@@ -2,7 +2,7 @@ import { CloudArrowUp, Trash } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { api, useAction, type ProjectDetail } from '../lib/api';
-import { Button, Field, Input, useFeedback } from './ui';
+import { Button, Field, Input, useFeedback, cx } from './ui';
 
 export type GetflyResult = { created: number; updated: number; completed: number; deleted: number; unchanged: number; errors: string[]; warnings: string[]; syncedAt: string };
 export const useGetflyStatus = () => useQuery({ queryKey: ['getfly-status'], queryFn: () => api<{ configured: boolean; host: string | null }>('/getfly/status'), staleTime: 300_000 });
@@ -118,24 +118,34 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
           {project.groups.length > 0 && (
             <Field group label="Nhóm việc trên Getfly" hint="Gắn việc cha riêng khi sửa nhóm việc. Có thể dán link, id hoặc mã việc tại đây. Nhóm chưa gắn cha sẽ không đồng bộ.">
               <div className="space-y-1.5">
-                {project.groups.map((g) => {
-                  const m = project.getflyGroups?.[g.id];
-                  return (
-                    <div key={g.id} className="flex items-center gap-2 text-[13px]">
-                      <span className="w-2/5 min-w-0 break-words font-semibold">{g.name}</span>
-                      {m ? (
-                        <span className="flex min-w-0 flex-1 items-center gap-2 rounded-lg bg-fill px-2.5 py-1.5">
-                          <span className="min-w-0 flex-1 break-words">{m.name} <span className="text-muted">· {m.code}</span></span>
-                          {canEdit && <button type="button" className="text-[12px] font-semibold text-muted hover:text-danger disabled:opacity-50" disabled={save.isPending} onClick={() => void askRemoveGroup(g.id, g.name)}>Bỏ</button>}
+                {project.groups.flatMap((g) => {
+                  // Một dòng chung cho nhóm, thêm một dòng cho mỗi phase có việc trong nhóm (gắn riêng thì ưu tiên).
+                  const phasesHere = (project.phases ?? []).filter((x) => project.tasks.some((t) => t.groupId === g.id && t.phaseId === x.id));
+                  const rows = [{ key: g.id, label: g.name, sub: phasesHere.length ? 'mọi phase' : '' }, ...phasesHere.map((x) => ({ key: `${x.id}:${g.id}`, label: '', sub: x.name }))];
+                  return rows.map((row) => {
+                    const m = project.getflyGroups?.[row.key];
+                    const inherited = row.key.includes(':') && !m ? project.getflyGroups?.[g.id] : undefined;
+                    return (
+                      <div key={row.key} className={cx('flex items-center gap-2 text-[13px]', !row.label && 'pl-4')}>
+                        <span className="w-2/5 min-w-0 break-words">
+                          {row.label && <span className="font-semibold">{row.label}</span>}
+                          {row.sub && <span className={cx('text-muted', row.label && 'ml-1 text-[12px]')}>{row.label ? `· ${row.sub}` : `› ${row.sub}`}</span>}
                         </span>
-                      ) : canEdit ? (
-                        <form className="flex min-w-0 flex-1 gap-1.5" onSubmit={(e) => { e.preventDefault(); const v = groupRef[g.id]?.trim(); if (v) save.mutate({ groups: { [g.id]: v } }); }}>
-                          <Input aria-label={`Link việc Getfly cho nhóm ${g.name}`} className="!h-9 min-w-0 flex-1 !text-[13px]" value={groupRef[g.id] ?? ''} onChange={(e) => setGroupRef({ ...groupRef, [g.id]: e.target.value })} placeholder="Dán link / id / mã việc cha" />
-                          {groupRef[g.id]?.trim() && <Button type="submit" size="sm" variant="secondary" disabled={save.isPending}>Gắn</Button>}
-                        </form>
-                      ) : <span className="text-muted">Chưa gắn cha — bỏ qua</span>}
-                    </div>
-                  );
+                        {m ? (
+                          <span className="flex min-w-0 flex-1 items-center gap-2 rounded-lg bg-fill px-2.5 py-1.5">
+                            <span className="min-w-0 flex-1 break-words">{m.name} <span className="text-muted">· {m.code}</span></span>
+                            {canEdit && <button type="button" className="text-[12px] font-semibold text-muted hover:text-danger disabled:opacity-50" disabled={save.isPending} onClick={() => row.label ? void askRemoveGroup(g.id, g.name) : save.mutate({ groups: { [row.key]: '' } })}>Bỏ</button>}
+                          </span>
+                        ) : canEdit ? (
+                          <form className="flex min-w-0 flex-1 gap-1.5" onSubmit={(e) => { e.preventDefault(); const v = groupRef[row.key]?.trim(); if (v) save.mutate({ groups: { [row.key]: v } }); }}>
+                            <Input aria-label={`Link việc Getfly cho ${g.name}${row.sub && !row.label ? ` (${row.sub})` : ''}`} className="!h-9 min-w-0 flex-1 !text-[13px]" value={groupRef[row.key] ?? ''} onChange={(e) => setGroupRef({ ...groupRef, [row.key]: e.target.value })}
+                              placeholder={inherited ? `Dùng chung: ${inherited.name}` : row.label ? 'Dán link / id / mã việc cha' : 'Dán link nếu phase này có việc cha riêng'} />
+                            {groupRef[row.key]?.trim() && <Button type="submit" size="sm" variant="secondary" disabled={save.isPending}>Gắn</Button>}
+                          </form>
+                        ) : <span className="text-muted">{inherited ? `Dùng chung: ${inherited.name}` : 'Chưa gắn cha — bỏ qua'}</span>}
+                      </div>
+                    );
+                  });
                 })}
               </div>
             </Field>

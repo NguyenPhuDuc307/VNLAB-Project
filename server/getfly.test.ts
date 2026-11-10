@@ -261,3 +261,47 @@ test('Getfly theo phạm vi: menu nhóm / việc không ghi ngoài lựa chọn 
     assert.equal((await R('GET', `/projects/${p.id}`)).body.tasks.find((t: any) => t.id === a2.id).name, 'A2');
   } finally { await srv.stop(); await mem.close(); gf.close(); }
 });
+
+test('Getfly theo phase: việc cha riêng cho "phase:nhóm" ưu tiên, không có thì dùng việc cha chung của nhóm', { timeout: 90_000 }, async () => {
+  const gf = await fakeGetfly(), mem = await memoryDb();
+  const srv = await startServer({ PROJECT_DATABASE_URL: mem.url, PROJECT_DEV_LOGIN: '1', GETFLY_BASE_URL: gf.base, GETFLY_API_KEY: 'khoa-getfly' });
+  try {
+    const login = await fetch(`${srv.base}/api/auth/dev-login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'phase@x.vn', name: 'Phase' }) });
+    const session = cookieOf(login, 'prj_session');
+    const R = async (method: string, path: string, body?: unknown) => {
+      const r = await fetch(`${srv.base}/api${path}`, { method, headers: { cookie: `prj_session=${session}`, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+      return { status: r.status, body: await r.json() as any };
+    };
+    const sync = async (pid: string) => {
+      assert.equal((await R('POST', `/projects/${pid}/getfly/sync`, {})).status, 202);
+      for (let i = 0; i < 300; i++) {
+        const j = (await R('GET', `/projects/${pid}/getfly/job`)).body;
+        if (j.status !== 'running') { assert.equal(j.status, 'done', JSON.stringify(j)); return j.result; }
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      throw Error('Job chưa xong');
+    };
+    const p = (await R('POST', '/projects', { name: 'AMMS' })).body;
+    await R('PATCH', `/projects/${p.id}/getfly`, { creatorId: '25' });
+    const g = (await R('POST', `/projects/${p.id}/groups`, { name: 'Giao hàng' })).body;
+    const t10 = (await R('POST', `/projects/${p.id}/phases`, { name: 'Tháng 10' })).body;
+    const t11 = (await R('POST', `/projects/${p.id}/phases`, { name: 'Tháng 11' })).body;
+    await R('POST', `/projects/${p.id}/tasks`, { groupId: g.id, phaseId: t10.id, name: 'Việc T10' });
+    const v11 = (await R('POST', `/projects/${p.id}/tasks`, { groupId: g.id, phaseId: t11.id, name: 'Việc T11' })).body;
+    // Cha chung của nhóm = 9001; riêng tháng 11 = 8689.
+    const cfg = await R('PATCH', `/projects/${p.id}/getfly`, { groups: { [g.id]: '9001', [`${t11.id}:${g.id}`]: '8689' } });
+    assert.equal(cfg.status, 200, JSON.stringify(cfg.body));
+    assert.equal((await R('PATCH', `/projects/${p.id}/getfly`, { groups: { [`${crypto.randomUUID()}:${g.id}`]: '8689' } })).status, 400); // phase lạ
+    const r1 = await sync(p.id);
+    assert.deepEqual([r1.created, r1.errors], [2, []]);
+    const made = [...gf.tasks.values()];
+    assert.equal(made.find((t) => t.task_name === 'Việc T10').task_parent, '9001');
+    assert.equal(made.find((t) => t.task_name === 'Việc T11').task_parent, '8689');
+    // Bỏ cha riêng tháng 11 -> việc T11 chuyển về cha chung (PUT task_parent), không tạo mới.
+    await R('PATCH', `/projects/${p.id}/getfly`, { groups: { [`${t11.id}:${g.id}`]: '' } });
+    const r2 = await sync(p.id);
+    assert.deepEqual([r2.created, r2.updated, r2.deleted], [0, 1, 0]);
+    assert.equal([...gf.tasks.values()].find((t) => t.task_name === 'Việc T11').task_parent, '9001');
+    assert.ok((await R('GET', `/projects/${p.id}`)).body.tasks.some((t: any) => t.id === v11.id));
+  } finally { await srv.stop(); await mem.close(); gf.close(); }
+});

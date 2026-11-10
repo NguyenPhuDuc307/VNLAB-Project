@@ -117,6 +117,8 @@ export async function getflyUsers() {
 
 type Link = { localId: string; parentLocal: string | null; getflyCode: string; getflyId: number | null; hash: string; completed: boolean };
 export type GetflyScope = { groupId?: string; taskId?: string };
+/** parentLocal "g:<groupId>" hoặc "g:<phaseId>:<groupId>" (việc cha gắn riêng theo phase) có thuộc nhóm này không. */
+const inGroup = (parentLocal: string | null, groupId: string) => !!parentLocal && (parentLocal === `g:${groupId}` || parentLocal.endsWith(`:${groupId}`));
 const inScope = (t: Pick<D.TaskRow, 'id' | 'groupId'>, scope: GetflyScope) => scope.taskId ? t.id === scope.taskId : scope.groupId ? t.groupId === scope.groupId : true;
 
 async function protectedTasks(links: Link[] = []) {
@@ -233,28 +235,45 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
     const mapped = (p.getflyGroups ?? {}) as D.ProjectRow['getflyGroups'];
     const warnings: string[] = [];
     const unavailable = new Set<string>();
+    // Việc cha theo phase: khoá "phaseId:groupId" (gắn riêng cho phase) ưu tiên, không có thì dùng khoá "groupId" (chung mọi phase).
+    const phaseName = new Map(bundle.phases.map((x) => [x.id, x.name]));
+    const groupName = new Map(bundle.groups.map((g) => [g.id, g.name]));
+    const keyOf = (t: { groupId: string | null; phaseId?: string | null }) => {
+      if (!t.groupId) return null;
+      const own = t.phaseId ? `${t.phaseId}:${t.groupId}` : null;
+      return own && mapped[own]?.id ? own : t.groupId;
+    };
+    const labelOf = (key: string) => {
+      const [a, b] = key.includes(':') ? key.split(':') : [null, key];
+      return `nhóm ${groupName.get(b!) ?? b}${a ? ` (${phaseName.get(a) ?? 'phase'})` : ''}`;
+    };
     // Cấu hình cũ chưa lưu dự án theo từng cha: tra và bổ sung trước khi gửi việc.
-    for (const g of bundle.groups) {
-      if ((scope.groupId && scope.groupId !== g.id) || (scope.taskId && !selected.some((t) => t.groupId === g.id))) continue;
-      const parent = mapped[g.id];
-      if (!parent?.id) { warnings.push(`Bỏ qua nhóm ${g.name}: chưa gắn việc cha Getfly.`); continue; }
+    const usedKeys = [...new Set(selected.map(keyOf).filter((k): k is string => !!k))];
+    for (const key of usedKeys) {
+      const parent = mapped[key];
+      if (!parent?.id) {
+        const t = selected.find((x) => keyOf(x) === key);
+        warnings.push(`Bỏ qua ${t?.phaseId ? labelOf(`${t.phaseId}:${t.groupId}`) : labelOf(key)}: chưa gắn việc cha Getfly.`);
+        continue;
+      }
       if (parent.projectId === undefined) {
         try {
           const resolved = await findGetflyTask(String(parent.id));
-          mapped[g.id] = resolved;
-          await sql`update projects set getfly_groups = coalesce(getfly_groups, '{}'::jsonb) || ${sql.json({ [g.id]: resolved })}::jsonb where id = ${projectId}`;
-        } catch (err) { unavailable.add(g.id); warnings.push(`Bỏ qua nhóm ${g.name}: ${(err as Error).message}`); }
+          mapped[key] = resolved;
+          await sql`update projects set getfly_groups = coalesce(getfly_groups, '{}'::jsonb) || ${sql.json({ [key]: resolved })}::jsonb where id = ${projectId}`;
+        } catch (err) { unavailable.add(key); warnings.push(`Bỏ qua ${labelOf(key)}: ${(err as Error).message}`); }
       }
     }
     const gKey = (id: string) => `g:${id}`;
     for (const t of selected) {
       if (!t.groupId) { warnings.push(`Bỏ qua việc ${t.name}: chưa phân nhóm.`); continue; }
-      const parent = mapped[t.groupId];
-      if (!parent?.id || unavailable.has(t.groupId)) continue;
+      const key = keyOf(t)!;
+      const parent = mapped[key];
+      if (!parent?.id || unavailable.has(key)) continue;
       const projectInfo = { project_id: parent.projectId || undefined };
       const done = t.progress >= 100;
       items.push({
-        localId: t.id, parentLocal: t.groupId ? gKey(t.groupId) : null, done, label: t.name,
+        localId: t.id, parentLocal: gKey(key), done, label: t.name,
         people: peopleOf(t.assignee, t.support),
         info: {
           ...common,
@@ -289,7 +308,7 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
     const alive = new Set(bundle.tasks.flatMap((t) => [t.id, ...(t.subtasks ?? []).map((s) => s.id)]));
     const mayDelete = (l: Link): boolean => {
       if (isProtected(l) || (scope.taskId && l.localId !== scope.taskId)) return false;
-      if (scope.groupId && l.parentLocal !== `g:${scope.groupId}`) return false;
+      if (scope.groupId && !inGroup(l.parentLocal, scope.groupId)) return false;
       if (!l.parentLocal || l.localId.startsWith('g:')) return false;
       if (l.parentLocal.startsWith('g:')) {
         const gid = l.parentLocal.slice(2);
@@ -421,7 +440,7 @@ export async function unsyncGetfly(projectId: string, onProgress: Progress = () 
       let current: Link | undefined = l;
       while (current && !seen.has(current.localId)) {
         seen.add(current.localId);
-        if (selectedIds.has(current.localId) || current.localId === scope.taskId || (scope.groupId && (current.localId === `g:${scope.groupId}` || current.parentLocal === `g:${scope.groupId}`))) return true;
+        if (selectedIds.has(current.localId) || current.localId === scope.taskId || (scope.groupId && (current.localId === `g:${scope.groupId}` || inGroup(current.parentLocal, scope.groupId)))) return true;
         current = current.parentLocal ? byId.get(current.parentLocal) : undefined;
       }
       return false;

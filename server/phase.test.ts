@@ -49,6 +49,14 @@ test('phase: tạo / gán việc / lọc, MCP phase, gộp dự án khác thành
     const t12 = (await R('POST', `/projects/${a.id}/tasks`, { name: 'Việc tháng 12', phaseId: p12.id })).body;
     assert.equal(t12.phaseId, p12.id);
     assert.equal((await R('POST', `/projects/${a.id}/tasks/phase`, { phaseId: p12.id, taskIds: [t11.id] })).body.moved, 1);
+    // Xuất Excel / CSV theo phase.
+    const csvAll = await (await fetch(`${srv.base}/api/projects/${a.id}/export?format=csv`, { headers: { cookie: `prj_session=${session}` } })).text();
+    const csv12 = await (await fetch(`${srv.base}/api/projects/${a.id}/export?format=csv&phase=${p12.id}`, { headers: { cookie: `prj_session=${session}` } })).text();
+    assert.ok(csvAll.includes('Việc tháng 10') && csv12.includes('Việc tháng 12') && !csv12.includes('Việc tháng 10'));
+    const xl = await fetch(`${srv.base}/api/projects/${a.id}/export?format=xlsx&phase=${p12.id}`, { headers: { cookie: `prj_session=${session}` } });
+    assert.equal(xl.status, 200);
+    assert.match(xl.headers.get('content-disposition') ?? '', /thang-12/);
+    assert.equal((await fetch(`${srv.base}/api/projects/${a.id}/export?format=csv&phase=00000000-0000-4000-8000-000000000000`, { headers: { cookie: `prj_session=${session}` } })).status, 404);
     assert.equal((await R('DELETE', `/projects/${a.id}/phases/${p12.id}`)).body.tasks, 2);
     assert.equal((await R('GET', `/projects/${a.id}`)).body.tasks.filter((t: { phaseId: string | null }) => !t.phaseId).length, 2);
   } finally {

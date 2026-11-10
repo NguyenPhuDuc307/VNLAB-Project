@@ -142,13 +142,29 @@ async function ensureTabs(spreadsheetId: string, titles: string[]) {
 }
 
 /** Vẽ bố cục vào spreadsheet (tab PLAN + Dữ liệu). */
-export async function writeLayout(spreadsheetId: string, layout: Layout, collapseSubtasks = true) {
-  const { tabs, url, locale } = await ensureTabs(spreadsheetId, ['PLAN', 'Dữ liệu']);
+export async function writeLayout(spreadsheetId: string, layout: Layout, collapseSubtasks = true, phasePlans: { title: string; layout: Layout }[] = []) {
+  const { tabs, url, locale } = await ensureTabs(spreadsheetId, ['PLAN', ...phasePlans.map((x) => x.title), 'Dữ liệu']);
   const plan = tabs.get('PLAN')!, data = tabs.get('Dữ liệu')!;
+  const extra = phasePlans.flatMap((x) => { const tab = tabs.get(x.title)!; return planRequests(tab.id, x.layout, tab.cf, locale, tab.groups, collapseSubtasks); });
   await gfetch(`${SHEETS_API()}/spreadsheets/${spreadsheetId}:batchUpdate`, {
-    method: 'POST', body: JSON.stringify({ requests: [...planRequests(plan.id, layout, plan.cf, locale, plan.groups, collapseSubtasks), ...dataRequests(data.id, layout)] }),
+    method: 'POST', body: JSON.stringify({ requests: [...planRequests(plan.id, layout, plan.cf, locale, plan.groups, collapseSubtasks), ...extra, ...dataRequests(data.id, layout)] }),
   });
   return url;
+}
+
+/** Tên tab cho một phase: "PLAN Tháng 11" (bỏ ký tự Google / Excel không cho trong tên trang tính). */
+export const phaseTabTitle = (name: string) => `PLAN ${name.replace(/[\\/?*[\]:']/g, ' ').replace(/\s+/g, ' ').trim()}`.slice(0, 90);
+
+/** Bố cục riêng cho từng phase (chỉ việc và nhóm của phase; ngày neo theo phase). */
+export function phaseLayouts(p: D.ProjectRow, owner: string, bundle: Awaited<ReturnType<typeof D.projectBundle>>, columns: readonly string[] | null) {
+  return bundle.phases
+    .map((ph) => {
+      const tasks = bundle.tasks.filter((t) => t.phaseId === ph.id);
+      const groups = bundle.groups.filter((g) => tasks.some((t) => t.groupId === g.id));
+      return { phase: ph, tasks, layout: buildPlanLayout({ ...p, name: `${p.name} · ${ph.name}`, startDate: ph.startDate ?? null }, owner, groups, tasks, D.effortOf, columns) };
+    })
+    .filter((x) => x.tasks.length)
+    .map((x) => ({ title: phaseTabTitle(x.phase.name), layout: x.layout }));
 }
 
 // Lưu ý: Google không cấp dung lượng Drive cho service account (quota 0) nên KHÔNG tạo
@@ -166,8 +182,10 @@ export async function syncProject(projectId: string): Promise<SyncResult> {
   const [owner] = await sql<{ name: string; email: string }[]>`select name, email from users where id = ${p.ownerId}`;
   const bundle = await D.projectBundle(projectId);
   const layout = buildPlanLayout(p, owner?.name || owner?.email || '', bundle.groups, bundle.tasks, D.effortOf, p.exportColumns);
+  // Có phase: thêm một tab PLAN cho mỗi phase (tab PLAN chính vẫn là cả dự án).
+  const perPhase = phaseLayouts(p, owner?.name || owner?.email || '', bundle, p.exportColumns);
   try {
-    const url = await writeLayout(p.sheetId, layout, p.sheetCollapseSubtasks ?? true);
+    const url = await writeLayout(p.sheetId, layout, p.sheetCollapseSubtasks ?? true, perPhase);
     const [row] = await sql<{ sheetSyncedAt: Date }[]>`update projects set sheet_synced_at = now(), sheet_error = null where id = ${projectId} returning sheet_synced_at`;
     return { url, syncedAt: new Date(row.sheetSyncedAt).toISOString() };
   } catch (err) {

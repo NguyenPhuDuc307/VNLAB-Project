@@ -487,8 +487,8 @@ export function ProjectPage() {
           )}
         </div>
         <div className="flex flex-col gap-2 pb-2">
-          <Button block onClick={() => { location.assign(`/api/projects/${p.id}/export?format=xlsx&cols=${(exportCols ?? normalizeColumns(p.exportColumns)).join(',')}`); setExportOpen(false); }}><DownloadSimple size={16} /> Tải Excel (mẫu kế hoạch Gantt)</Button>
-          <Button variant="secondary" block onClick={() => { location.assign(`/api/projects/${p.id}/export?format=csv`); setExportOpen(false); }}><DownloadSimple size={16} /> Tải CSV</Button>
+          <Button block onClick={() => { location.assign(`/api/projects/${p.id}/export?format=xlsx&cols=${(exportCols ?? normalizeColumns(p.exportColumns)).join(',')}${curPhase ? `&phase=${curPhase.id}` : ''}`); setExportOpen(false); }}><DownloadSimple size={16} /> Tải Excel (mẫu kế hoạch Gantt)</Button>
+          <Button variant="secondary" block onClick={() => { location.assign(`/api/projects/${p.id}/export?format=csv${curPhase ? `&phase=${curPhase.id}` : ''}`); setExportOpen(false); }}><DownloadSimple size={16} /> Tải CSV</Button>
           <Button variant="secondary" block onClick={() => { location.assign(`/api/projects/${p.id}/export`); setExportOpen(false); }}><DownloadSimple size={16} /> Tải JSON</Button>
         </div>
       </Sheet>

@@ -6,7 +6,7 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { exportPKCS8, generateKeyPair } from 'jose';
-import { formulaFor, parseSheetId } from './sheets.ts';
+import { formulaFor, parseSheetId, phaseTabTitle } from './sheets.ts';
 import { cookieOf, memoryDb, startServer } from './test-helpers.ts';
 
 test('formulaFor: locale dấu phẩy thập phân đổi , -> ;', () => {
@@ -15,6 +15,11 @@ test('formulaFor: locale dấu phẩy thập phân đổi , -> ;', () => {
   assert.equal(formulaFor(undefined, f), f);
   assert.equal(formulaFor('vi_VN', f), 'AND($G8<>"";K$5>=$G8;WEEKDAY(K$5)<>1)');
   assert.equal(formulaFor('de_DE', f), 'AND($G8<>"";K$5>=$G8;WEEKDAY(K$5)<>1)');
+});
+
+test('phaseTabTitle: tab PLAN riêng cho phase, bỏ ký tự cấm', () => {
+  assert.equal(phaseTabTitle('Tháng 11'), 'PLAN Tháng 11');
+  assert.equal(phaseTabTitle("Q4/2026: [đợt 1]*"), 'PLAN Q4 2026 đợt 1');
 });
 
 test('parseSheetId: link hoặc id', () => {

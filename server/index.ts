@@ -406,7 +406,8 @@ auth.patch('/projects/:id/getfly', requirePermission('project.project.write'), a
     creatorId: z.string().trim().max(20).optional(),
     users: z.record(z.string().max(160), z.string().trim().max(120)).optional(),
     // Gắn nhóm việc với việc có sẵn trên Getfly: { groupId: link / id / mã } — "" = bỏ gắn (app tự tạo việc cho nhóm).
-    groups: z.record(zId, z.string().trim().max(500)).optional(),
+    // Khoá: groupId (việc cha chung mọi phase) hoặc "phaseId:groupId" (riêng cho phase).
+    groups: z.record(z.string().regex(/^[0-9a-f-]{36}(:[0-9a-f-]{36})?$/i, 'Khoá nhóm không hợp lệ'), z.string().trim().max(500)).optional(),
   }));
   const patch: Record<string, unknown> = {};
   if (b.parent !== undefined) {
@@ -421,7 +422,9 @@ auth.patch('/projects/:id/getfly', requirePermission('project.project.write'), a
   if (b.groups !== undefined) {
     const next = { ...(p.getflyGroups ?? {}) } as D.ProjectRow['getflyGroups'];
     for (const [gid, ref] of Object.entries(b.groups)) {
-      await D.groupBelongs(p.id, gid);
+      const [ph, g] = gid.includes(':') ? gid.split(':') : [null, gid];
+      await D.groupBelongs(p.id, g);
+      if (ph) await D.phaseBelongs(p.id, ph);
       if (!ref) { delete next[gid]; continue; }
       const t = await findGetflyTask(ref);
       next[gid] = { id: t.id, code: t.code, name: t.name, projectId: t.projectId, projectName: t.projectName };
@@ -703,14 +706,20 @@ auth.post('/projects/:id/import', requirePermission('project.data.import'), asyn
   return c.json({ ok: true, ...(await D.importGroups(p.id, b.groups)) }, 201);
 });
 
+const notFoundPhase = () => new HTTPException(404, { message: 'Không có phase này trong dự án' });
 const csvCell = (v: unknown) => {
   const s = v == null ? '' : String(v);
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
 auth.get('/projects/:id/export', requirePermission('project.data.export'), async (c) => {
-  const p = await D.projectOf(c.get('user'), param(c));
-  const bundle = await D.projectBundle(p.id);
+  const p0 = await D.projectOf(c.get('user'), param(c));
+  const full = await D.projectBundle(p0.id);
+  // ?phase=<id>: chỉ xuất một phase (tên file / tiêu đề kèm tên phase, ngày neo theo phase).
+  const phase = c.req.query('phase') ? full.phases.find((x) => x.id === c.req.query('phase')) : undefined;
+  if (c.req.query('phase') && !phase) throw notFoundPhase();
+  const bundle = phase ? { ...full, tasks: full.tasks.filter((t) => t.phaseId === phase.id), groups: full.groups.filter((g) => full.tasks.some((t) => t.phaseId === phase.id && t.groupId === g.id)) } : full;
+  const p = phase ? { ...p0, name: `${p0.name} · ${phase.name}`, startDate: phase.startDate ?? null } : p0;
   const slug = p.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'du-an';
   if (c.req.query('format') === 'xlsx') {
     const [owner] = await sql<{ name: string; email: string }[]>`select name, email from users where id = ${p.ownerId}`;
