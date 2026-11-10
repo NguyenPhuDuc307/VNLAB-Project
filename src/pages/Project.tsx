@@ -167,7 +167,8 @@ export function ProjectPage() {
   // ---- Cụm nút điều khiển đặt ở khoảng trống đầu bảng (trên cột # / Việc).
   const parentsWithSubs = p.tasks.filter((t) => t.subtasks?.length).map((t) => t.id);
   const allSubsCollapsed = parentsWithSubs.length > 0 && parentsWithSubs.every((x) => collapsedTasks.includes(x));
-  const tb = 'h-7 w-7 rounded-lg';
+  // IconButton mặc định h-9 w-9: cx không gộp lớp Tailwind, nên dùng ! để cỡ nhỏ thắng.
+  const tb = '!h-7 !w-7 !rounded-lg';
   const headerTools = (
     <>
       {view === 'gantt' && (
@@ -177,8 +178,8 @@ export function ProjectPage() {
           {p.startDate && <IconButton label="Đầu dự án" className={cx(tb, 'hidden md:inline-flex')} onClick={() => setFocus({ date: p.startDate!, tick: focus.tick + 1 })}><Flag size={16} /></IconButton>}
           <IconButton label={showBaseline ? 'Ẩn kế hoạch gốc' : 'Hiện kế hoạch gốc'} className={cx(tb, 'hidden md:inline-flex', showBaseline && 'bg-fill text-primary')} onClick={() => setShowBaseline((v) => !v)} aria-pressed={showBaseline}><ClockCounterClockwise size={16} /></IconButton>
           <span className="mx-0.5 inline-flex items-center rounded-lg bg-fill p-0.5">
-            <IconButton label="Thu nhỏ lịch" className="h-6 w-6 rounded-md" onClick={() => setDayWidth((w) => Math.max(18, w - 4))} disabled={dayWidth <= 18}><Minus size={13} weight="bold" /></IconButton>
-            <IconButton label="Phóng to lịch" className="h-6 w-6 rounded-md" onClick={() => setDayWidth((w) => Math.min(60, w + 4))} disabled={dayWidth >= 60}><Plus size={13} weight="bold" /></IconButton>
+            <IconButton label="Thu nhỏ lịch" className="!h-6 !w-6 !rounded-md" onClick={() => setDayWidth((w) => Math.max(18, w - 4))} disabled={dayWidth <= 18}><Minus size={13} weight="bold" /></IconButton>
+            <IconButton label="Phóng to lịch" className="!h-6 !w-6 !rounded-md" onClick={() => setDayWidth((w) => Math.min(60, w + 4))} disabled={dayWidth >= 60}><Plus size={13} weight="bold" /></IconButton>
           </span>
         </>
       )}
