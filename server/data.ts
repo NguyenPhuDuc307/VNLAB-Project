@@ -356,6 +356,13 @@ export async function reorderTasks(projectId: string, groupId: string | null, id
 }
 
 /** Sắp xếp việc trong nhóm theo ngày bắt đầu (trống xếp cuối), rồi kết thúc, rồi tên. groupId undefined = mọi nhóm. */
+export async function reorderGroups(projectId: string, ids: string[]) {
+  await sql.begin(async (tx) => {
+    for (const [i, id] of ids.entries()) await tx`update task_groups set sort = ${i} where id = ${id} and project_id = ${projectId}`;
+  });
+  await touch(projectId);
+}
+
 export async function sortTasksByDate(projectId: string, groupId?: string | null) {
   const groups: (string | null)[] = groupId === undefined
     ? [...(await sql<{ id: string }[]>`select id from task_groups where project_id = ${projectId}`).map((g) => g.id), null]
@@ -371,6 +378,19 @@ export async function sortTasksByDate(projectId: string, groupId?: string | null
       for (const [i, r] of rows.entries()) {
         if (current[i] !== r.id) moved++;
         if (r.sort !== i) await tx`update tasks set sort = ${i} where id = ${r.id}`;
+      }
+    }
+    // Sắp xếp tất cả: các nhóm cũng xếp theo ngày bắt đầu sớm nhất của việc trong nhóm (nhóm trống xếp cuối).
+    if (groupId === undefined) {
+      const gs = await tx<{ id: string; sort: number }[]>`
+        select g.id, g.sort from task_groups g left join tasks t on t.group_id = g.id
+        where g.project_id = ${projectId}
+        group by g.id, g.sort
+        order by min(coalesce(t.start_date, t.end_date)) asc nulls last, max(coalesce(t.end_date, t.start_date)) asc nulls last, g.sort`;
+      const current = [...gs].sort((x, y) => x.sort - y.sort).map((g) => g.id);
+      for (const [i, g] of gs.entries()) {
+        if (current[i] !== g.id) moved++;
+        if (g.sort !== i) await tx`update task_groups set sort = ${i} where id = ${g.id}`;
       }
     }
   });

@@ -94,6 +94,21 @@ export function ProjectPage() {
     onSettled: () => qc.invalidateQueries({ predicate: (query) => query.queryKey[0] !== 'me' }),
   });
   // Kéo thả đổi thứ tự trong nhóm: đổi vị trí trong cache ngay, server lưu sort.
+  // Kéo thả đổi thứ tự nhóm: đổi trong cache ngay, server lưu sort.
+  const reorderGroups = useMutation({
+    mutationFn: (ids: string[]) => api(`/projects/${id}/groups/order`, { method: 'PUT', body: { ids } }),
+    onMutate: async (ids) => {
+      await qc.cancelQueries({ queryKey: ['project', id] });
+      const prev = qc.getQueryData<ProjectDetail>(['project', id]);
+      if (prev) {
+        const byId = new Map(prev.groups.map((g) => [g.id, g]));
+        qc.setQueryData<ProjectDetail>(['project', id], { ...prev, groups: ids.map((x) => byId.get(x)).filter((g): g is Group => !!g) });
+      }
+      return { prev };
+    },
+    onError: (e, _a, ctx) => { if (ctx?.prev) qc.setQueryData(['project', id], ctx.prev); toast((e as Error).message, 'error'); },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['project', id] }),
+  });
   const reorder = useMutation({
     mutationFn: (a: { groupId: string | null; ids: string[] }) => api(`/projects/${id}/tasks/order`, { method: 'PUT', body: a }),
     onMutate: async (a) => {
@@ -112,7 +127,7 @@ export function ProjectPage() {
   });
   const sortByDate = useAction((groupId?: string | null) => api<{ moved: number }>(`/projects/${id}/tasks/sort`, { method: 'POST', body: groupId === undefined ? {} : { groupId } }), { onSuccess: (r) => toast(r.moved ? `Đã sắp xếp lại ${r.moved} việc theo ngày` : 'Thứ tự đã đúng theo ngày') });
   const sortAll = async () => {
-    if (await confirm({ title: 'Sắp xếp mọi nhóm theo ngày?', desc: <p>Việc trong từng nhóm được xếp lại theo ngày bắt đầu (trống xếp cuối), rồi kết thúc, rồi tên. Thứ tự tay hiện tại sẽ mất.</p>, ok: 'Sắp xếp' })) sortByDate.mutate(undefined);
+    if (await confirm({ title: 'Sắp xếp mọi nhóm theo ngày?', desc: <p>Các nhóm xếp theo ngày bắt đầu sớm nhất của việc trong nhóm; việc trong từng nhóm xếp theo ngày bắt đầu (trống xếp cuối), rồi kết thúc, rồi tên. Thứ tự tay hiện tại sẽ mất.</p>, ok: 'Sắp xếp' })) sortByDate.mutate(undefined);
   };
   const [exportCols, setExportCols] = useState<ColKey[] | null>(null);
   const saveCols = useAction((cols: ColKey[]) => api(`/projects/${id}`, { method: 'PATCH', body: { exportColumns: cols } }), { onSuccess: () => toast('Đã lưu cột xuất cho dự án') });
@@ -231,6 +246,7 @@ export function ProjectPage() {
         onPatchTask={(task, patch) => patchTask.mutate({ task, patch })}
         showBaseline={showBaseline}
         onReorder={(groupId, ids) => reorder.mutate({ groupId, ids })}
+        onReorderGroups={canStruct ? (ids) => reorderGroups.mutate(ids) : undefined}
         fullscreen={full}
         onToggleFullscreen={() => setFull((v) => !v)}
       />

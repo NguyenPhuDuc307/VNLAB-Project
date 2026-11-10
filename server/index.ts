@@ -475,9 +475,7 @@ auth.put('/projects/:id/groups/order', requirePermission('project.project.write'
   const p = await D.projectOf(c.get('user'), param(c));
   D.editable(p);
   const b = await body(c, z.object({ ids: z.array(zId).max(500) }));
-  await sql.begin(async (tx) => {
-    for (const [i, id] of b.ids.entries()) await tx`update task_groups set sort = ${i} where id = ${id} and project_id = ${p.id}`;
-  });
+  await D.reorderGroups(p.id, b.ids);
   return c.json({ ok: true });
 });
 

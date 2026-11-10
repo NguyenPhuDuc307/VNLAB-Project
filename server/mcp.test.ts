@@ -135,9 +135,16 @@ test('MCP: token vpj_ ở Cài đặt, công cụ dùng chung tầng dữ liệu
     const namesInLap = (await R('GET', `/projects/${created.id}`)).body.tasks.filter((t: { groupId: string | null }) => t.groupId === lap.id).map((t: { name: string }) => t.name);
     assert.deepEqual(namesInLap, ['Dựng API giỏ hàng', 'Việc quá hạn']);
     assert.match(await call(token, 'sort_tasks', { projectId: created.id, group: 'Không tồn tại' }, true), /Không có nhóm/);
-    // REST: sắp xếp mọi nhóm, thứ tự đã đúng -> không đổi gì.
-    assert.deepEqual((await R('POST', `/projects/${created.id}/tasks/sort`, {})).body.moved, 0);
+    // REST: sắp xếp tất cả -> việc trong nhóm đã đúng thứ tự, chỉ hai nhóm đổi chỗ (Lập trình bắt đầu sớm hơn Thiết kế).
+    assert.deepEqual((await R('POST', `/projects/${created.id}/tasks/sort`, {})).body.moved, 2);
     assert.equal((await R('GET', `/projects/${created.id}`)).body.tasks.length, 4); // 3 + việc tạo trong bước real-time
+    // Nhóm: kéo thả đổi thứ tự, rồi "sắp xếp tất cả" xếp nhóm theo ngày bắt đầu sớm nhất (Lập trình có việc từ t0-6 nên lên trước Thiết kế).
+    const gs0 = (await R('GET', `/projects/${created.id}`)).body.groups.map((g: { id: string; name: string }) => g);
+    assert.equal((await R('PUT', `/projects/${created.id}/groups/order`, { ids: [...gs0].reverse().map((g: { id: string }) => g.id) })).status, 200);
+    assert.deepEqual((await R('GET', `/projects/${created.id}`)).body.groups.map((g: { name: string }) => g.name), [...gs0].reverse().map((g: { name: string }) => g.name));
+    await R('PUT', `/projects/${created.id}/groups/order`, { ids: gs0.map((g: { id: string }) => g.id) });
+    await R('POST', `/projects/${created.id}/tasks/sort`, {});
+    assert.deepEqual((await R('GET', `/projects/${created.id}`)).body.groups.map((g: { name: string }) => g.name), ['Lập trình', 'Thiết kế']);
 
     // Thành viên chỉ xem: đọc được, không ghi được qua MCP.
     assert.equal((await R('POST', `/projects/${created.id}/members`, { email: 'xem@x.vn', role: 'viewer' })).status, 201);

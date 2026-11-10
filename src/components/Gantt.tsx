@@ -29,6 +29,8 @@ type Props = {
   showBaseline?: boolean;
   /** Kéo thả đổi thứ tự việc trong nhóm: danh sách id theo thứ tự mới. */
   onReorder: (groupId: string | null, ids: string[]) => void;
+  /** Kéo thả đổi thứ tự nhóm: danh sách id nhóm theo thứ tự mới. */
+  onReorderGroups?: (ids: string[]) => void;
   /** Đang phóng to cả bảng ra toàn màn hình; có hàm thì hiện nút ở góc bảng. */
   fullscreen?: boolean;
   onToggleFullscreen?: () => void;
@@ -81,7 +83,38 @@ export function spanOf(tasks: Task[]): { start: string; end: string } | null {
 
 const isOverdue = (t: Task, today: string) => !!t.endDate && t.endDate < today && t.progress < 100;
 
-export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTask, onAddTask, onGroupMenu, onToggleGroup, collapsedTasks, onToggleTask, collapsedUngrouped, onToggleUngrouped, onChangeDates, onPatchTask, showBaseline = true, onReorder, fullscreen, onToggleFullscreen }: Props) {
+export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTask, onAddTask, onGroupMenu, onToggleGroup, collapsedTasks, onToggleTask, collapsedUngrouped, onToggleUngrouped, onChangeDates, onPatchTask, showBaseline = true, onReorder, onReorderGroups, fullscreen, onToggleFullscreen }: Props) {
+  // Kéo thả nhóm (ở ô mũi tên của hàng nhóm): chưa di quá 4px thì coi là bấm -> thu/mở nhóm.
+  type GroupDrag = { id: string; y0: number; active: boolean; overId: string | null; after: boolean; toggle: () => void };
+  const [groupDrag, setGroupDrag] = useState<GroupDrag | null>(null);
+  const beginGroup = (e: RPointerEvent<HTMLElement>, id: string, toggle: () => void) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setGroupDrag({ id, y0: e.clientY, active: false, overId: null, after: false, toggle });
+  };
+  const moveGroup = (e: RPointerEvent<HTMLElement>) => {
+    if (!groupDrag) return;
+    if (!groupDrag.active && Math.abs(e.clientY - groupDrag.y0) <= 4) return;
+    if (!canEdit || !onReorderGroups) { setGroupDrag(null); return; }
+    const el = document.elementsFromPoint(e.clientX, e.clientY).find((n) => (n as HTMLElement).dataset?.groupRow) as HTMLElement | undefined;
+    let overId: string | null = null, after = false;
+    if (el) { overId = el.dataset.groupRow!; const r = el.getBoundingClientRect(); after = e.clientY > r.top + r.height / 2; }
+    setGroupDrag({ ...groupDrag, active: true, overId, after });
+  };
+  const endGroup = (e: RPointerEvent<HTMLElement>) => {
+    if (!groupDrag) return;
+    const d = groupDrag;
+    setGroupDrag(null);
+    e.stopPropagation();
+    if (!d.active) { d.toggle(); return; }
+    if (!d.overId || d.overId === d.id || !onReorderGroups) return;
+    const ids = project.groups.map((x) => x.id).filter((x) => x !== d.id);
+    const at = ids.indexOf(d.overId);
+    if (at < 0) return;
+    ids.splice(at + (d.after ? 1 : 0), 0, d.id);
+    onReorderGroups(ids);
+  };
   // Kéo thả hàng (ở ô số thứ tự): chưa di quá 4px thì coi là bấm -> mở chi tiết.
   type RowDrag = { task: Task; groupKey: string; x0: number; y0: number; active: boolean; overId: string | null; after: boolean };
   const [rowDrag, setRowDrag] = useState<RowDrag | null>(null);
@@ -361,10 +394,12 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
           const collapsed = g ? !!g.collapsed : collapsedUngrouped;
           const toggleGroup = () => g ? onToggleGroup(g, !collapsed) : onToggleUngrouped(!collapsed);
           return (
-            <div key={`g-${key}`} className="gantt-row gantt-group border-b border-line">
+            <div key={`g-${key}`} data-group-row={g?.id} className={cx('gantt-row gantt-group border-b border-line', groupDrag?.active && groupDrag.id === g?.id && 'is-dragging', groupDrag?.active && g && groupDrag.overId === g.id && (groupDrag.after ? 'drop-after' : 'drop-before'))}>
               <div className="gantt-left min-h-9 gantt-group-left">
                 <div className="c-no flex items-center justify-center">
-                  <IconButton label={collapsed ? 'Mở nhóm' : 'Thu gọn nhóm'} className="h-7 w-7 rounded-lg" onClick={toggleGroup}>
+                  <IconButton label={collapsed ? 'Mở nhóm' : 'Thu gọn nhóm'} title={g && canEdit && onReorderGroups ? 'Bấm: thu/mở nhóm · Kéo: đổi thứ tự nhóm' : undefined} className={cx('h-7 w-7 rounded-lg', g && canEdit && onReorderGroups && 'cursor-grab active:cursor-grabbing')} style={{ touchAction: 'none' }}
+                    onPointerDown={g ? (e) => beginGroup(e, g.id, toggleGroup) : undefined} onPointerMove={g ? moveGroup : undefined} onPointerUp={g ? endGroup : undefined} onPointerCancel={() => setGroupDrag(null)}
+                    onClick={g ? (e) => e.stopPropagation() : toggleGroup}>
                       {collapsed ? <CaretRight size={14} weight="bold" /> : <CaretDown size={14} weight="bold" />}
                     </IconButton>
                 </div>
