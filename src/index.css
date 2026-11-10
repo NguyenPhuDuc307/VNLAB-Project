@@ -329,6 +329,9 @@ body::before {
   top: 0;
   z-index: 3;
   background: var(--surface);
+  /* Rộng bằng cả lịch (không chỉ khung nhìn) để khi cuộn ngang, nền đầu bảng vẫn che hàng bên dưới. */
+  width: max-content;
+  min-width: 100%;
 }
 .gantt-head .gantt-left {
   z-index: 4;
