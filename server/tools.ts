@@ -563,7 +563,11 @@ export async function runTool(user: D.UserRow, name: string, args: unknown) {
   const t = TOOLS[name];
   if (!t) throw new ToolError(`Không có công cụ ${name}`);
   const ctx = D.actorContext.getStore();
-  if (ctx) ctx.action = describeTool(name, args && typeof args === 'object' ? (args as Record<string, unknown>) : null);
+  if (ctx) {
+    ctx.action = describeTool(name, args && typeof args === 'object' ? (args as Record<string, unknown>) : null);
+    ctx.seen = new Set();
+    ctx.emitted = new Set();
+  }
   if (t.perm) {
     const perms = await effectivePermissions(rolesOf(user));
     if (!perms.has(t.perm)) throw new ToolError(`Bạn chưa có quyền "${t.perm}" trong Project — nhờ quản trị viên cấp ở VNLab Account`);
@@ -571,7 +575,11 @@ export async function runTool(user: D.UserRow, name: string, args: unknown) {
   const parsed = t.input.safeParse(args ?? {});
   if (!parsed.success) throw new ToolError(`Dữ liệu không hợp lệ: ${parsed.error.issues.map((i) => `${i.path.join('.') || '(gốc)'}: ${i.message}`).join('; ')}`);
   try {
-    return await t.run(user, parsed.data as never);
+    const out = await t.run(user, parsed.data as never);
+    // Bảo đảm 100% lệnh ghi qua MCP đều báo lên giao diện: dự án nào lệnh đã chạm tới mà chưa phát `changed`
+    // (vd. sắp xếp khi thứ tự đã đúng, đồng bộ Sheet) thì phát bù một lần.
+    if (t.write && ctx) for (const pid of ctx.seen ?? []) if (!ctx.emitted?.has(pid)) D.emitChanged(pid);
+    return out;
   } catch (err) {
     if (err instanceof HTTPException) throw new ToolError(err.message);
     if (err instanceof z.ZodError) throw new ToolError(`Dữ liệu không hợp lệ: ${err.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`);

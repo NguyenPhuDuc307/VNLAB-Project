@@ -44,6 +44,7 @@ export const bad = (msg: string) => new HTTPException(400, { message: msg });
 /** Dự án + vai trò của tôi trong đó; không phải chủ/thành viên thì 404 (không lộ là dự án có tồn tại). */
 export async function projectOf(user: Pick<UserRow, 'id' | 'email'>, id: string): Promise<ProjectRow & { myRole: MemberRole }> {
   if (!zId.safeParse(id).success) throw bad('Mã dự án không hợp lệ');
+  noteSeen(id);
   const [p] = await sql<(ProjectRow & { myRole: MemberRole | null })[]>`
     select p.*, case when p.owner_id = ${user.id} then 'owner' else (
       select m.role from project_members m where m.project_id = p.id and (m.user_id = ${user.id} or lower(m.email) = ${user.email.toLowerCase()})
@@ -65,11 +66,21 @@ export const owned = (p: { myRole: MemberRole }) => {
 export const projectEvents = new EventEmitter();
 projectEvents.setMaxListeners(0); // mỗi tab đang mở dự án là một listener SSE
 /** Ai đang ghi (web hay MCP) — đặt ở middleware / route, đọc lại trong touch() để báo cho giao diện biết nguồn thay đổi. */
-export type Actor = { source: 'web' | 'mcp'; actor: string; actorId: string; action?: string };
+export type Actor = { source: 'web' | 'mcp'; actor: string; actorId: string; action?: string; seen?: Set<string>; emitted?: Set<string> };
 export const actorContext = new AsyncLocalStorage<Actor>();
+/** Phần của Actor gửi ra giao diện (bỏ các tập theo dõi nội bộ). */
+export const actorPublic = (a: Actor | null) => (a ? { source: a.source, actor: a.actor, actorId: a.actorId, action: a.action } : {});
+/** Phát `changed` và ghi nhận đã phát cho dự án này trong lệnh hiện tại (MCP dùng để bảo đảm lệnh ghi nào cũng báo). */
+export function emitChanged(projectId: string, extra?: { deleted?: boolean; audience?: { name: string; userIds: string[] } | null }) {
+  const ctx = actorContext.getStore();
+  if (ctx) (ctx.emitted ??= new Set()).add(projectId);
+  projectEvents.emit('changed', projectId, ctx ?? null, extra);
+}
+/** Ghi nhận dự án lệnh hiện tại đã chạm tới (projectOf / tạo mới). */
+const noteSeen = (projectId: string) => { const ctx = actorContext.getStore(); if (ctx) (ctx.seen ??= new Set()).add(projectId); };
 export const touch = async (projectId: string) => {
   await sql`update projects set updated_at = now() where id = ${projectId}`;
-  projectEvents.emit('changed', projectId, actorContext.getStore() ?? null);
+  emitChanged(projectId);
 };
 
 // ---------------------------------------------------------------- đọc
@@ -205,6 +216,7 @@ export type ProjectInput = z.infer<typeof projectSchema>;
 
 export async function createProject(ownerId: string, b: ProjectInput) {
   const [p] = await sql<ProjectRow[]>`insert into projects ${sql({ ...b, ownerId })} returning *`;
+  emitChanged(p.id);
   return p;
 }
 
@@ -362,7 +374,7 @@ export async function reorderTasks(projectId: string, groupId: string | null, id
 export async function updateProject(p: ProjectRow & { myRole: MemberRole }, patch: Record<string, unknown>) {
   if (!Object.keys(patch).length) return p;
   const [row] = await sql<ProjectRow[]>`update projects set ${sql({ ...patch, updatedAt: new Date() })} where id = ${p.id} returning *`;
-  projectEvents.emit('changed', p.id, actorContext.getStore() ?? null);
+  emitChanged(p.id);
   return { ...row, myRole: p.myRole };
 }
 
@@ -412,7 +424,7 @@ export async function deleteProject(projectId: string) {
   // Lấy người xem trước khi xoá để vẫn báo được cho họ.
   const audience = await projectAudience(projectId);
   await sql`delete from projects where id = ${projectId}`;
-  projectEvents.emit('changed', projectId, actorContext.getStore() ?? null, { deleted: true, audience });
+  emitChanged(projectId, { deleted: true, audience });
 }
 
 export async function reorderGroups(projectId: string, ids: string[]) {

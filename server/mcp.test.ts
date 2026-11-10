@@ -189,6 +189,13 @@ test('MCP: token vpj_ ở Cài đặt, công cụ dùng chung tầng dữ liệu
     assert.match(await gread('event: hello'), /hello/);
     await call(token, 'delete_group', { projectId: created.id, group: 'QA', keepTasks: true });
     assert.match(await gread('Xoá nhóm'), /"source":"mcp".*"action":"Xoá nhóm “QA”"|"action":"Xoá nhóm “QA”".*"source":"mcp"/);
+    // Lệnh ghi không đổi dữ liệu (sắp xếp khi đã đúng thứ tự) vẫn báo.
+    await call(token, 'sort_tasks', { projectId: created.id, group: 'Lập trình' });
+    await call(token, 'sort_tasks', { projectId: created.id, group: 'Lập trình' });
+    assert.match(await gread('Sắp xếp việc theo ngày'), /Sắp xếp việc theo ngày/);
+    // Tạo dự án qua MCP cũng báo.
+    await call(token, 'create_project', { name: 'Dự án báo thử' });
+    assert.match(await gread('Dự án báo thử'), /"projectName":"Dự án báo thử"/);
     // Xoá dự án: phải gõ đúng tên.
     const tmp = await call(token, 'create_project', { name: 'Dự án nháp' });
     assert.match(await call(token, 'delete_project', { projectId: tmp.id, confirmName: 'sai tên' }, true), /confirmName/);

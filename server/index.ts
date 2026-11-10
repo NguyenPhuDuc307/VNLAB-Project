@@ -331,7 +331,7 @@ auth.get('/events', async (c) => {
       try {
         const aud = extra?.audience !== undefined ? extra.audience : await D.projectAudience(projectId);
         if (!aud || !aud.userIds.includes(me) || stream.aborted) return;
-        await stream.writeSSE({ event: 'changed', id: String(++n), data: JSON.stringify({ at: Date.now(), projectId, projectName: aud.name, deleted: !!extra?.deleted, ...(actor ?? {}) }) });
+        await stream.writeSSE({ event: 'changed', id: String(++n), data: JSON.stringify({ at: Date.now(), projectId, projectName: aud.name, deleted: !!extra?.deleted, ...D.actorPublic(actor) }) });
       } catch { /* kết nối đã đóng */ }
     };
     D.projectEvents.on('changed', onChanged);
@@ -351,7 +351,7 @@ auth.get('/projects/:id/events', async (c) => {
     let n = 0;
     const onChanged = (projectId: string, actor: D.Actor | null) => {
       if (projectId !== p.id) return;
-      void stream.writeSSE({ event: 'changed', data: JSON.stringify({ at: Date.now(), ...(actor ?? {}) }), id: String(++n) });
+      void stream.writeSSE({ event: 'changed', data: JSON.stringify({ at: Date.now(), ...D.actorPublic(actor) }), id: String(++n) });
     };
     D.projectEvents.on('changed', onChanged);
     stream.onAbort(() => { D.projectEvents.off('changed', onChanged); });
