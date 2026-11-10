@@ -42,7 +42,9 @@ function cellData(cell: Cell, layout: Layout) {
     const b = border(s.border === 'grid' ? 'D9D9D9' : '000000');
     fmt.borders = { top: b, bottom: b, left: b, right: b };
   }
-  const value = cell.v === null ? undefined : typeof cell.v === 'number' ? { numberValue: cell.v } : { stringValue: cell.v };
+  // Sheets API không có thuộc tính thụt lề -> đệm khoảng trắng không ngắt ở đầu chuỗi.
+  const text = typeof cell.v === 'string' && s.indent ? '\u00a0'.repeat(s.indent * 4) + cell.v : cell.v;
+  const value = text === null ? undefined : typeof text === 'number' ? { numberValue: text } : { stringValue: text };
   return { ...(value ? { userEnteredValue: value } : {}), userEnteredFormat: fmt };
 }
 

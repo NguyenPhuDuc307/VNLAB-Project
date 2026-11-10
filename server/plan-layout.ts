@@ -9,6 +9,8 @@ export type Fmt = 'text' | 'date' | 'ddate' | 'daynum' | 'pct' | 'num';
 export type CellStyle = {
   bold?: boolean; color?: string; fill?: string; align?: 'left' | 'center' | 'right'; fmt?: Fmt;
   border?: 'box' | 'grid'; wrap?: boolean; size?: number;
+  /** Thụt lề (mức, ~3 ký tự/mức) cho task con: Excel dùng alignment.indent, Sheets đệm khoảng trắng đầu dòng. */
+  indent?: number;
 };
 export type Cell = { r: number; c: number; v: string | number | null; s: CellStyle };
 export type Range = { r1: number; c1: number; r2: number; c2: number };
@@ -149,7 +151,7 @@ export function buildPlanLayout(p: LayoutProject, owner: string, groups: LayoutG
       const k = c.key, at = col.get(k)!;
       switch (k) {
         case 'no': put(row, at, childNo ?? (t ? ++no : null), { align: 'center', border: 'box' }); break;
-        case 'task': put(row, at, t ? `${childNo ? '↳ ' : ''}${t.name}` : null, { border: 'box', wrap: true, bold: !!t?.subtasks?.length }); break;
+        case 'task': put(row, at, t?.name ?? null, { border: 'box', wrap: true, bold: !!t?.subtasks?.length, indent: childNo ? 1 : undefined }); break;
         case 'assignee': put(row, at, t?.assignee || null, { align: 'center', border: 'box' }); break;
         case 'support': put(row, at, t?.support || null, { align: 'center', border: 'box' }); break;
         case 'progress': put(row, at, t ? t.progress / 100 : null, { fmt: 'pct', align: 'center', border: 'box' }); break;

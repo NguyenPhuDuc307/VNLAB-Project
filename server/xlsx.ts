@@ -28,7 +28,7 @@ export async function renderXlsx(layout: Layout): Promise<Buffer> {
     if (cell.v !== null) x.value = s.fmt === 'date' || s.fmt === 'ddate' || s.fmt === 'daynum' ? fromSerial(cell.v as number) : cell.v;
     x.font = { name: FONT, size: s.size ?? 11, bold: !!s.bold, color: s.color ? { argb: argb(s.color) } : undefined };
     if (s.fill) x.fill = fill(s.fill);
-    x.alignment = { horizontal: s.align ?? 'left', vertical: 'middle', wrapText: !!s.wrap };
+    x.alignment = { horizontal: s.align ?? 'left', vertical: 'middle', wrapText: !!s.wrap, ...(s.indent ? { indent: s.indent * 2 } : {}) };
     if (s.fmt && FMT[s.fmt]) x.numFmt = FMT[s.fmt];
     if (s.border) x.border = box(s.border === 'grid' ? 'D9D9D9' : '000000');
   }

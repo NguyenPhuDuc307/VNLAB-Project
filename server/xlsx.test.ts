@@ -79,11 +79,12 @@ test('xuất Excel theo mẫu Gantt: sheet PLAN có tiêu đề, bảng, nhóm, 
     const plan = childrenBook.getWorksheet('PLAN')!;
     assert.equal(plan.getCell('F9').value, 0.5);
     assert.equal(plan.getCell('B10').value, '1.1');
-    assert.equal(plan.getCell('C10').value, '↳ Xây API');
+    assert.equal(plan.getCell('C10').value, 'Xây API');
+    assert.equal(plan.getCell('C10').alignment.indent, 2); // task con thụt lề, không có ↳
     assert.equal(plan.getCell('D10').value, 'An');
     assert.equal(plan.getCell('F10').value, 1);
     assert.equal(plan.getCell('B11').value, '1.2');
-    assert.equal(plan.getCell('C11').value, '↳ Làm giao diện');
+    assert.equal(plan.getCell('C11').value, 'Làm giao diện');
     assert.equal(plan.getCell('D11').value, 'Bình');
     assert.equal(plan.getCell('F11').value, 0);
     for (const row of [10, 11]) for (const col of ['G', 'H', 'J']) assert.equal(plan.getCell(`${col}${row}`).value, null);
@@ -107,7 +108,7 @@ test('xuất Excel theo mẫu Gantt: sheet PLAN có tiêu đề, bảng, nhóm, 
     const narrowBook = new ExcelJS.Workbook();
     await narrowBook.xlsx.load(Buffer.from(await narrow.arrayBuffer()) as never);
     assert.equal(narrowBook.getWorksheet('PLAN')!.getCell('E10').value, 1);
-    assert.equal(narrowBook.getWorksheet('PLAN')!.getCell('C11').value, '↳ Làm giao diện');
+    assert.equal(narrowBook.getWorksheet('PLAN')!.getCell('C11').value, 'Làm giao diện');
 
   } finally {
     await srv.stop();
