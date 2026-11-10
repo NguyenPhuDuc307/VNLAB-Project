@@ -19,6 +19,7 @@ import { toolList } from './tools.ts';
 import { ALL_COLUMNS, buildPlanLayout, isColKey, normalizeColumns } from './plan-layout.ts';
 import { parseSheetId, sheetStatus, startAutoSync, syncProject } from './sheets.ts';
 import { GoogleError } from './google.ts';
+import { findGetflyTask, getflyLinkCount, getflyStatus, syncGetfly } from './getfly.ts';
 import { renderXlsx } from './xlsx.ts';
 import type { PermissionKey, ProjectRole } from './permissions.ts';
 
@@ -391,6 +392,45 @@ auth.delete('/projects/:id', requirePermission('project.project.delete'), async 
 // ---- Google Sheets (đồng bộ một chiều app -> sheet)
 
 auth.get('/google/status', (c) => c.json(sheetStatus()));
+
+// ---- Getfly CRM (đồng bộ một chiều app -> Getfly bằng nút bấm)
+auth.get('/getfly/status', (c) => c.json(getflyStatus()));
+
+/** Cấu hình Getfly của dự án: việc cha (dán link / id / mã), tên dự án Getfly, ghép tên người phụ trách -> username Getfly. */
+auth.patch('/projects/:id/getfly', requirePermission('project.project.write'), async (c) => {
+  const p = await D.projectOf(c.get('user'), param(c));
+  D.editable(p);
+  const b = await body(c, z.object({
+    parent: z.string().trim().max(500).optional(),
+    projectName: zText(200).optional(),
+    users: z.record(z.string().max(160), z.string().trim().max(120)).optional(),
+  }));
+  const patch: Record<string, unknown> = {};
+  if (b.parent !== undefined) {
+    if (!b.parent) Object.assign(patch, { getflyParentCode: '', getflyParentName: '' });
+    else {
+      const t = await findGetflyTask(b.parent);
+      Object.assign(patch, { getflyParentCode: t.code, getflyParentName: t.name });
+      if (t.projectName && b.projectName === undefined && !p.getflyProjectName) patch.getflyProjectName = t.projectName;
+    }
+  }
+  if (b.projectName !== undefined) patch.getflyProjectName = b.projectName;
+  if (b.users !== undefined) patch.getflyUsers = sql.json(Object.fromEntries(Object.entries(b.users).filter(([k, v]) => k.trim() && v)));
+  if (!Object.keys(patch).length) throw new HTTPException(400, { message: 'Không có gì để sửa' });
+  const row = await D.updateProject(p, patch);
+  return c.json({ ...D.projectView(row), myRole: p.myRole, getflyLinks: await getflyLinkCount(p.id) });
+});
+
+/** Bấm "Đồng bộ Getfly": tạo / sửa / hoàn thành / xoá việc bên Getfly cho khớp dự án. */
+auth.post('/projects/:id/getfly/sync', requirePermission('project.project.write'), async (c) => {
+  const p = await D.projectOf(c.get('user'), param(c));
+  D.editable(p);
+  return c.json(await syncGetfly(p.id));
+});
+auth.get('/projects/:id/getfly', async (c) => {
+  const p = await D.projectOf(c.get('user'), param(c));
+  return c.json({ ...getflyStatus(), links: await getflyLinkCount(p.id) });
+});
 
 /** Liên kết sheet có sẵn (dán link) / bật tự đồng bộ. Chủ dự án mới được đổi. */
 auth.patch('/projects/:id/sheet', requirePermission('project.project.write'), async (c) => {

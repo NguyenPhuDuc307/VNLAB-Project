@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, ROLE_LABEL, useAction, useCan, useMe, type GoogleStatus, type Member, type Project, type ProjectDetail } from '../lib/api';
 import { ColumnPicker, normalizeColumns } from './ColumnPicker';
 import { ScopesEditor } from './ScopesEditor';
+import { GetflyBox } from './GetflyBox';
 import { Avatar, Button, Chip, DateInput, Field, IconButton, Input, Segmented, Select, Sheet, Textarea, Toggle, useFeedback, cx } from './ui';
 
 export const PROJECT_COLORS = ['#4274bc', '#6e9edc', '#0f7c8c', '#1f8a4c', '#b8860b', '#c74a1c', '#5b4bc4', '#a23b8a', '#6b5a52'];
@@ -88,6 +89,7 @@ export function ProjectSheet({ open, onClose, project, onImport }: { open: boole
         {project && owner && <Toggle checked={f.archived} onChange={(v) => setF({ ...f, archived: v })} label="Lưu trữ dự án" desc="Ẩn khỏi Tổng quan, vẫn mở được trong danh sách Dự án" />}
       </form>
       {project && <ScopesEditor project={project} canEdit={project.myRole !== 'viewer' && can('project.project.write')} />}
+      {project && <GetflyBox project={project} canEdit={project.myRole !== 'viewer' && can('project.project.write')} />}
       {project && onImport && (
         <div className="mt-5 rounded-2xl border border-line bg-fill/40 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">

@@ -221,6 +221,28 @@ const MIGRATIONS: string[] = [
   create index on tasks (scope_id);
   alter table projects add column ai_context text not null default '';
   `,
+  // 12: đồng bộ sang Getfly CRM — cấu hình theo dự án (việc cha, tên dự án Getfly, ghép tên người -> username)
+  //     và liên kết từng việc / task con với mã việc bên Getfly.
+  `
+  alter table projects
+    add column getfly_parent_code text not null default '',
+    add column getfly_parent_name text not null default '',
+    add column getfly_project_name text not null default '',
+    add column getfly_users jsonb not null default '{}'::jsonb,
+    add column getfly_synced_at timestamptz,
+    add column getfly_error text;
+  create table getfly_links (
+    project_id uuid not null references projects(id) on delete cascade,
+    local_id text not null,
+    parent_local text,
+    getfly_code text not null,
+    getfly_id bigint,
+    hash text not null default '',
+    completed boolean not null default false,
+    synced_at timestamptz not null default now(),
+    primary key (project_id, local_id)
+  );
+  `,
 ];
 
 export async function migrate() {

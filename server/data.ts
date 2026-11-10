@@ -21,6 +21,8 @@ export type ProjectRow = {
   sheetId: string | null; sheetAuto: boolean; sheetSyncedAt: Date | null; sheetError: string | null;
   exportColumns: string[] | null;
   aiContext: string;
+  getflyParentCode: string; getflyParentName: string; getflyProjectName: string; getflyUsers: Record<string, string>;
+  getflySyncedAt: Date | null; getflyError: string | null;
 };
 export type Subtask = { id: string; name: string; assignee: string; progress: number };
 export type TaskRow = {
@@ -96,6 +98,9 @@ export const projectView = (p: ProjectRow) => ({
   sheetAuto: !!p.sheetAuto, sheetSyncedAt: p.sheetSyncedAt ? new Date(p.sheetSyncedAt).toISOString() : null, sheetError: p.sheetError ?? null,
   exportColumns: p.exportColumns ?? null,
   aiContext: p.aiContext ?? '',
+  getflyParentCode: p.getflyParentCode ?? '', getflyParentName: p.getflyParentName ?? '', getflyProjectName: p.getflyProjectName ?? '',
+  getflyUsers: (p.getflyUsers ?? {}) as Record<string, string>,
+  getflySyncedAt: p.getflySyncedAt ? new Date(p.getflySyncedAt).toISOString() : null, getflyError: p.getflyError ?? null,
 });
 
 export const taskView = (t: Record<string, unknown>) => ({

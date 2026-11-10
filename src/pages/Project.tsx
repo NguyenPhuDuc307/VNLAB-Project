@@ -1,9 +1,10 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowSquareOut, ArrowUp, ArrowsClockwise, ArrowsDownUp, ArrowsInLineVertical, ArrowsOutLineVertical, CalendarBlank, CaretLeft, CheckCircle, ClockCounterClockwise, Copy, CornersIn, CornersOut, CrosshairSimple, DownloadSimple, Flag, FolderPlus, FolderSimple, GearSix, ListPlus, Minus, PencilSimple, Percent, Plus, SortAscending, TableIcon, Tag, Trash, Users } from '@phosphor-icons/react';
+import { ArrowDown, ArrowSquareOut, ArrowUp, ArrowsClockwise, ArrowsDownUp, ArrowsInLineVertical, ArrowsOutLineVertical, CalendarBlank, CaretLeft, CheckCircle, ClockCounterClockwise, CloudArrowUp, Copy, CornersIn, CornersOut, CrosshairSimple, DownloadSimple, Flag, FolderPlus, FolderSimple, GearSix, ListPlus, Minus, PencilSimple, Percent, Plus, SortAscending, TableIcon, Tag, Trash, Users } from '@phosphor-icons/react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { Gantt, spanOf, UNGROUPED, type GanttView, type MenuTarget } from '../components/Gantt';
 import type { MenuItem } from '../components/ContextMenu';
+import { useGetflyStatus, useGetflySync } from '../components/GetflyBox';
 import { ImportSheet } from '../components/ImportSheet';
 import { MembersSheet, ProjectSheet } from '../components/ProjectSheet';
 import { TaskSheet } from '../components/TaskSheet';
@@ -26,6 +27,8 @@ export function ProjectPage() {
   const { id = '' } = useParams();
   const [params, setParams] = useSearchParams();
   const q = useProject(id);
+  const getfly = useGetflyStatus();
+  const getflySync = useGetflySync(id);
   const qc = useQueryClient();
   const can = useCan();
   const { toast, confirm } = useFeedback();
@@ -348,6 +351,11 @@ export function ProjectPage() {
           <IconButton label="Mở rộng tất cả task con" onClick={() => setCollapsedTasks([])}><ArrowsOutLineVertical size={18} /></IconButton>
         </span>}
         <span className="ml-auto flex flex-wrap items-center gap-2">
+          {getfly.data?.configured && p.getflyParentCode && editor && can('project.project.write') && (
+            <Button variant="ghost" size="sm" onClick={() => getflySync.mutate(undefined)} disabled={getflySync.isPending} title={p.getflySyncedAt ? `Đồng bộ Getfly lần cuối ${new Date(p.getflySyncedAt).toLocaleString('vi-VN')}` : 'Chưa đồng bộ Getfly'}>
+              <CloudArrowUp size={15} className={getflySync.isPending ? 'animate-pulse' : undefined} /> <span className="hidden sm:inline">Đồng bộ Getfly</span><span className="sm:hidden">Getfly</span>
+            </Button>
+          )}
           {p.sheetUrl && editor && can('project.project.write') && (
             <IconButton label="Đồng bộ Sheets" onClick={() => syncSheet.mutate()} disabled={syncSheet.isPending} title={p.sheetSyncedAt ? `Đồng bộ Sheets · lần cuối ${new Date(p.sheetSyncedAt).toLocaleString('vi-VN')}` : 'Đồng bộ Sheets'}>
               <ArrowsClockwise size={18} className={syncSheet.isPending ? 'animate-spin' : undefined} />

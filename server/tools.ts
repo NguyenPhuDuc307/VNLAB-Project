@@ -8,6 +8,7 @@ import * as D from './data.ts';
 import { parseDate, today } from './dates.ts';
 import { effectivePermissions, rolesOf } from './rbac.ts';
 import { parseSheetId, syncProject } from './sheets.ts';
+import { findGetflyTask, syncGetfly } from './getfly.ts';
 import { ALL_COLUMNS, normalizeColumns } from './plan-layout.ts';
 import type { PermissionKey } from './permissions.ts';
 
@@ -122,6 +123,7 @@ export const TOOLS: Record<string, Tool> = {
         groups: bundle.groups.map((g) => ({ id: g.id, name: g.name, taskCount: bundle.tasks.filter((t) => t.groupId === g.id).length })),
         scopes: bundle.scopes.map((s) => ({ id: s.id, name: s.name, owner: s.owner, color: s.color, note: s.note, taskCount: bundle.tasks.filter((t) => t.scopeId === s.id).length })),
         aiContext: p.aiContext || null,
+        getfly: p.getflyParentCode || p.getflyProjectName ? { parentCode: p.getflyParentCode, parentName: p.getflyParentName, projectName: p.getflyProjectName, users: p.getflyUsers, syncedAt: p.getflySyncedAt } : null,
         tasks,
       };
     },
@@ -633,6 +635,41 @@ TOOLS.get_export_link = {
   },
 };
 
+TOOLS.set_getfly = {
+  title: 'Cấu hình đồng bộ Getfly',
+  description: 'Đặt việc cha trên Getfly CRM (dán link #/tasks/?…task_id=…, id hoặc mã việc) — mọi việc của dự án sẽ nằm dưới việc cha này, task con nằm dưới việc tương ứng; tên dự án Getfly; ghép tên người phụ trách -> username Getfly (users: {"Đức": "ducnp"}).',
+  input: z.object({ ...projectRef, parent: z.string().trim().max(500).optional().describe('Link / id / mã việc cha trên Getfly; "" = bỏ'), getflyProject: z.string().trim().max(200).optional().describe('Tên dự án trên Getfly'), users: z.record(z.string().max(160), z.string().trim().max(120)).optional().describe('Tên người phụ trách -> username Getfly (gửi đầy đủ)') }),
+  write: true, destructive: false, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string; parent?: string; getflyProject?: string; users?: Record<string, string> }) => {
+    const p = await editableProject(user, a);
+    const patch: Record<string, unknown> = {};
+    if (a.parent !== undefined) {
+      if (!a.parent) Object.assign(patch, { getflyParentCode: '', getflyParentName: '' });
+      else {
+        const t = await findGetflyTask(a.parent);
+        Object.assign(patch, { getflyParentCode: t.code, getflyParentName: t.name });
+        if (t.projectName && a.getflyProject === undefined && !p.getflyProjectName) patch.getflyProjectName = t.projectName;
+      }
+    }
+    if (a.getflyProject !== undefined) patch.getflyProjectName = a.getflyProject;
+    if (a.users !== undefined) patch.getflyUsers = a.users;
+    if (!Object.keys(patch).length) throw new ToolError('Cần parent, getflyProject hoặc users');
+    const row = await D.updateProject(p, patch);
+    return { project: p.name, getfly: { parentCode: row.getflyParentCode, parentName: row.getflyParentName, projectName: row.getflyProjectName, users: row.getflyUsers } };
+  },
+};
+
+TOOLS.sync_getfly = {
+  title: 'Đồng bộ sang Getfly',
+  description: 'Đẩy việc của dự án sang Getfly CRM: tạo việc mới, sửa việc đã đổi, đánh dấu hoàn thành việc 100%, xoá việc đã xoá. Task con thành việc con dưới việc tương ứng. Như bấm nút "Đồng bộ Getfly".',
+  input: z.object({ ...projectRef }),
+  write: true, destructive: false, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string }) => {
+    const p = await editableProject(user, a);
+    return { project: p.name, ...(await syncGetfly(p.id)) };
+  },
+};
+
 TOOLS.sync_google_sheet = {
   title: 'Đồng bộ Google Sheet',
   description: 'Ghi kế hoạch của dự án (bảng việc + lưới Gantt) sang Google Sheet đã liên kết trong Cài đặt dự án. Trả về link sheet.',
@@ -670,6 +707,8 @@ function describeTool(name: string, a: Record<string, unknown> | null): string {
     case 'delete_scope': return `Xoá phạm vi ${q(a?.scope)}`.trim();
     case 'reorder_scopes': return 'Sắp xếp thứ tự phạm vi';
     case 'set_ai_context': return 'Lưu hướng dẫn cho AI';
+    case 'set_getfly': return 'Cấu hình Getfly';
+    case 'sync_getfly': return 'Đồng bộ Getfly';
     case 'delete_project': return 'Xoá dự án';
     case 'set_member': return `Mời / đổi quyền ${typeof a?.email === 'string' ? a.email : ''}`.trim();
     case 'remove_member': return `Gỡ thành viên ${typeof a?.email === 'string' ? a.email : ''}`.trim();

@@ -20,6 +20,9 @@ export type Project = {
   exportColumns: string[] | null;
   /** Hướng dẫn / ngữ cảnh cho AI (MCP) của dự án. */
   aiContext: string;
+  /** Đồng bộ Getfly CRM: việc cha (mã + tên), dự án Getfly, ghép tên -> username. */
+  getflyParentCode?: string; getflyParentName?: string; getflyProjectName?: string; getflyUsers?: Record<string, string>;
+  getflySyncedAt?: string | null; getflyError?: string | null;
 };
 export type GoogleStatus = { configured: boolean; email: string | null };
 export type ProjectStats = { taskCount: number; doneCount: number; overdueCount: number; progress: number; firstStart: string | null; lastEnd: string | null };

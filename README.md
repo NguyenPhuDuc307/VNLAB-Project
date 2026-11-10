@@ -98,6 +98,16 @@ Drive API, tạo service account `vnlab-project-sheets`, đặt khoá vào
 Mã: `server/google.ts` (JWT service account, token cache), `server/sheets.ts` (batchUpdate,
 tạo/chia sẻ sheet, tự đồng bộ), test với Google API giả ở `server/sheets.test.ts`.
 
+## Đồng bộ Getfly CRM (một chiều app → Getfly, bấm nút)
+
+`server/getfly.ts` dùng API Getfly v6.1 (`X-API-KEY`). Mỗi dự án đặt một **việc cha** trên Getfly
+(dán link `#/tasks/?…task_id=…`, id hoặc mã việc; app tra ra mã + tên dự án Getfly). Bấm “Đồng bộ
+Getfly” (hoặc MCP `sync_getfly`): việc mới → tạo dưới việc cha, task con → việc con dưới việc tương ứng,
+việc đã đổi → sửa (so băm nội dung đã gửi, không gửi thừa), tiến độ 100% → hoàn thành, việc đã xoá →
+xoá trên Getfly. Liên kết lưu ở `getfly_links`. Người phụ trách ghép tay sang username Getfly.
+Getfly không có API mở lại việc đã hoàn thành: mở lại bên app thì kết quả đồng bộ báo để sửa tay.
+Cấu hình máy chủ: `./scripts/getfly-setup.sh` (ghi `GETFLY_BASE_URL`, `GETFLY_API_KEY` vào `.env` trên VPS).
+
 ## Chạy local
 
 ```bash
