@@ -324,7 +324,7 @@ auth.get('/projects/:id/events', async (c) => {
     let n = 0;
     const onChanged = (projectId: string) => { if (projectId === p.id) void stream.writeSSE({ event: 'changed', data: String(Date.now()), id: String(++n) }); };
     D.projectEvents.on('changed', onChanged);
-    stream.onAbort(() => D.projectEvents.off('changed', onChanged));
+    stream.onAbort(() => { D.projectEvents.off('changed', onChanged); });
     await stream.writeSSE({ event: 'hello', data: p.id });
     while (!stream.aborted) {
       await stream.sleep(25_000);
