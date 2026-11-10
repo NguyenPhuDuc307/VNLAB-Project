@@ -201,6 +201,8 @@ const MIGRATIONS: string[] = [
   // 9: đầu việc con chỉ có người phụ trách và tiến độ; lịch thuộc task cha.
   `alter table tasks add column subtasks jsonb not null default '[]'::jsonb
     check (jsonb_typeof(subtasks) = 'array');`,
+  // 10: dự án đã liên kết Google Sheet thì tự đồng bộ sau mỗi thay đổi (kể cả qua MCP); liên kết mới mặc định bật.
+  `update projects set sheet_auto = true where sheet_id is not null and sheet_auto = false;`,
 ];
 
 export async function migrate() {

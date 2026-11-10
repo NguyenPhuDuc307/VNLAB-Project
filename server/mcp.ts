@@ -11,7 +11,8 @@ const instructions = (user: UserRow) => `VNLab Project — kế hoạch dự án
 Hôm nay là ${today()} (giờ Việt Nam). Ngày ghi dạng YYYY-MM-DD; tiến độ 0–100.
 Bắt đầu bằng list_projects (hoặc get_overview) để lấy projectId; get_project để thấy nhóm và việc kèm id trước khi sửa/xoá.
 Khi người dùng đọc cả kế hoạch (nhiều dòng) thì dùng create_tasks một lần, ghi tên nhóm vào từng việc. Không tự bịa ngày, người phụ trách hay tiến độ: thiếu thì để trống và hỏi lại.
-Xoá việc chỉ khi người dùng nói rõ. Bạn chỉ thấy dự án mình là chủ hoặc được mời; dự án "chỉ xem" không ghi được.`;
+Xoá việc chỉ khi người dùng nói rõ. Bạn chỉ thấy dự án mình là chủ hoặc được mời; dự án "chỉ xem" không ghi được.
+Mọi thay đổi hiện ngay trên giao diện web (real-time) và, nếu dự án đã liên kết Google Sheet, tự ghi sang sheet sau khoảng 30 giây — không cần gọi sync_google_sheet trừ khi người dùng muốn ghi ngay.`;
 
 export function buildMcp(user: UserRow) {
   const server = new McpServer({ name: 'vnlab-project', version: '1.0.0' }, { instructions: instructions(user) });

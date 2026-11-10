@@ -4,6 +4,7 @@ import { serveStatic } from '@hono/node-server/serve-static';
 import { Hono, type Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { HTTPException } from 'hono/http-exception';
+import { streamSSE } from 'hono/streaming';
 import { sign, verify } from 'hono/jwt';
 import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
@@ -313,6 +314,26 @@ auth.post('/projects', requirePermission('project.project.create'), async (c) =>
   return c.json({ ...D.projectView(p), myRole: 'owner' }, 201);
 });
 
+/**
+ * Luồng sự kiện (Server-Sent Events) của một dự án: mỗi khi dữ liệu đổi (giao diện, MCP, nhập liệu…)
+ * gửi event `changed`; client tải lại dự án. Gửi `ping` mỗi 25 giây để Cloudflare / Caddy không cắt kết nối rỗi.
+ */
+auth.get('/projects/:id/events', async (c) => {
+  const p = await D.projectOf(c.get('user'), param(c));
+  return streamSSE(c, async (stream) => {
+    let n = 0;
+    const onChanged = (projectId: string) => { if (projectId === p.id) void stream.writeSSE({ event: 'changed', data: String(Date.now()), id: String(++n) }); };
+    D.projectEvents.on('changed', onChanged);
+    stream.onAbort(() => D.projectEvents.off('changed', onChanged));
+    await stream.writeSSE({ event: 'hello', data: p.id });
+    while (!stream.aborted) {
+      await stream.sleep(25_000);
+      if (!stream.aborted) await stream.writeSSE({ event: 'ping', data: '' });
+    }
+    D.projectEvents.off('changed', onChanged);
+  });
+});
+
 auth.get('/projects/:id', async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
   const [bundle, who] = await Promise.all([D.projectBundle(p.id), D.projectMembers(p)]);
@@ -352,7 +373,8 @@ auth.patch('/projects/:id/sheet', requirePermission('project.project.write'), as
     else {
       const id = parseSheetId(b.sheetUrl);
       if (!id) throw new HTTPException(400, { message: 'Không nhận ra link Google Sheet (dạng https://docs.google.com/spreadsheets/d/…)' });
-      Object.assign(patch, { sheetId: id, sheetError: null });
+      // Liên kết mới: bật tự đồng bộ luôn (mọi thay đổi, kể cả qua MCP, ghi sang sheet sau ~30 giây).
+      Object.assign(patch, { sheetId: id, sheetError: null, sheetAuto: b.sheetAuto ?? true });
     }
   }
   if (b.sheetAuto !== undefined) patch.sheetAuto = b.sheetAuto;

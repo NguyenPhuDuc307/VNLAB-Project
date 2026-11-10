@@ -172,7 +172,7 @@ function GoogleSheetBox({ project }: { project: ProjectDetail }) {
   const { toast, confirm } = useFeedback();
   const status = useQuery({ queryKey: ['google-status'], queryFn: () => api<GoogleStatus>('/google/status'), staleTime: Infinity });
   const [url, setUrl] = useState('');
-  const link = useAction((b: { sheetUrl?: string | null; sheetAuto?: boolean }) => api<Project>(`/projects/${project.id}/sheet`, { method: 'PATCH', body: b }), { onSuccess: (_r, b) => { if (b.sheetUrl) { setUrl(''); toast('Đã liên kết sheet — bấm Đồng bộ ngay để ghi'); } } });
+  const link = useAction((b: { sheetUrl?: string | null; sheetAuto?: boolean }) => api<Project>(`/projects/${project.id}/sheet`, { method: 'PATCH', body: b }), { onSuccess: (_r, b) => { if (b.sheetUrl) { setUrl(''); toast('Đã liên kết sheet, tự đồng bộ đã bật — bấm Đồng bộ ngay để ghi lần đầu'); } } });
   const sync = useAction(() => api<{ sheetUrl: string }>(`/projects/${project.id}/sheet/sync`, { method: 'POST', body: {} }), { onSuccess: () => toast('Đã đồng bộ sang Google Sheet') });
   const unlink = async () => {
     if (await confirm({ title: 'Bỏ liên kết Google Sheet?', desc: <p>Sheet vẫn còn trên Google Drive; app chỉ thôi ghi vào đó.</p>, ok: 'Bỏ liên kết', danger: true })) link.mutate({ sheetUrl: null });

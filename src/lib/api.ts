@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useCallback } from 'react';
+import { useCallback, useEffect } from 'react';
 import type { PermissionKey } from '../../server/permissions.ts';
 
 export type { PermissionKey };
@@ -97,6 +97,33 @@ export const useProjects = () => useQuery({ queryKey: ['projects'], queryFn: () 
 export const useProject = (id: string | undefined) =>
   useQuery({ queryKey: ['project', id], queryFn: () => api<ProjectDetail>(`/projects/${id}`), enabled: !!id, placeholderData: (p) => p });
 export const useOverview = () => useQuery({ queryKey: ['overview'], queryFn: () => api<Overview>('/overview') });
+
+/**
+ * Theo dõi dự án theo thời gian thực: nghe luồng SSE /projects/:id/events, mỗi khi server báo `changed`
+ * (ai đó sửa trên web khác, AI sửa qua MCP, nhập liệu…) thì tải lại dự án. Gộp các sự kiện dồn dập trong 300 ms.
+ * EventSource tự kết nối lại khi rớt; lúc nối lại thì tải lại để không bỏ sót thay đổi trong lúc mất kết nối.
+ */
+const BASE = '/api';
+export function useProjectLive(id: string | undefined) {
+  const qc = useQueryClient();
+  useEffect(() => {
+    if (!id || typeof EventSource === 'undefined') return;
+    let timer: number | undefined;
+    let opened = false;
+    const refresh = () => {
+      window.clearTimeout(timer);
+      timer = window.setTimeout(() => {
+        void qc.invalidateQueries({ queryKey: ['project', id] });
+        void qc.invalidateQueries({ queryKey: ['projects'] });
+        void qc.invalidateQueries({ queryKey: ['overview'] });
+      }, 300);
+    };
+    const es = new EventSource(`${BASE}/projects/${id}/events`);
+    es.addEventListener('changed', refresh);
+    es.addEventListener('open', () => { if (opened) refresh(); opened = true; });
+    return () => { window.clearTimeout(timer); es.close(); };
+  }, [id, qc]);
+}
 
 /** Mọi lệnh ghi đều làm mới toàn bộ cache (trừ /me): dự án, tổng quan, thống kê phụ thuộc chéo nhau. */
 export function useAction<A, R = unknown>(fn: (a: A) => Promise<R>, opts: { onSuccess?: (r: R, a: A) => void } = {}) {

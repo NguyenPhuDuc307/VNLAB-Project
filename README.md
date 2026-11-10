@@ -49,6 +49,7 @@ danh sách cần giữ. JSON xuất giữ các task con. Excel / Sheets có hàn
 | `GET|POST /api/projects`, `GET|PATCH|DELETE /api/projects/:id` | dự án (kèm `myRole`, thành viên, nhóm, việc) |
 | `POST|PATCH|DELETE /api/projects/:id/members[/:email]` (`me` = tự rời) | thành viên |
 | `POST|PATCH|DELETE /api/projects/:id/groups[/:gid]`, `PUT …/groups/order` | nhóm việc (`?keepTasks=1` khi xoá) |
+| `GET /api/projects/:id/events` | luồng SSE: event `changed` mỗi khi dự án đổi (web, MCP, nhập liệu), `ping` 25 giây/lần; giao diện dùng để cập nhật thời gian thực |
 | `POST|PATCH|DELETE /api/projects/:id/tasks[/:tid]`, `PUT …/tasks/order`, `POST …/tasks/sort` | việc; `order` = kéo thả trong nhóm, `sort` = xếp theo ngày (một nhóm hoặc tất cả) |
 | `POST /api/projects/:id/import` | nhập hàng loạt `{ groups: [{ name, tasks }] }` (nhóm trùng tên thì gộp) |
 | `GET /api/projects/:id/export?format=xlsx|csv|json` | xuất: Excel theo mẫu Gantt (sheet PLAN + Dữ liệu, thanh bằng conditional formatting), CSV, JSON |

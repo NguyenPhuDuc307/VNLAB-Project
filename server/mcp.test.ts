@@ -102,6 +102,26 @@ test('MCP: token vpj_ ở Cài đặt, công cụ dùng chung tầng dữ liệu
     assert.equal(viaRest.body.tasks.find((t: { id: string }) => t.id === made1.task.id).note, 'đang test');
     assert.deepEqual((await call(token, 'delete_task', { taskId: made1.task.id })).ok, true);
     assert.equal((await R('GET', `/projects/${created.id}`)).body.tasks.length, 3);
+    // Real-time: mở luồng SSE của dự án, MCP tạo việc -> nhận event `changed` (giao diện web dùng để tải lại).
+    const es = await fetch(`${base}/api/projects/${created.id}/events`, { headers: { cookie: `prj_session=${session}`, accept: 'text/event-stream' } });
+    assert.equal(es.status, 200);
+    assert.match(es.headers.get('content-type') ?? '', /text\/event-stream/);
+    const reader = es.body!.getReader();
+    const readUntil = async (needle: string) => {
+      let buf = '';
+      const deadline = Date.now() + 5000;
+      while (!buf.includes(needle) && Date.now() < deadline) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += new TextDecoder().decode(value);
+      }
+      return buf;
+    };
+    assert.match(await readUntil('event: hello'), /event: hello/);
+    const live = await call(token, 'create_task', { projectId: created.id, name: 'Việc tạo qua MCP phải hiện ngay' });
+    assert.ok(live.task.id);
+    assert.match(await readUntil('event: changed'), /event: changed/);
+    await reader.cancel();
     // Sắp xếp theo ngày: đảo thứ tự bằng REST rồi gọi sort_tasks -> việc có ngày bắt đầu lên trước, việc trống ngày xếp cuối.
     const after = (await R('GET', `/projects/${created.id}`)).body;
     const lap = after.groups.find((g: { name: string }) => g.name === 'Lập trình');
@@ -115,6 +135,7 @@ test('MCP: token vpj_ ở Cài đặt, công cụ dùng chung tầng dữ liệu
     assert.match(await call(token, 'sort_tasks', { projectId: created.id, group: 'Không tồn tại' }, true), /Không có nhóm/);
     // REST: sắp xếp mọi nhóm, thứ tự đã đúng -> không đổi gì.
     assert.deepEqual((await R('POST', `/projects/${created.id}/tasks/sort`, {})).body.moved, 0);
+    assert.equal((await R('GET', `/projects/${created.id}`)).body.tasks.length, 4); // 3 + việc tạo trong bước real-time
 
     // Thành viên chỉ xem: đọc được, không ghi được qua MCP.
     assert.equal((await R('POST', `/projects/${created.id}/members`, { email: 'xem@x.vn', role: 'viewer' })).status, 201);

@@ -62,6 +62,7 @@ export const owned = (p: { myRole: MemberRole }) => {
 };
 /** Phát khi dự án đổi (mọi lệnh ghi) — server/sheets.ts nghe để tự đồng bộ Google Sheet. */
 export const projectEvents = new EventEmitter();
+projectEvents.setMaxListeners(0); // mỗi tab đang mở dự án là một listener SSE
 export const touch = async (projectId: string) => {
   await sql`update projects set updated_at = now() where id = ${projectId}`;
   projectEvents.emit('changed', projectId);

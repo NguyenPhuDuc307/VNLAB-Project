@@ -8,7 +8,7 @@ import { MembersSheet, ProjectSheet } from '../components/ProjectSheet';
 import { TaskSheet } from '../components/TaskSheet';
 import { ColumnPicker, normalizeColumns, type ColKey } from '../components/ColumnPicker';
 import { Button, Chip, Empty, Field, IconButton, Input, PageHeader, Segmented, Sheet, Skeleton, useFeedback, cx } from '../components/ui';
-import { api, canEditRole, ROLE_LABEL, useAction, useCan, useProject, type Group, type ProjectDetail, type Task, type TaskInput } from '../lib/api';
+import { api, canEditRole, ROLE_LABEL, useAction, useCan, useProject, useProjectLive, type Group, type ProjectDetail, type Task, type TaskInput } from '../lib/api';
 import { diffDays, fmtShort, todayStr } from '../lib/dates';
 
 const pref = <T,>(key: string, fallback: T, ok: (v: unknown) => v is T): T => {
@@ -25,6 +25,7 @@ export function ProjectPage() {
   const { id = '' } = useParams();
   const [params, setParams] = useSearchParams();
   const q = useProject(id);
+  useProjectLive(id); // cập nhật thời gian thực khi AI (MCP) hay người khác sửa
   const qc = useQueryClient();
   const can = useCan();
   const { toast, confirm } = useFeedback();
