@@ -1,8 +1,8 @@
 import { CaretDoubleLeft, CaretDoubleRight, FolderSimple, GearSix, SquaresFour, type Icon } from '@phosphor-icons/react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { useMe } from '../lib/api';
-import { Avatar, BrandLogo, cx, IconButton } from './ui';
+import { useLiveEvents, useMe } from '../lib/api';
+import { Avatar, BrandLogo, cx, IconButton, useFeedback } from './ui';
 
 const NAV: { to: string; label: string; icon: Icon; match?: (p: string) => boolean }[] = [
   { to: '/', label: 'Tổng quan', icon: SquaresFour },
@@ -27,6 +27,13 @@ const readCollapsed = () => {
  */
 export function Layout() {
   const me = useMe();
+  const { toast } = useFeedback();
+  // Thời gian thực ở mọi trang; AI sửa qua MCP thì báo ở góc dưới bên phải, kèm tên dự án.
+  useLiveEvents((ev) => {
+    if (ev.source !== 'mcp') return;
+    const what = ev.deleted ? 'Xoá dự án' : ev.action ?? 'Cập nhật dự án';
+    toast(`MCP · ${ev.actor ?? 'AI'}: ${what}${ev.projectName ? ` — ${ev.projectName}` : ''}`);
+  });
   const wide = useSyncExternalStore(subscribeWide, () => matchMedia(WIDE).matches);
   const [collapsed, setCollapsed] = useState(readCollapsed);
   const { pathname } = useLocation();

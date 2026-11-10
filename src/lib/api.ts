@@ -104,7 +104,46 @@ export const useOverview = () => useQuery({ queryKey: ['overview'], queryFn: () 
  * EventSource tự kết nối lại khi rớt; lúc nối lại thì tải lại để không bỏ sót thay đổi trong lúc mất kết nối.
  */
 const BASE = '/api';
-export type LiveChange = { at: number; source?: 'web' | 'mcp'; actor?: string; actorId?: string; action?: string };
+export type LiveChange = { at: number; projectId?: string; projectName?: string; deleted?: boolean; source?: 'web' | 'mcp'; actor?: string; actorId?: string; action?: string };
+
+/**
+ * Luồng sự kiện toàn cục (/api/events) — mở một lần ở khung trang. Mỗi thay đổi ở dự án mình thấy:
+ * tải lại dự án đó, danh sách dự án, tổng quan; gọi onChange (khung trang báo ở góc nếu nguồn là MCP).
+ */
+export function useLiveEvents(onChange?: (ev: LiveChange) => void) {
+  const qc = useQueryClient();
+  const cb = useRef(onChange);
+  cb.current = onChange;
+  useEffect(() => {
+    if (typeof EventSource === 'undefined') return;
+    const pending = new Set<string>();
+    let timer: number | undefined;
+    let opened = false;
+    let last = { key: '', at: 0 };
+    const flush = () => {
+      for (const pid of pending) void qc.invalidateQueries({ queryKey: ['project', pid] });
+      pending.clear();
+      void qc.invalidateQueries({ queryKey: ['projects'] });
+      void qc.invalidateQueries({ queryKey: ['overview'] });
+    };
+    const refresh = (pid?: string) => { if (pid) pending.add(pid); window.clearTimeout(timer); timer = window.setTimeout(flush, 300); };
+    const es = new EventSource(`${BASE}/events`);
+    es.addEventListener('changed', (e) => {
+      try {
+        const ev = JSON.parse((e as MessageEvent).data) as LiveChange;
+        refresh(ev.projectId);
+        // Một lệnh MCP (vd. thêm 10 việc) phát nhiều sự kiện cùng mô tả -> chỉ báo một lần trong 1,5 giây.
+        const key = `${ev.projectId}|${ev.source}|${ev.actorId}|${ev.action ?? ''}`;
+        if (key === last.key && Date.now() - last.at < 1500) return;
+        last = { key, at: Date.now() };
+        cb.current?.(ev);
+      } catch { refresh(); }
+    });
+    // Nối lại sau khi rớt: tải lại mọi thứ để không sót thay đổi.
+    es.addEventListener('open', () => { if (opened) { void qc.invalidateQueries(); } opened = true; });
+    return () => { window.clearTimeout(timer); es.close(); };
+  }, [qc]);
+}
 export function useProjectLive(id: string | undefined, onChange?: (ev: LiveChange) => void) {
   const qc = useQueryClient();
   const cb = useRef(onChange);

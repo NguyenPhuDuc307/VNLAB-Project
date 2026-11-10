@@ -8,7 +8,7 @@ import { MembersSheet, ProjectSheet } from '../components/ProjectSheet';
 import { TaskSheet } from '../components/TaskSheet';
 import { ColumnPicker, normalizeColumns, type ColKey } from '../components/ColumnPicker';
 import { Button, Chip, Empty, Field, IconButton, Input, PageHeader, Segmented, Sheet, Skeleton, useFeedback, cx } from '../components/ui';
-import { api, canEditRole, ROLE_LABEL, useAction, useCan, useProject, useProjectLive, type Group, type ProjectDetail, type Task, type TaskInput } from '../lib/api';
+import { api, canEditRole, ROLE_LABEL, useAction, useCan, useProject, type Group, type ProjectDetail, type Task, type TaskInput } from '../lib/api';
 import { diffDays, fmtShort, todayStr } from '../lib/dates';
 
 const pref = <T,>(key: string, fallback: T, ok: (v: unknown) => v is T): T => {
@@ -28,8 +28,7 @@ export function ProjectPage() {
   const qc = useQueryClient();
   const can = useCan();
   const { toast, confirm } = useFeedback();
-  // Cập nhật thời gian thực; thay đổi qua MCP (AI bên ngoài) thì báo ở góc màn hình.
-  useProjectLive(id, (ev) => { if (ev.source === 'mcp') toast(`MCP · ${ev.actor ?? 'AI'}: ${ev.action ?? 'đã cập nhật dự án'}`); });
+  // Cập nhật thời gian thực + báo MCP: do useLiveEvents ở khung trang (Layout) lo cho mọi trang.
   const today = todayStr();
   const [view, setView] = useState<GanttView>(() => pref('project:view', 'gantt', (v): v is GanttView => v === 'gantt' || v === 'list'));
   const [dayWidth, setDayWidth] = useState(() => pref('project:day', 30, (v): v is number => typeof v === 'number' && v >= 18 && v <= 60));
@@ -304,12 +303,18 @@ function GroupSheet({ open, onClose, project, group, confirm, onSort }: {
       onClose={onClose}
       title={group ? 'Nhóm việc' : 'Thêm nhóm việc'}
       footer={
-        <div className="flex items-center gap-2">
-          {group && <IconButton label={count ? 'Xoá nhóm cùng việc' : 'Xoá nhóm'} onClick={() => del(false)} className="text-danger hover:bg-danger-soft" disabled={remove.isPending}><Trash size={18} /></IconButton>}
-          {group && count > 0 && <Button variant="ghost" size="sm" onClick={() => del(true)} disabled={remove.isPending}>Xoá nhóm, giữ {count} việc</Button>}
-          {group && count > 1 && <Button variant="ghost" size="sm" onClick={() => onSort(group)}><SortAscending size={14} /> Sắp xếp theo ngày</Button>}
-          <Button variant="secondary" className="ml-auto" onClick={onClose}>Huỷ</Button>
-          <Button type="submit" form="group-form" disabled={save.isPending || !name.trim()}>{group ? 'Lưu' : 'Thêm'}</Button>
+        <div className="flex flex-col gap-2">
+          {group && (
+            <div className="flex flex-wrap items-center gap-1 border-b border-line pb-2">
+              {count > 1 && <Button variant="ghost" size="sm" onClick={() => onSort(group)}><SortAscending size={14} /> Sắp xếp theo ngày</Button>}
+              {count > 0 && <Button variant="ghost" size="sm" onClick={() => del(true)} disabled={remove.isPending}>Xoá nhóm, giữ {count} việc</Button>}
+              <Button variant="ghost" size="sm" className="text-danger hover:bg-danger-soft" onClick={() => del(false)} disabled={remove.isPending}><Trash size={14} /> {count ? 'Xoá nhóm cùng việc' : 'Xoá nhóm'}</Button>
+            </div>
+          )}
+          <div className="flex items-center justify-end gap-2">
+            <Button variant="secondary" onClick={onClose}>Huỷ</Button>
+            <Button type="submit" form="group-form" disabled={save.isPending || !name.trim()}>{group ? 'Lưu' : 'Thêm'}</Button>
+          </div>
         </div>
       }
     >

@@ -392,17 +392,27 @@ export async function removeMember(p: ProjectRow, email: string, selfId?: string
   await touch(p.id);
 }
 
-/** Đổi tên / thu gọn nhóm. Chỉ đổi tên mới phát `changed` (thu gọn là trạng thái hiển thị). */
+/** Đổi tên / thu gọn nhóm. */
 export async function updateGroup(projectId: string, groupId: string, patch: { name?: string; collapsed?: boolean }) {
   const [g] = await sql`update task_groups set ${sql(patch)} where id = ${groupId} and project_id = ${projectId} returning id, name, sort, collapsed`;
   if (!g) throw notFound();
-  if (patch.name !== undefined) await touch(projectId);
+  await touch(projectId);
   return g as { id: string; name: string; sort: number; collapsed: boolean };
 }
 
+/** Ai được thấy dự án (chủ + thành viên đã có tài khoản) — để gửi sự kiện cho đúng người. */
+export async function projectAudience(projectId: string): Promise<{ name: string; userIds: string[] } | null> {
+  const [p] = await sql<{ name: string; ownerId: string }[]>`select name, owner_id from projects where id = ${projectId}`;
+  if (!p) return null;
+  const ms = await sql<{ userId: string }[]>`select user_id from project_members where project_id = ${projectId} and user_id is not null`;
+  return { name: p.name, userIds: [p.ownerId, ...ms.map((m) => m.userId)] };
+}
+
 export async function deleteProject(projectId: string) {
+  // Lấy người xem trước khi xoá để vẫn báo được cho họ.
+  const audience = await projectAudience(projectId);
   await sql`delete from projects where id = ${projectId}`;
-  projectEvents.emit('changed', projectId, actorContext.getStore() ?? null);
+  projectEvents.emit('changed', projectId, actorContext.getStore() ?? null, { deleted: true, audience });
 }
 
 export async function reorderGroups(projectId: string, ids: string[]) {

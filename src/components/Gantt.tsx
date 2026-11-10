@@ -84,6 +84,38 @@ export function spanOf(tasks: Task[]): { start: string; end: string } | null {
 const isOverdue = (t: Task, today: string) => !!t.endDate && t.endDate < today && t.progress < 100;
 
 export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTask, onAddTask, onGroupMenu, onToggleGroup, collapsedTasks, onToggleTask, collapsedUngrouped, onToggleUngrouped, onChangeDates, onPatchTask, showBaseline = true, onReorder, onReorderGroups, fullscreen, onToggleFullscreen }: Props) {
+  // Kéo thả task con (ở số 1.1) trong cùng task cha; bấm không kéo thì không làm gì.
+  type SubDrag = { parent: Task; parentId: string; id: string; y0: number; active: boolean; overId: string | null; after: boolean };
+  const [subDrag, setSubDrag] = useState<SubDrag | null>(null);
+  const beginSub = (e: RPointerEvent<HTMLElement>, parent: Task, id: string) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setSubDrag({ parent, parentId: parent.id, id, y0: e.clientY, active: false, overId: null, after: false });
+  };
+  const moveSub = (e: RPointerEvent<HTMLElement>) => {
+    if (!subDrag) return;
+    if (!subDrag.active && Math.abs(e.clientY - subDrag.y0) <= 4) return;
+    const el = document.elementsFromPoint(e.clientX, e.clientY).find((n) => (n as HTMLElement).dataset?.subtaskRow) as HTMLElement | undefined;
+    let overId: string | null = null, after = false;
+    if (el && el.dataset.parent === subDrag.parentId) { overId = el.dataset.subtaskRow!; const r = el.getBoundingClientRect(); after = e.clientY > r.top + r.height / 2; }
+    setSubDrag({ ...subDrag, active: true, overId, after });
+  };
+  const endSub = (e: RPointerEvent<HTMLElement>) => {
+    if (!subDrag) return;
+    const d = subDrag;
+    setSubDrag(null);
+    e.stopPropagation();
+    if (!d.active || !d.overId || d.overId === d.id) return;
+    const list = [...(d.parent.subtasks ?? [])];
+    const moving = list.find((s) => s.id === d.id);
+    if (!moving) return;
+    const rest = list.filter((s) => s.id !== d.id);
+    const at = rest.findIndex((s) => s.id === d.overId);
+    if (at < 0) return;
+    rest.splice(at + (d.after ? 1 : 0), 0, moving);
+    onPatchTask(d.parent, { subtasks: rest });
+  };
   // Kéo thả nhóm (ở ô mũi tên của hàng nhóm): chưa di quá 4px thì coi là bấm -> thu/mở nhóm.
   type GroupDrag = { id: string; y0: number; active: boolean; overId: string | null; after: boolean; toggle: () => void };
   const [groupDrag, setGroupDrag] = useState<GroupDrag | null>(null);
@@ -433,7 +465,9 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
             </div>
           );
         }
-        if (r.kind === 'subtask') return <SubtaskRow key={`sub-${r.subtask.id}`} parent={r.task} subtask={r.subtask} index={r.index} canEdit={canEdit} onPatch={onPatchTask}>
+        if (r.kind === 'subtask') return <SubtaskRow key={`sub-${r.subtask.id}`} parent={r.task} subtask={r.subtask} index={r.index} canEdit={canEdit} onPatch={onPatchTask}
+          drag={subDrag?.active && subDrag.parentId === r.task.id ? (subDrag.id === r.subtask.id ? 'is-dragging' : subDrag.overId === r.subtask.id ? (subDrag.after ? 'drop-after' : 'drop-before') : undefined) : undefined}
+          handle={canEdit ? { onPointerDown: (e) => beginSub(e, r.task, r.subtask.id), onPointerMove: moveSub, onPointerUp: endSub, onPointerCancel: () => setSubDrag(null) } : undefined}>
           {!list && <div className="gantt-days min-h-10">{dayCells(`sub-${r.subtask.id}`)}</div>}
         </SubtaskRow>;
         const t = r.task;
@@ -449,8 +483,8 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
             <div className={cx('gantt-left min-h-10 py-1.5', !canEdit && 'cursor-pointer')} onClick={canEdit ? undefined : () => onEditTask(t)} onDoubleClick={canEdit ? () => onEditTask(t) : undefined} role={canEdit ? undefined : 'button'} tabIndex={canEdit ? undefined : 0} onKeyDown={canEdit ? undefined : (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onEditTask(t))}>
               <button type="button" className={cx('c-no group/no relative flex h-7 w-full items-center justify-start rounded-lg pl-1 text-[12px] text-muted hover:bg-fill hover:text-ink', canEdit && 'cursor-grab active:cursor-grabbing')} title={canEdit ? 'Bấm: mở chi tiết · Kéo: đổi thứ tự trong nhóm' : 'Mở chi tiết'} style={{ touchAction: 'none' }}
                 onPointerDown={(e) => beginRow(e, t)} onPointerMove={moveRow} onPointerUp={endRow} onPointerCancel={() => setRowDrag(null)} onClick={(e) => e.stopPropagation()}>
-                <span className="num group-hover/no:hidden">{r.index}</span>
-                <DotsSixVertical size={16} weight="bold" className="hidden group-hover/no:block" />
+                <span className="num group-hover:hidden">{r.index}</span>
+                <DotsSixVertical size={16} weight="bold" className="hidden group-hover:block" />
               </button>
               <div className={cx('flex min-w-0 items-center gap-1.5 px-2', canEdit && 'cursor-text')} onClick={startEdit(t, 'name')}>
                 {!!t.subtasks?.length && <button type="button" className="flex h-5 w-4 shrink-0 items-center justify-center rounded text-primary hover:bg-fill"
@@ -661,9 +695,11 @@ function TaskName({ text, completed }: { text: string; completed: boolean }) {
   </div>;
 }
 
-function SubtaskRow({ parent, subtask, index, canEdit, onPatch, children }: {
+function SubtaskRow({ parent, subtask, index, canEdit, onPatch, children, drag, handle }: {
   parent: Task; subtask: Subtask; index: string; canEdit: boolean;
   onPatch: Props['onPatchTask']; children: React.ReactNode;
+  drag?: string;
+  handle?: Pick<React.HTMLAttributes<HTMLElement>, 'onPointerDown' | 'onPointerMove' | 'onPointerUp' | 'onPointerCancel'>;
 }) {
   const [editing, setEditing] = useState<'name' | 'assignee' | 'progress' | null>(null);
   const commit = (field: 'name' | 'assignee' | 'progress', value: string) => {
@@ -673,9 +709,14 @@ function SubtaskRow({ parent, subtask, index, canEdit, onPatch, children }: {
     if (v !== subtask[field]) onPatch(parent, { subtasks: (parent.subtasks ?? []).map((s) => s.id === subtask.id ? { ...s, [field]: v } : s) });
   };
   const edit = (field: 'name' | 'assignee' | 'progress') => { if (canEdit) setEditing(field); };
-  return <div className="gantt-row border-b border-line" data-subtask-row={subtask.id}>
+  return <div className={cx('gantt-row group/sub border-b border-line', drag)} data-subtask-row={subtask.id} data-parent={parent.id}>
     <div className="gantt-left min-h-10 bg-fill/30 py-1.5">
-      <span className="c-no num pl-1 text-left text-[12px] text-muted">{index}</span>
+      {/* Số 1.1: rê chuột hiện tay kéo, kéo để đổi thứ tự task con trong task cha. */}
+      <span className={cx('c-no flex h-7 w-full items-center rounded-lg pl-1 text-[12px] text-muted', handle && 'cursor-grab hover:bg-fill hover:text-ink active:cursor-grabbing')} style={handle ? { touchAction: 'none' } : undefined}
+        title={handle ? 'Kéo để đổi thứ tự task con' : undefined} {...handle}>
+        <span className={cx('num', handle && 'group-hover/sub:hidden')}>{index}</span>
+        {handle && <DotsSixVertical size={16} weight="bold" className="hidden group-hover/sub:block" />}
+      </span>
       {/* Task con thụt vào sâu hơn tên task cha (cha: lề 6px + nút mũi tên 16px + khoảng cách 6px = 28px; con: 44px).
           Dùng style trực tiếp vì lớp padding của Tailwind nằm trong layer, bị rule `.gantt-left > *` đè. */}
       <div className={cx('flex min-w-0 items-center', canEdit && 'cursor-text')} style={{ paddingLeft: 44 }} onClick={() => edit('name')}>

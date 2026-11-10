@@ -319,6 +319,32 @@ auth.post('/projects', requirePermission('project.project.create'), async (c) =>
  * Luồng sự kiện (Server-Sent Events) của một dự án: mỗi khi dữ liệu đổi (giao diện, MCP, nhập liệu…)
  * gửi event `changed`; client tải lại dự án. Gửi `ping` mỗi 25 giây để Cloudflare / Caddy không cắt kết nối rỗi.
  */
+/**
+ * Luồng sự kiện của người dùng: mọi thay đổi ở dự án mình được thấy (kể cả dự án vừa bị xoá).
+ * Giao diện mở một kết nối ở khung trang: tải lại dữ liệu và báo ở góc màn hình khi AI sửa qua MCP — ở bất kỳ trang nào.
+ */
+auth.get('/events', async (c) => {
+  const me = c.get('userId');
+  return streamSSE(c, async (stream) => {
+    let n = 0;
+    const onChanged = async (projectId: string, actor: D.Actor | null, extra?: { deleted?: boolean; audience?: { name: string; userIds: string[] } | null }) => {
+      try {
+        const aud = extra?.audience !== undefined ? extra.audience : await D.projectAudience(projectId);
+        if (!aud || !aud.userIds.includes(me) || stream.aborted) return;
+        await stream.writeSSE({ event: 'changed', id: String(++n), data: JSON.stringify({ at: Date.now(), projectId, projectName: aud.name, deleted: !!extra?.deleted, ...(actor ?? {}) }) });
+      } catch { /* kết nối đã đóng */ }
+    };
+    D.projectEvents.on('changed', onChanged);
+    stream.onAbort(() => { D.projectEvents.off('changed', onChanged); });
+    await stream.writeSSE({ event: 'hello', data: me });
+    while (!stream.aborted) {
+      await stream.sleep(25_000);
+      if (!stream.aborted) await stream.writeSSE({ event: 'ping', data: '' });
+    }
+    D.projectEvents.off('changed', onChanged);
+  });
+});
+
 auth.get('/projects/:id/events', async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
   return streamSSE(c, async (stream) => {

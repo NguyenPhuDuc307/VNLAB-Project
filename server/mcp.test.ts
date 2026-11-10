@@ -176,10 +176,25 @@ test('MCP: token vpj_ ở Cài đặt, công cụ dùng chung tầng dữ liệu
     await call(token, 'rebaseline_task', { taskId: dated.id });
     assert.equal((await R('GET', `/projects/${created.id}`)).body.tasks.find((t: { id: string }) => t.id === dated.id).baselineEnd, addDays(dated.endDate, 2));
     assert.match((await call(token, 'get_export_link', { projectId: created.id, format: 'csv' })).url, /\/export\?format=csv/);
+    // Luồng toàn cục /api/events: mọi lệnh ghi qua MCP (kể cả xoá dự án) đều báo, kèm tên dự án.
+    const ges = await fetch(`${base}/api/events`, { headers: { cookie: `prj_session=${session}`, accept: 'text/event-stream' } });
+    assert.equal(ges.status, 200);
+    const greader = ges.body!.getReader();
+    const gread = async (needle: string) => {
+      let buf = '';
+      const deadline = Date.now() + 5000;
+      while (!buf.includes(needle) && Date.now() < deadline) { const { value, done } = await greader.read(); if (done) break; buf += new TextDecoder().decode(value); }
+      return buf;
+    };
+    assert.match(await gread('event: hello'), /hello/);
+    await call(token, 'delete_group', { projectId: created.id, group: 'QA', keepTasks: true });
+    assert.match(await gread('Xoá nhóm'), /"source":"mcp".*"action":"Xoá nhóm “QA”"|"action":"Xoá nhóm “QA”".*"source":"mcp"/);
     // Xoá dự án: phải gõ đúng tên.
     const tmp = await call(token, 'create_project', { name: 'Dự án nháp' });
     assert.match(await call(token, 'delete_project', { projectId: tmp.id, confirmName: 'sai tên' }, true), /confirmName/);
     assert.equal((await call(token, 'delete_project', { projectId: tmp.id, confirmName: 'Dự án nháp' })).deleted, 'Dự án nháp');
+    assert.match(await gread('"deleted":true'), /"projectName":"Dự án nháp"/);
+    await greader.cancel();
 
     // Thành viên chỉ xem: đọc được, không ghi được qua MCP.
     assert.equal((await R('POST', `/projects/${created.id}/members`, { email: 'xem@x.vn', role: 'viewer' })).status, 201);
