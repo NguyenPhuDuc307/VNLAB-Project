@@ -85,7 +85,7 @@ export function Layout() {
             {user && <span className="ml-auto"><Avatar name={user.name || user.email} src={user.avatar} size={30} /></span>}
           </header>
         )}
-        <main className={cx('mx-auto w-full min-w-0 flex-1 px-4 py-5 md:px-8 md:py-7', !/^\/du-an\/[^/]+$/.test(pathname) && 'max-w-[1400px]', !wide && 'pb-[calc(84px+max(8px,calc(env(safe-area-inset-bottom)-14px)))]')}>
+        <main className={cx('mx-auto w-full min-w-0 flex-1 px-4 py-5 md:px-8 md:py-7', !/^\/du-an\/[^/]+(\/phase\/[^/]+)?$/.test(pathname) && 'max-w-[1400px]', !wide && 'pb-[calc(84px+max(8px,calc(env(safe-area-inset-bottom)-14px)))]')}>
           <Outlet />
         </main>
         {!wide && (
