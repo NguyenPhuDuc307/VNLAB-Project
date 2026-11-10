@@ -250,7 +250,7 @@ export function ProjectPage() {
         onToggleFullscreen={() => setFull((v) => !v)}
       />
       )}
-      {view === 'gantt' && !full && <p className="mt-2 px-1 text-[12px] text-muted">Bấm vào ô để sửa tại chỗ (Enter lưu, Esc huỷ, Tab sang ô kế); bấm số thứ tự để mở chi tiết, ghi chú, lịch sử. Kéo thanh để dời ngày, kéo hai mép đổi ngày bắt đầu / kết thúc. Khung nét đứt "gốc" là khoảng ngày ban đầu của việc đã dời / gia hạn. Kéo ô số thứ tự để đổi thứ tự trong nhóm; nút ⤢ ở góc bảng để phóng to cả bảng ra toàn màn hình (Esc thoát).</p>}
+      {view === 'gantt' && !full && <p className="mt-2 hidden px-1 text-[12px] text-muted md:block">Bấm vào ô để sửa tại chỗ (Enter lưu, Esc huỷ, Tab sang ô kế); bấm số thứ tự để mở chi tiết, ghi chú, lịch sử. Kéo thanh để dời ngày, kéo hai mép đổi ngày bắt đầu / kết thúc. Khung nét đứt "gốc" là khoảng ngày ban đầu của việc đã dời / gia hạn. Kéo ô số thứ tự để đổi thứ tự trong nhóm; nút ⤢ ở góc bảng để phóng to cả bảng ra toàn màn hình (Esc thoát).</p>}
       </div>
 
       <TaskSheet open={taskSheet.open} onClose={() => setTaskSheet((s) => ({ ...s, open: false }))} project={p} task={taskSheet.task} groupId={taskSheet.groupId ?? null} canEdit={editor} />

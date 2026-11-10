@@ -653,3 +653,17 @@ body::before {
 @keyframes toast-out { to { opacity: 0; transform: translateX(24px); } }
 @keyframes toast-bar { from { transform: scaleX(1); } to { transform: scaleX(0); } }
 @media (prefers-reduced-motion: reduce) { .toast, .toast-leave, .toast-bar { animation: none; } }
+
+/* ---- Điện thoại / bảng hẹp: chỉ còn tên + %, nhóm không bẻ chữ, bỏ nút + (thêm việc ở nút "Việc" hoặc menu nhóm). */
+.gantt:is([data-density="narrow"], [data-density="tight"]) .g-add { display: none; }
+.gantt[data-density="narrow"] .prog-bar { display: none; }
+.gantt:not(.list)[data-density="narrow"] { --cols: minmax(0, 1fr) 44px; }
+.gantt[data-density="narrow"] .gantt-group-left > div:nth-child(2) { padding-left: 4px; }
+.gantt[data-density="narrow"] .gantt-group-left button { word-break: normal; overflow-wrap: break-word; }
+@media (max-width: 639px) {
+  .gantt.list { --cols: minmax(0, 1fr) 48px 64px; }
+  .gantt.list .prog-bar { display: none; }
+  .gantt.list .g-add { display: none; }
+  /* Chạm (không có hover): luôn hiện số, không hiện tay kéo. */
+  .gantt .c-no .num { display: inline !important; }
+}

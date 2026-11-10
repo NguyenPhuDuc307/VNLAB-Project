@@ -206,7 +206,12 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
   };
   const nextField = (t: Task, field: EditField) => setEdit({ id: t.id, field: FIELD_ORDER[(FIELD_ORDER.indexOf(field) + 1) % FIELD_ORDER.length] });
   const editable = (t: Task, field: EditField) => canEdit && edit?.id === t.id && edit.field === field;
-  const startEdit = (t: Task, field: EditField) => (e: React.MouseEvent) => { if (field === 'progress' && t.subtasks?.length) return; if (!canEdit) return; e.stopPropagation(); setEdit({ id: t.id, field }); };
+  const compactRef = useRef(false);
+  // Màn hẹp (điện thoại): ô sửa tại chỗ quá nhỏ để chạm và cột số bị ẩn -> chạm vào hàng là mở chi tiết việc.
+  const startEdit = (t: Task, field: EditField) => (e: React.MouseEvent) => {
+    if (compactRef.current) { e.stopPropagation(); onEditTask(t); return; }
+    if (field === 'progress' && t.subtasks?.length) return; if (!canEdit) return; e.stopPropagation(); setEdit({ id: t.id, field });
+  };
   const inputFor = (t: Task, field: EditField, type: 'text' | 'number' | 'date', value: string, extra: Record<string, unknown> = {}) => (
     <InlineInput key={`${t.id}-${field}`} type={type} value={value} list={field === 'assignee' || field === 'support' ? 'gantt-names' : undefined} {...extra}
       onCommit={(v) => { setEdit(null); commitEdit(t, field, v); }} onCancel={() => setEdit(null)} onNext={(v) => { commitEdit(t, field, v); nextField(t, field); }} />
@@ -242,6 +247,8 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
   const shell = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
+  const compact = width > 0 && width < 640;
+  compactRef.current = compact;
   const [columnWidths, setColumnWidths] = useState<Record<string, string>>({});
   useLayoutEffect(() => {
     let active = true;
@@ -298,7 +305,8 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
   useEffect(() => {
     try { localStorage.setItem('project:gantt-split', String(split)); } catch { /* riêng tư */ }
   }, [split]);
-  const minLeft = Math.min(240, width * 0.52);
+  // Điện thoại: bảng việc tối thiểu ~60% bề ngang để tên việc không bị bẻ vụn; lịch vẫn kéo xem được.
+  const minLeft = width > 0 && width < 640 ? width * 0.6 : Math.min(240, width * 0.52);
   const maxLeft = Math.max(minLeft, width - Math.min(320, width * 0.42));
   const leftWidth = Math.round(Math.max(minLeft, Math.min(maxLeft, width * split)));
   const density = leftWidth >= 900 ? 'wide' : leftWidth >= 620 ? 'full' : leftWidth >= 540 ? 'medium' : leftWidth >= 440 ? 'compact' : leftWidth >= 300 ? 'tight' : 'narrow';
@@ -444,7 +452,7 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
                   <span className="num shrink-0 text-[11px] font-semibold text-muted">{r.tasks.length}</span>
                   {canEdit && (
                     <span className="ml-auto flex shrink-0 items-center">
-                      <IconButton label="Thêm việc vào nhóm" className="h-7 w-7 rounded-lg" onClick={() => onAddTask(g?.id ?? null)}><Plus size={14} weight="bold" /></IconButton>
+                      <IconButton label="Thêm việc vào nhóm" className="g-add h-7 w-7 rounded-lg" onClick={() => onAddTask(g?.id ?? null)}><Plus size={14} weight="bold" /></IconButton>
                       {g && <IconButton label="Tuỳ chọn nhóm" className="h-7 w-7 rounded-lg" onClick={(e) => onGroupMenu(g, e.currentTarget)}><DotsThree size={16} weight="bold" /></IconButton>}
                     </span>
                   )}
@@ -467,7 +475,7 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
             </div>
           );
         }
-        if (r.kind === 'subtask') return <SubtaskRow key={`sub-${r.subtask.id}`} parent={r.task} subtask={r.subtask} index={r.index} canEdit={canEdit} onPatch={onPatchTask}
+        if (r.kind === 'subtask') return <SubtaskRow key={`sub-${r.subtask.id}`} parent={r.task} subtask={r.subtask} index={r.index} canEdit={canEdit} onPatch={onPatchTask} onOpen={compact ? () => onEditTask(r.task) : undefined}
           drag={subDrag?.active && subDrag.parentId === r.task.id ? (subDrag.id === r.subtask.id ? 'is-dragging' : subDrag.overId === r.subtask.id ? (subDrag.after ? 'drop-after' : 'drop-before') : undefined) : undefined}
           handle={canEdit ? { onPointerDown: (e) => beginSub(e, r.task, r.subtask.id), onPointerMove: moveSub, onPointerUp: endSub, onPointerCancel: () => setSubDrag(null) } : undefined}>
           {!list && <div className="gantt-days min-h-10">{dayCells(`sub-${r.subtask.id}`)}</div>}
@@ -509,7 +517,7 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
               <div className={cx('flex items-center gap-2 px-2', canEdit && 'cursor-text')} onClick={startEdit(t, 'progress')}>
                 {editable(t, 'progress') ? inputFor(t, 'progress', 'number', String(t.progress), { min: 0, max: 100, step: 5 }) : (
                   <>
-                    <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-fill"><span className="block h-full rounded-full" style={{ width: `${t.progress}%`, background: color }} /></span>
+                    <span className="prog-bar h-1.5 flex-1 overflow-hidden rounded-full bg-fill"><span className="block h-full rounded-full" style={{ width: `${t.progress}%`, background: color }} /></span>
                     <span className="num w-8 shrink-0 text-right text-[12px] font-semibold">{t.progress}%</span>
                   </>
                 )}
@@ -594,7 +602,7 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
         resizeSplit(e.key === 'Home' ? minLeft : e.key === 'End' ? maxLeft : leftWidth + (e.key === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 50 : 10));
       }}
     ><span /></div>}
-    {onToggleFullscreen && (
+    {onToggleFullscreen && !list && (
       <button type="button" className={cx('gantt-max', fullscreen && 'on')} aria-pressed={!!fullscreen} title={fullscreen ? 'Thoát toàn màn hình (Esc)' : 'Phóng to cả bảng ra toàn màn hình'} onClick={onToggleFullscreen}>
         {fullscreen ? <CornersIn size={14} weight="bold" /> : <CornersOut size={14} weight="bold" />}
       </button>
@@ -697,8 +705,10 @@ function TaskName({ text, completed }: { text: string; completed: boolean }) {
   </div>;
 }
 
-function SubtaskRow({ parent, subtask, index, canEdit, onPatch, children, drag, handle }: {
+function SubtaskRow({ parent, subtask, index, canEdit, onPatch, children, drag, handle, onOpen }: {
   parent: Task; subtask: Subtask; index: string; canEdit: boolean;
+  /** Màn hẹp: chạm task con là mở chi tiết task cha (nơi sửa task con). */
+  onOpen?: () => void;
   onPatch: Props['onPatchTask']; children: React.ReactNode;
   drag?: string;
   handle?: Pick<React.HTMLAttributes<HTMLElement>, 'onPointerDown' | 'onPointerMove' | 'onPointerUp' | 'onPointerCancel'>;
@@ -710,7 +720,7 @@ function SubtaskRow({ parent, subtask, index, canEdit, onPatch, children, drag, 
     if (field === 'name' && !v || typeof v === 'number' && !Number.isFinite(v)) return;
     if (v !== subtask[field]) onPatch(parent, { subtasks: (parent.subtasks ?? []).map((s) => s.id === subtask.id ? { ...s, [field]: v } : s) });
   };
-  const edit = (field: 'name' | 'assignee' | 'progress') => { if (canEdit) setEditing(field); };
+  const edit = (field: 'name' | 'assignee' | 'progress') => { if (onOpen) { onOpen(); return; } if (canEdit) setEditing(field); };
   return <div className={cx('gantt-row group/sub border-b border-line', drag)} data-subtask-row={subtask.id} data-parent={parent.id}>
     <div className="gantt-left min-h-10 bg-fill/30 py-1.5">
       {/* Số 1.1: rê chuột hiện tay kéo, kéo để đổi thứ tự task con trong task cha. */}
@@ -729,7 +739,7 @@ function SubtaskRow({ parent, subtask, index, canEdit, onPatch, children, drag, 
       </div>
       <span className="c-sup" />
       <div className={cx('flex items-center gap-2 px-2', canEdit && 'cursor-text')} onClick={() => edit('progress')}>
-        {editing === 'progress' ? <InlineInput type="number" value={String(subtask.progress)} min={0} max={100} onCommit={(v) => commit('progress', v)} onCancel={() => setEditing(null)} onNext={(v) => commit('progress', v)} /> : <><span className="h-1.5 flex-1 overflow-hidden rounded-full bg-fill"><span className="block h-full rounded-full bg-primary" style={{ width: `${subtask.progress}%` }} /></span><span className="num w-8 shrink-0 text-right text-[12px] font-semibold">{subtask.progress}%</span></>}
+        {editing === 'progress' ? <InlineInput type="number" value={String(subtask.progress)} min={0} max={100} onCommit={(v) => commit('progress', v)} onCancel={() => setEditing(null)} onNext={(v) => commit('progress', v)} /> : <><span className="prog-bar h-1.5 flex-1 overflow-hidden rounded-full bg-fill"><span className="block h-full rounded-full bg-primary" style={{ width: `${subtask.progress}%` }} /></span><span className="num w-8 shrink-0 text-right text-[12px] font-semibold">{subtask.progress}%</span></>}
       </div>
       <span className="c-start px-2 text-[12px] text-muted/60" title="Lịch do task cha quản lý">—</span>
       <span className="c-end px-2 text-[12px] text-muted/60" title="Lịch do task cha quản lý">—</span>
