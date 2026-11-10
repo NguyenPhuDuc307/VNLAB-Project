@@ -358,8 +358,12 @@ export function ProjectPage() {
           </span>
         )}
         <span className="ml-auto flex flex-wrap items-center gap-2">
-          {getfly.data?.configured && p.getflyParentCode && p.getflyCreatorId && editor && can('project.project.write') && (
-            <Button variant="ghost" size="sm" onClick={() => getflySync.mutate(undefined)} disabled={getflySync.isPending} title={p.getflySyncedAt ? `Đồng bộ Getfly lần cuối ${new Date(p.getflySyncedAt).toLocaleString('vi-VN')}` : 'Chưa đồng bộ Getfly'}>
+          {getfly.data?.configured && editor && can('project.project.write') && (
+            <Button variant="ghost" size="sm" onClick={() => {
+              // Chưa đặt việc cha / người tạo thì mở Cài đặt (mục Getfly CRM) thay vì đồng bộ.
+              if (!p.getflyParentCode || !p.getflyCreatorId) { toast('Đặt việc cha và người tạo trên Getfly trước (Cài đặt → Getfly CRM)'); setSettings(true); return; }
+              getflySync.mutate(undefined);
+            }} disabled={getflySync.isPending} title={p.getflySyncedAt ? `Đồng bộ Getfly lần cuối ${new Date(p.getflySyncedAt).toLocaleString('vi-VN')}` : 'Chưa đồng bộ Getfly'}>
               <CloudArrowUp size={15} className={getflySync.isPending ? 'animate-pulse' : undefined} /> <span className="hidden sm:inline">Đồng bộ Getfly</span><span className="sm:hidden">Getfly</span>
             </Button>
           )}
