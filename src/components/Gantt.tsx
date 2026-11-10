@@ -18,6 +18,8 @@ export type MenuTarget =
 type Props = {
   /** Menu chuột phải: trang dự án trả danh sách thao tác cho chỗ được bấm. */
   menuFor?: (t: MenuTarget) => MenuItem[];
+  /** Nút điều khiển đặt ở khoảng trống đầu bảng (trên cột # / Việc). */
+  headerTools?: React.ReactNode;
   /** Hiện nhãn phạm vi trên tên việc (mặc định có). */
   showScopes?: boolean;
   project: ProjectDetail;
@@ -96,7 +98,7 @@ export function spanOf(tasks: Task[]): { start: string; end: string } | null {
 
 const isOverdue = (t: Task, today: string) => !!t.endDate && t.endDate < today && t.progress < 100;
 
-export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTask, onAddTask, onGroupMenu, onToggleGroup, collapsedTasks, onToggleTask, collapsedUngrouped, onToggleUngrouped, onChangeDates, onPatchTask, showBaseline = true, onReorder, onReorderGroups, fullscreen, onToggleFullscreen, menuFor, showScopes = true }: Props) {
+export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTask, onAddTask, onGroupMenu, onToggleGroup, collapsedTasks, onToggleTask, collapsedUngrouped, onToggleUngrouped, onChangeDates, onPatchTask, showBaseline = true, onReorder, onReorderGroups, fullscreen, onToggleFullscreen, menuFor, showScopes = true, headerTools }: Props) {
   const [menu, setMenu] = useState<MenuState>(null);
   // Kéo thả task con (ở số 1.1) trong cùng task cha; bấm không kéo thì không làm gì.
   type SubDrag = { parent: Task; parentId: string; id: string; y0: number; active: boolean; overId: string | null; after: boolean };
@@ -435,11 +437,12 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
 
   return (
     <div ref={shell} className={cx('gantt-shell', resizing && 'resizing')} style={{ ['--left' as string]: `${leftWidth}px` }}>
-    <div ref={box} onContextMenu={onContext} data-density={density} className={cx('gantt', list && 'list')} style={{ ...columnWidths, ['--day' as string]: `${dayWidth}px` }} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => setDrag(null)}>
+    <div ref={box} onContextMenu={onContext} data-density={density} className={cx('gantt', list && 'list', !!headerTools && 'has-tools')} style={{ ...columnWidths, ['--day' as string]: `${dayWidth}px` }} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => setDrag(null)}>
       {/* ---- đầu bảng */}
       <div className="gantt-head border-b border-line">
         <div className="gantt-row">
           <div className="gantt-left h-full items-stretch">
+            {headerTools && <div className="gantt-tools" onDoubleClick={(e) => e.stopPropagation()}>{headerTools}</div>}
             <div className="c-no flex h-full items-end px-2 pb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted">#</div>
             <div className="flex h-full items-end px-2 pb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted">Việc</div>
             <div className="c-asg flex h-full items-end px-2 pb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted">Phụ trách</div>

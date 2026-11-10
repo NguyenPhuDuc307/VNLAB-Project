@@ -164,6 +164,32 @@ export function ProjectPage() {
   const overdue = p.tasks.filter((t) => t.endDate && t.endDate < today && t.progress < 100).length;
   const avg = p.tasks.length ? Math.round(p.tasks.reduce((s, t) => s + t.progress, 0) / p.tasks.length) : 0;
 
+  // ---- Cụm nút điều khiển đặt ở khoảng trống đầu bảng (trên cột # / Việc).
+  const parentsWithSubs = p.tasks.filter((t) => t.subtasks?.length).map((t) => t.id);
+  const allSubsCollapsed = parentsWithSubs.length > 0 && parentsWithSubs.every((x) => collapsedTasks.includes(x));
+  const tb = 'h-7 w-7 rounded-lg';
+  const headerTools = (
+    <>
+      {view === 'gantt' && (
+        <>
+          <IconButton label="Về hôm nay" className={tb} onClick={() => setFocus({ date: today, tick: focus.tick + 1 })}><CrosshairSimple size={16} /></IconButton>
+          <IconButton label="Đầu tháng" className={tb} onClick={() => setFocus({ date: `${today.slice(0, 7)}-01`, tick: focus.tick + 1 })}><CalendarBlank size={16} /></IconButton>
+          {p.startDate && <IconButton label="Đầu dự án" className={cx(tb, 'hidden md:inline-flex')} onClick={() => setFocus({ date: p.startDate!, tick: focus.tick + 1 })}><Flag size={16} /></IconButton>}
+          <IconButton label={showBaseline ? 'Ẩn kế hoạch gốc' : 'Hiện kế hoạch gốc'} className={cx(tb, 'hidden md:inline-flex', showBaseline && 'bg-fill text-primary')} onClick={() => setShowBaseline((v) => !v)} aria-pressed={showBaseline}><ClockCounterClockwise size={16} /></IconButton>
+          <span className="mx-0.5 inline-flex items-center rounded-lg bg-fill p-0.5">
+            <IconButton label="Thu nhỏ lịch" className="h-6 w-6 rounded-md" onClick={() => setDayWidth((w) => Math.max(18, w - 4))} disabled={dayWidth <= 18}><Minus size={13} weight="bold" /></IconButton>
+            <IconButton label="Phóng to lịch" className="h-6 w-6 rounded-md" onClick={() => setDayWidth((w) => Math.min(60, w + 4))} disabled={dayWidth >= 60}><Plus size={13} weight="bold" /></IconButton>
+          </span>
+        </>
+      )}
+      {parentsWithSubs.length > 0 && (
+        <IconButton label={allSubsCollapsed ? 'Mở rộng tất cả task con' : 'Thu gọn tất cả task con'} className={tb} onClick={() => setCollapsedTasks(allSubsCollapsed ? [] : parentsWithSubs)}>
+          {allSubsCollapsed ? <ArrowsOutLineVertical size={16} /> : <ArrowsInLineVertical size={16} />}
+        </IconButton>
+      )}
+    </>
+  );
+
   // ---- Menu chuột phải trên bảng: thao tác theo chỗ được bấm.
   const refresh = () => qc.invalidateQueries({ queryKey: ['project', id] });
   const ask = async (title: string, desc: string, ok: string) => confirm({ title, desc: <p>{desc}</p>, ok, danger: true });
@@ -330,26 +356,6 @@ export function ProjectPage() {
             <IconButton label={showScopes ? 'Ẩn nhãn phạm vi' : 'Hiện nhãn phạm vi'} aria-pressed={showScopes} className={cx(showScopes && 'bg-fill text-primary')} onClick={() => setShowScopes((v) => !v)}><Tag size={18} weight={showScopes ? 'fill' : 'regular'} /></IconButton>
           </span>
         )}
-        {view === 'gantt' && (
-          <>
-            <IconButton label="Hôm nay" onClick={() => setFocus({ date: today, tick: focus.tick + 1 })}><CrosshairSimple size={18} /></IconButton>
-            <IconButton label="Đầu tháng" onClick={() => setFocus({ date: `${today.slice(0, 7)}-01`, tick: focus.tick + 1 })}><CalendarBlank size={18} /></IconButton>
-            {p.startDate && <IconButton label="Đầu dự án" className="hidden md:inline-flex" onClick={() => setFocus({ date: p.startDate!, tick: focus.tick + 1 })}><Flag size={18} /></IconButton>}
-            <IconButton label="Kế hoạch gốc" className={cx("hidden md:inline-flex", showBaseline && "bg-fill text-primary")} onClick={() => setShowBaseline((v) => !v)} title="Kế hoạch gốc: khung nét đứt là khoảng ngày ban đầu" aria-pressed={showBaseline}>
-              <ClockCounterClockwise size={18} />
-            </IconButton>
-            <span className="inline-flex items-center rounded-lg bg-fill p-0.5">
-              <IconButton label="Thu nhỏ" className="h-7 w-7 rounded-md" onClick={() => setDayWidth((w) => Math.max(18, w - 4))} disabled={dayWidth <= 18}><Minus size={14} weight="bold" /></IconButton>
-              <IconButton label="Phóng to" className="h-7 w-7 rounded-md" onClick={() => setDayWidth((w) => Math.min(60, w + 4))} disabled={dayWidth >= 60}><Plus size={14} weight="bold" /></IconButton>
-            </span>
-          </>
-        )}
-        {p.tasks.some((t) => t.subtasks?.length) && <span className="inline-flex items-center gap-1">
-          <IconButton label="Thu gọn tất cả task con" onClick={() => {
-            setCollapsedTasks(p.tasks.filter((t) => t.subtasks?.length).map((t) => t.id));
-          }}><ArrowsInLineVertical size={18} /></IconButton>
-          <IconButton label="Mở rộng tất cả task con" onClick={() => setCollapsedTasks([])}><ArrowsOutLineVertical size={18} /></IconButton>
-        </span>}
         <span className="ml-auto flex flex-wrap items-center gap-2">
           {getfly.data?.configured && p.getflyParentCode && editor && can('project.project.write') && (
             <Button variant="ghost" size="sm" onClick={() => getflySync.mutate(undefined)} disabled={getflySync.isPending} title={p.getflySyncedAt ? `Đồng bộ Getfly lần cuối ${new Date(p.getflySyncedAt).toLocaleString('vi-VN')}` : 'Chưa đồng bộ Getfly'}>
@@ -406,6 +412,7 @@ export function ProjectPage() {
         fullscreen={full}
         onToggleFullscreen={() => setFull((v) => !v)}
         menuFor={menuFor}
+        headerTools={headerTools}
         showScopes={showScopes}
       />
       )}

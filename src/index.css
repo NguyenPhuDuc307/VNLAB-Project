@@ -704,3 +704,13 @@ body::before {
 .ctx-hint { font-size: 11px; font-weight: 600; color: var(--muted); }
 .ctx-sep { height: 1px; margin: 4px 6px; background: var(--line); }
 @keyframes ctx-in { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
+
+/* Cụm nút điều khiển ở góc trên-trái đầu bảng; nhãn cột nằm dưới. */
+.gantt-tools {
+  position: absolute; top: 6px; left: 6px; right: 6px; z-index: 5;
+  display: flex; align-items: center; gap: 2px; overflow-x: auto; scrollbar-width: none;
+}
+.gantt-tools::-webkit-scrollbar { display: none; }
+.gantt.has-tools .gantt-head .gantt-left { min-height: 66px; }
+.gantt.list.has-tools .gantt-head .gantt-left { min-height: 70px; }
+.gantt.list.has-tools .gantt-head .gantt-left > *:not(.gantt-tools) { align-items: flex-end !important; padding-bottom: 6px !important; }
