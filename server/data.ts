@@ -20,6 +20,7 @@ export type ProjectRow = {
   color: string; satWeight: number; sunWeight: number; archived: boolean; createdAt: Date; updatedAt: Date;
   sheetId: string | null; sheetAuto: boolean; sheetSyncedAt: Date | null; sheetError: string | null;
   exportColumns: string[] | null;
+  aiContext: string;
 };
 export type Subtask = { id: string; name: string; assignee: string; progress: number };
 export type TaskRow = {
@@ -27,7 +28,9 @@ export type TaskRow = {
   id: string; projectId: string; groupId: string | null; name: string; assignee: string; support: string; progress: number;
   startDate: string | null; endDate: string | null; days: number | null; note: string; sort: number; createdAt: Date; updatedAt: Date;
   baselineStart: string | null; baselineEnd: string | null;
+  scopeId: string | null;
 };
+export type ScopeRow = { id: string; name: string; color: string; owner: string; note: string; sort: number };
 
 export const zId = z.uuid();
 export const zDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Ngày phải dạng YYYY-MM-DD').refine(isDate, 'Ngày không hợp lệ');
@@ -92,10 +95,12 @@ export const projectView = (p: ProjectRow) => ({
   sheetId: p.sheetId ?? null, sheetUrl: p.sheetId ? `https://docs.google.com/spreadsheets/d/${p.sheetId}/edit` : null,
   sheetAuto: !!p.sheetAuto, sheetSyncedAt: p.sheetSyncedAt ? new Date(p.sheetSyncedAt).toISOString() : null, sheetError: p.sheetError ?? null,
   exportColumns: p.exportColumns ?? null,
+  aiContext: p.aiContext ?? '',
 });
 
 export const taskView = (t: Record<string, unknown>) => ({
   id: t.id as string, projectId: t.projectId as string, groupId: (t.groupId as string | null) ?? null, name: t.name as string,
+  scopeId: (t.scopeId as string | null) ?? null,
   subtasks: (t.subtasks ?? []) as Subtask[],
   assignee: t.assignee as string, support: t.support as string, progress: t.progress as number,
   startDate: (t.startDate as string | null) ?? null, endDate: (t.endDate as string | null) ?? null,
@@ -156,7 +161,8 @@ export async function projectBundle(id: string) {
     select t.* from tasks t left join task_groups g on g.id = t.group_id
     where t.project_id = ${id}
     order by (t.group_id is null), g.sort, g.created_at, t.sort, t.created_at`;
-  return { ...projectView(p), groups, tasks: tasks.map(taskView) };
+  const scopes = await sql<ScopeRow[]>`select id, name, color, owner, note, sort from scopes where project_id = ${id} order by sort, created_at`;
+  return { ...projectView(p), groups, scopes, tasks: tasks.map(taskView) };
 }
 
 export async function projectMembers(p: ProjectRow) {
@@ -267,6 +273,7 @@ const subtaskProgress = (items: Subtask[], fallback: number) => items.length ? M
 export const taskFields = z.object({
   subtasks: z.array(subtaskFields).max(100).optional(),
   groupId: zId.nullable(),
+  scopeId: zId.nullable(),
   name: zText(300).min(1, 'Nhập tên việc'),
   assignee: zText(160),
   support: zText(300),
@@ -276,7 +283,7 @@ export const taskFields = z.object({
   days: z.number().min(0).max(9999).nullable(),
   note: zText(4000),
 });
-export const taskCreate = taskFields.partial({ groupId: true, assignee: true, support: true, progress: true, startDate: true, endDate: true, days: true, note: true });
+export const taskCreate = taskFields.partial({ scopeId: true, groupId: true, assignee: true, support: true, progress: true, startDate: true, endDate: true, days: true, note: true });
 export type TaskCreate = z.infer<typeof taskCreate>;
 export type TaskPatch = Partial<z.infer<typeof taskFields>>;
 
@@ -287,12 +294,13 @@ export const checkDates = (t: { startDate?: string | null; endDate?: string | nu
 export async function insertTask(projectId: string, b: TaskCreate) {
   checkDates(b);
   await groupBelongs(projectId, b.groupId);
+  await scopeBelongs(projectId, b.scopeId);
   const groupId = b.groupId ?? null;
   const both = !!(b.startDate && b.endDate);
   const subtasks = normalizeSubtasks(b.subtasks ?? []);
   const [t] = await sql`
-    insert into tasks (project_id, group_id, name, assignee, support, progress, start_date, end_date, days, note, subtasks, baseline_start, baseline_end, sort)
-    values (${projectId}, ${groupId}, ${b.name}, ${b.assignee ?? ''}, ${b.support ?? ''}, ${subtaskProgress(subtasks, b.progress ?? 0)}, ${b.startDate ?? null}, ${b.endDate ?? null}, ${b.days ?? null}, ${b.note ?? ''}, ${sql.json(subtasks)},
+    insert into tasks (project_id, group_id, scope_id, name, assignee, support, progress, start_date, end_date, days, note, subtasks, baseline_start, baseline_end, sort)
+    values (${projectId}, ${groupId}, ${b.scopeId ?? null}, ${b.name}, ${b.assignee ?? ''}, ${b.support ?? ''}, ${subtaskProgress(subtasks, b.progress ?? 0)}, ${b.startDate ?? null}, ${b.endDate ?? null}, ${b.days ?? null}, ${b.note ?? ''}, ${sql.json(subtasks)},
       ${both ? b.startDate! : null}, ${both ? b.endDate! : null},
       (select coalesce(max(sort), -1) + 1 from tasks where project_id = ${projectId} and group_id is not distinct from ${groupId}))
     returning *`;
@@ -301,12 +309,13 @@ export async function insertTask(projectId: string, b: TaskCreate) {
 }
 
 /** Trường được ghi lịch sử khi đổi. */
-const TRACKED: (keyof TaskPatch)[] = ['name', 'groupId', 'assignee', 'support', 'progress', 'startDate', 'endDate', 'days', 'note', 'subtasks'];
+const TRACKED: (keyof TaskPatch)[] = ['name', 'groupId', 'scopeId', 'assignee', 'support', 'progress', 'startDate', 'endDate', 'days', 'note', 'subtasks'];
 const asText = (v: unknown) => (v === null || v === undefined || v === '' ? null : typeof v === 'object' ? JSON.stringify(v) : String(v));
 
 export async function updateTask(projectId: string, taskId: string, b: TaskPatch, actorId: string | null = null) {
   if (!Object.keys(b).length) throw bad('Không có gì để sửa');
   if (b.groupId !== undefined) await groupBelongs(projectId, b.groupId);
+  if (b.scopeId !== undefined) await scopeBelongs(projectId, b.scopeId);
   const t = await sql.begin(async (tx) => {
     const [cur] = await tx<TaskRow[]>`select * from tasks where id = ${taskId} and project_id = ${projectId} for update`;
     if (!cur) throw notFound();
@@ -427,6 +436,58 @@ export async function deleteProject(projectId: string) {
   emitChanged(projectId, { deleted: true, audience });
 }
 
+// ---------------------------------------------------------------- phạm vi (tag)
+
+export const scopeSchema = z.object({
+  name: zText(80).min(1, 'Nhập tên phạm vi'),
+  color: zColor.default('#4274bc'),
+  owner: zText(200).default(''),
+  note: zText(1000).default(''),
+});
+export async function scopeBelongs(projectId: string, scopeId: string | null | undefined) {
+  if (!scopeId) return;
+  const [m] = await sql`select 1 from scopes where id = ${scopeId} and project_id = ${projectId}`;
+  if (!m) throw bad('Phạm vi không thuộc dự án này');
+}
+export async function findScope(projectId: string, name: string) {
+  const [m] = await sql<ScopeRow[]>`select id, name, color, owner, note, sort from scopes where project_id = ${projectId} and lower(name) = ${name.trim().toLowerCase()}`;
+  return m ?? null;
+}
+/** Bảng màu gợi ý cho phạm vi mới (xoay vòng). */
+const SCOPE_COLORS = ['#4274bc', '#2f9e8f', '#c47a1c', '#8a5cc7', '#c2456b', '#4f8a2e', '#3b8fc4', '#b5651d'];
+export async function createScope(projectId: string, b: Partial<z.infer<typeof scopeSchema>> & { name: string }) {
+  if (await findScope(projectId, b.name)) throw bad(`Đã có phạm vi "${b.name.trim()}"`);
+  const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from scopes where project_id = ${projectId}`;
+  const [m] = await sql<ScopeRow[]>`
+    insert into scopes (project_id, name, color, owner, note, sort)
+    values (${projectId}, ${b.name.trim()}, ${b.color ?? SCOPE_COLORS[n % SCOPE_COLORS.length]}, ${b.owner ?? ''}, ${b.note ?? ''}, ${n})
+    returning id, name, color, owner, note, sort`;
+  await touch(projectId);
+  return m;
+}
+export async function updateScope(projectId: string, scopeId: string, patch: Partial<z.infer<typeof scopeSchema>>) {
+  if (!Object.keys(patch).length) throw bad('Không có gì để sửa');
+  if (patch.name) { const dup = await findScope(projectId, patch.name); if (dup && dup.id !== scopeId) throw bad(`Đã có phạm vi "${patch.name}"`); }
+  const [m] = await sql<ScopeRow[]>`update scopes set ${sql(patch)} where id = ${scopeId} and project_id = ${projectId} returning id, name, color, owner, note, sort`;
+  if (!m) throw notFound();
+  await touch(projectId);
+  return m;
+}
+/** Xoá phạm vi: việc đang gắn được bỏ tag (không xoá việc). */
+export async function deleteScope(projectId: string, scopeId: string) {
+  const [{ n }] = await sql<{ n: number }[]>`select count(*)::int as n from tasks where scope_id = ${scopeId} and project_id = ${projectId}`;
+  const rows = await sql`delete from scopes where id = ${scopeId} and project_id = ${projectId} returning id`;
+  if (!rows.length) throw notFound();
+  await touch(projectId);
+  return { untagged: n };
+}
+export async function reorderScopes(projectId: string, ids: string[]) {
+  await sql.begin(async (tx) => {
+    for (const [i, id] of ids.entries()) await tx`update scopes set sort = ${i} where id = ${id} and project_id = ${projectId}`;
+  });
+  await touch(projectId);
+}
+
 export async function reorderGroups(projectId: string, ids: string[]) {
   await sql.begin(async (tx) => {
     for (const [i, id] of ids.entries()) await tx`update task_groups set sort = ${i} where id = ${id} and project_id = ${projectId}`;
@@ -493,8 +554,8 @@ export async function importGroups(projectId: string, groups: ImportGroup[]) {
         const both = !!(t.startDate && t.endDate);
         const subtasks = normalizeSubtasks(t.subtasks ?? []);
         await tx`
-          insert into tasks (project_id, group_id, name, assignee, support, progress, start_date, end_date, days, note, subtasks, baseline_start, baseline_end, sort)
-          values (${projectId}, ${groupId}, ${t.name}, ${t.assignee ?? ''}, ${t.support ?? ''}, ${subtaskProgress(subtasks, t.progress ?? 0)}, ${t.startDate ?? null}, ${t.endDate ?? null}, ${t.days ?? null}, ${t.note ?? ''}, ${tx.json(subtasks)},
+          insert into tasks (project_id, group_id, scope_id, name, assignee, support, progress, start_date, end_date, days, note, subtasks, baseline_start, baseline_end, sort)
+          values (${projectId}, ${groupId}, ${t.scopeId ?? null}, ${t.name}, ${t.assignee ?? ''}, ${t.support ?? ''}, ${subtaskProgress(subtasks, t.progress ?? 0)}, ${t.startDate ?? null}, ${t.endDate ?? null}, ${t.days ?? null}, ${t.note ?? ''}, ${tx.json(subtasks)},
             ${both ? t.startDate! : null}, ${both ? t.endDate! : null},
             (select coalesce(max(sort), -1) + 1 from tasks where project_id = ${projectId} and group_id is not distinct from ${groupId}))`;
         tasks++;

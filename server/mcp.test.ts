@@ -48,7 +48,7 @@ test('MCP: token vpj_ ở Cài đặt, công cụ dùng chung tầng dữ liệu
     // Danh sách công cụ + annotation.
     const listed = (await rpc(token, 'tools/list', {})).body.result;
     const byName = Object.fromEntries(listed.tools.map((t: { name: string }) => [t.name, t]));
-    for (const n of ['list_projects', 'get_project', 'get_overview', 'find_tasks', 'create_project', 'create_group', 'create_task', 'create_tasks', 'update_task', 'delete_task', 'sort_tasks', 'delete_group', 'update_project', 'delete_project', 'set_member', 'remove_member', 'update_group', 'reorder_groups', 'move_task', 'rebaseline_task', 'get_task_history', 'set_google_sheet', 'get_export_link']) assert.ok(byName[n], n);
+    for (const n of ['list_projects', 'get_project', 'get_overview', 'find_tasks', 'create_project', 'create_group', 'create_task', 'create_tasks', 'update_task', 'delete_task', 'sort_tasks', 'delete_group', 'update_project', 'delete_project', 'set_member', 'remove_member', 'update_group', 'reorder_groups', 'move_task', 'rebaseline_task', 'get_task_history', 'set_google_sheet', 'get_export_link', 'create_scope', 'update_scope', 'delete_scope', 'reorder_scopes', 'get_ai_context', 'set_ai_context']) assert.ok(byName[n], n);
     assert.equal(byName.list_projects.annotations.readOnlyHint, true);
     assert.equal(byName.create_task.annotations.destructiveHint, false);
     assert.equal(byName.delete_task.annotations.destructiveHint, true);
@@ -196,6 +196,25 @@ test('MCP: token vpj_ ở Cài đặt, công cụ dùng chung tầng dữ liệu
     // Tạo dự án qua MCP cũng báo.
     await call(token, 'create_project', { name: 'Dự án báo thử' });
     assert.match(await gread('Dự án báo thử'), /"projectName":"Dự án báo thử"/);
+    // Phạm vi (tag) + người phụ trách phạm vi + gắn vào việc; hướng dẫn cho AI.
+    const sc = await call(token, 'create_scope', { projectId: created.id, name: 'Giao hàng', owner: 'Lương' });
+    assert.equal(sc.scope.owner, 'Lương');
+    const tagged = await call(token, 'create_task', { projectId: created.id, name: 'Việc có phạm vi', scope: 'giao hàng' });
+    assert.equal(tagged.task.scope, 'Giao hàng');
+    const kho = await call(token, 'create_tasks', { projectId: created.id, tasks: [{ name: 'Việc kho', scope: 'Kho' }] });
+    assert.equal(kho.tasksCreated, 1);
+    const pj = await call(token, 'get_project', { projectId: created.id });
+    assert.deepEqual(pj.scopes.map((x: { name: string; taskCount: number }) => [x.name, x.taskCount]), [['Giao hàng', 1], ['Kho', 1]]);
+    assert.equal((await call(token, 'find_tasks', { projectId: created.id, scope: 'Kho' })).tasks.length, 1);
+    assert.equal((await call(token, 'update_task', { taskId: tagged.task.id, scope: 'Kho' })).task.scope, 'Kho');
+    assert.equal((await call(token, 'update_task', { taskId: tagged.task.id, scope: '' })).task.scope, null);
+    assert.equal((await call(token, 'update_scope', { projectId: created.id, scope: 'Kho', newName: 'Kho vận', owner: 'Đại' })).scope.name, 'Kho vận');
+    assert.deepEqual((await call(token, 'reorder_scopes', { projectId: created.id, order: ['Kho vận'] })).scopes, ['Kho vận', 'Giao hàng']);
+    assert.equal((await call(token, 'delete_scope', { projectId: created.id, scope: 'Kho vận' })).tasksUntagged, 1);
+    await call(token, 'set_ai_context', { projectId: created.id, text: 'Tên việc bắt đầu bằng động từ.' });
+    await call(token, 'set_ai_context', { projectId: created.id, text: 'Luôn gắn phạm vi.', mode: 'append' });
+    assert.equal((await call(token, 'get_ai_context', { projectId: created.id })).aiContext, 'Tên việc bắt đầu bằng động từ.\n\nLuôn gắn phạm vi.');
+    assert.match((await call(token, 'get_project', { projectId: created.id })).aiContext, /Luôn gắn phạm vi/);
     // Xoá dự án: phải gõ đúng tên.
     const tmp = await call(token, 'create_project', { name: 'Dự án nháp' });
     assert.match(await call(token, 'delete_project', { projectId: tmp.id, confirmName: 'sai tên' }, true), /confirmName/);

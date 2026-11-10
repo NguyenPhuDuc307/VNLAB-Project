@@ -18,15 +18,20 @@ export type Project = {
   sheetId: string | null; sheetUrl: string | null; sheetAuto: boolean; sheetSyncedAt: string | null; sheetError: string | null;
   /** Cột xuất Excel / đồng bộ Sheets (null = tất cả). */
   exportColumns: string[] | null;
+  /** Hướng dẫn / ngữ cảnh cho AI (MCP) của dự án. */
+  aiContext: string;
 };
 export type GoogleStatus = { configured: boolean; email: string | null };
 export type ProjectStats = { taskCount: number; doneCount: number; overdueCount: number; progress: number; firstStart: string | null; lastEnd: string | null };
 export type ProjectSummary = Project & { myRole: MemberRole; owner: { name: string; email: string }; memberCount: number; stats: ProjectStats };
 export type Group = { id: string; name: string; sort: number; collapsed: boolean };
+/** Phạm vi (tag) của dự án; owner = người phụ trách phạm vi (điền tay). */
+export type Scope = { id: string; name: string; color: string; owner: string; note: string; sort: number };
 export type Subtask = { id: string; name: string; assignee: string; progress: number };
 export type Task = {
   subtasks?: Subtask[];
   id: string; projectId: string; groupId: string | null; name: string; assignee: string; support: string; progress: number;
+  scopeId?: string | null;
   startDate: string | null; endDate: string | null;
   /** Ngày công ước tính; null = tự tính từ khoảng ngày. */
   days: number | null; note: string; sort: number;
@@ -36,7 +41,7 @@ export type Task = {
 export type TaskHistory = { id: number; at: string; field: string; oldValue: string | null; newValue: string | null; user: string | null };
 export type Member = { email: string; role: 'editor' | 'viewer'; userId: string | null; name: string; avatar: string | null; createdAt: string };
 export type ProjectDetail = Project & {
-  myRole: MemberRole; owner: { name: string; email: string; avatar: string | null }; members: Member[]; groups: Group[]; tasks: Task[];
+  myRole: MemberRole; owner: { name: string; email: string; avatar: string | null }; members: Member[]; groups: Group[]; scopes: Scope[]; tasks: Task[];
 };
 export type OverviewTask = Task & { projectName: string; projectColor: string };
 export type Overview = { today: string; projects: ProjectSummary[]; overdue: OverviewTask[]; upcoming: OverviewTask[] };

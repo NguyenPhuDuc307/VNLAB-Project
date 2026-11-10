@@ -7,7 +7,7 @@ import { ImportSheet } from '../components/ImportSheet';
 import { MembersSheet, ProjectSheet } from '../components/ProjectSheet';
 import { TaskSheet } from '../components/TaskSheet';
 import { ColumnPicker, normalizeColumns, type ColKey } from '../components/ColumnPicker';
-import { Button, Chip, Empty, Field, IconButton, Input, PageHeader, Segmented, Sheet, Skeleton, useFeedback, cx } from '../components/ui';
+import { Button, Chip, Empty, Field, IconButton, Input, PageHeader, Segmented, Sheet, Skeleton, useFeedback, cx, Select } from '../components/ui';
 import { api, canEditRole, ROLE_LABEL, useAction, useCan, useProject, type Group, type ProjectDetail, type Task, type TaskInput } from '../lib/api';
 import { diffDays, fmtShort, todayStr } from '../lib/dates';
 
@@ -74,7 +74,15 @@ export function ProjectPage() {
   }, [p, params, setParams]);
 
   // Thu gọn nhóm là sở thích riêng từng máy (không ghi server, người chỉ xem cũng gập được).
-  const shown = useMemo<ProjectDetail | undefined>(() => p && { ...p, groups: p.groups.map((g) => ({ ...g, collapsed: collapsed.includes(g.id) })) }, [p, collapsed]);
+  // Lọc theo phạm vi: '' = tất cả, 'none' = chưa gắn, còn lại = id phạm vi. Nhớ theo dự án trên máy.
+  const [scopeFilter, setScopeFilter] = useState(() => { try { return localStorage.getItem(`project:scope:${id}`) ?? ''; } catch { return ''; } });
+  useEffect(() => { try { scopeFilter ? localStorage.setItem(`project:scope:${id}`, scopeFilter) : localStorage.removeItem(`project:scope:${id}`); } catch { /* riêng tư */ } }, [scopeFilter, id]);
+  const activeScope = scopeFilter && scopeFilter !== 'none' && !p?.scopes?.some((s) => s.id === scopeFilter) ? '' : scopeFilter;
+  const shown = useMemo<ProjectDetail | undefined>(() => p && {
+    ...p,
+    groups: p.groups.map((g) => ({ ...g, collapsed: collapsed.includes(g.id) })),
+    tasks: !activeScope ? p.tasks : p.tasks.filter((t) => (activeScope === 'none' ? !t.scopeId : t.scopeId === activeScope)),
+  }, [p, collapsed, activeScope]);
 
   const editor = canEditRole(p?.myRole);
   const canTask = editor && can('project.task.write');
@@ -178,6 +186,13 @@ export function ProjectPage() {
       <div className={cx(full && 'gantt-full fixed inset-0 z-[45] flex flex-col overflow-hidden p-3 md:p-4')} style={full ? { background: 'var(--bg-grad, var(--bg))' } : undefined}>
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Segmented size="sm" value={view} onChange={setView} options={[{ value: 'gantt', label: 'Gantt' }, { value: 'list', label: 'Danh sách' }]} className="w-44" />
+        {!!p.scopes?.length && (
+          <Select aria-label="Lọc theo phạm vi" value={activeScope} onChange={(e) => setScopeFilter(e.target.value)} className={cx('h-9 w-auto max-w-[200px] py-0 text-[13px]', activeScope && 'border-primary text-primary')}>
+            <option value="">Mọi phạm vi</option>
+            {p.scopes.map((s) => <option key={s.id} value={s.id}>{s.name}{s.owner ? ` · ${s.owner}` : ''}</option>)}
+            <option value="none">Chưa gắn phạm vi</option>
+          </Select>
+        )}
         {view === 'gantt' && (
           <>
             <IconButton label="Hôm nay" onClick={() => setFocus({ date: today, tick: focus.tick + 1 })}><CrosshairSimple size={18} /></IconButton>
@@ -216,7 +231,7 @@ export function ProjectPage() {
           <Empty
             icon={<TableIcon size={30} />}
             title="Dự án chưa có việc nào"
-            desc="Thêm nhóm việc (giai đoạn / phân hệ) rồi thêm việc, hoặc dán thẳng kế hoạch từ Excel / Google Sheets. AI bên ngoài cũng thêm được qua MCP (Cài đặt)."
+            desc="Thêm nhóm việc (giai đoạn / hạng mục) rồi thêm việc, hoặc dán thẳng kế hoạch từ Excel / Google Sheets. AI bên ngoài cũng thêm được qua MCP (Cài đặt)."
             action={canTask && (
               <span className="flex flex-wrap justify-center gap-2">
                 {canStruct && <Button variant="secondary" onClick={() => setGroupSheet({ open: true, group: null })}><Plus size={14} weight="bold" /> Thêm nhóm</Button>}
@@ -244,7 +259,7 @@ export function ProjectPage() {
         onChangeDates={(task, startDate, endDate) => patchTask.mutate({ task, patch: { startDate, endDate } })}
         onPatchTask={(task, patch) => patchTask.mutate({ task, patch })}
         showBaseline={showBaseline}
-        onReorder={(groupId, ids) => reorder.mutate({ groupId, ids })}
+        onReorder={(groupId, ids) => activeScope ? toast('Bỏ lọc phạm vi để kéo thả đổi thứ tự', 'error') : reorder.mutate({ groupId, ids })}
         onReorderGroups={canStruct ? (ids) => reorderGroups.mutate(ids) : undefined}
         fullscreen={full}
         onToggleFullscreen={() => setFull((v) => !v)}
@@ -319,7 +334,7 @@ function GroupSheet({ open, onClose, project, group, confirm, onSort }: {
       }
     >
       <form id="group-form" className="pt-1" onSubmit={(e) => { e.preventDefault(); save.mutate(name.trim()); }}>
-        <Field label="Tên nhóm" hint="VD: Thiết kế, Lập trình, Kiểm thử — mỗi nhóm là một giai đoạn hoặc phân hệ">
+        <Field label="Tên nhóm" hint="VD: Thiết kế, Lập trình, Kiểm thử — mỗi nhóm là một giai đoạn hoặc hạng mục">
           <Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={160} autoFocus />
         </Field>
       </form>

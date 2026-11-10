@@ -16,7 +16,7 @@ type Props = {
   canEdit: boolean;
 };
 
-const empty = (groupId: string | null): TaskInput => ({ subtasks: [], name: '', groupId, assignee: '', support: '', progress: 0, startDate: null, endDate: null, days: null, note: '' });
+const empty = (groupId: string | null): TaskInput => ({ subtasks: [], name: '', groupId, scopeId: null, assignee: '', support: '', progress: 0, startDate: null, endDate: null, days: null, note: '' });
 
 export function TaskSheet({ open, onClose, project, task, groupId = null, canEdit }: Props) {
   const { toast, confirm } = useFeedback();
@@ -108,6 +108,12 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, canEdi
           {!readOnly && f.name.includes('\n') && <Button className="mb-3" type="button" size="sm" variant="ghost" onClick={splitName}>Tách các dòng thành task con</Button>}
           <SubtasksEditor items={children} onChange={setChildren} readOnly={readOnly} />
           <div className="grid gap-x-3 sm:grid-cols-2">
+            <Field label="Phạm vi" hint={(() => { const s = project.scopes?.find((x) => x.id === f.scopeId); return s?.owner ? `Phụ trách phạm vi: ${s.owner}` : project.scopes?.length ? undefined : 'Tạo phạm vi trong Cài đặt dự án'; })()}>
+              <Select value={f.scopeId ?? ''} onChange={(e) => setF({ ...f, scopeId: e.target.value || null })}>
+                <option value="">Chưa gắn phạm vi</option>
+                {(project.scopes ?? []).map((s) => <option key={s.id} value={s.id}>{s.name}{s.owner ? ` · ${s.owner}` : ''}</option>)}
+              </Select>
+            </Field>
             <Field label="Nhóm">
               <Select value={f.groupId ?? ''} onChange={(e) => setF({ ...f, groupId: e.target.value || null })}>
                 <option value="">Chưa phân nhóm</option>

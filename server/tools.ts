@@ -44,6 +44,7 @@ const taskBody = {
   endDate: zAnyDate.optional(),
   days: z.number().min(0).max(9999).optional().describe('Ngày công ước tính; bỏ qua = tự tính từ khoảng ngày (T2–T6 = 1, T7 = ½, CN = 0)'),
   note: z.string().trim().max(4000).optional(),
+  scope: z.string().trim().max(80).optional().describe('Tên phạm vi (tag) của việc; chưa có thì tạo; "" = bỏ phạm vi. Xem danh sách phạm vi trong get_project'),
 };
 
 async function resolveProject(user: D.UserRow, args: { projectId?: string; project?: string }) {
@@ -73,9 +74,21 @@ async function groupByName(user: D.UserRow, perms: Set<PermissionKey>, projectId
   return (await D.createGroup(projectId, name.trim())).id;
 }
 
-const taskOut = (t: ReturnType<typeof D.taskView>, p: { satWeight: number; sunWeight: number }, groups: Map<string, string>, t0: string) => ({
+/** Phạm vi theo tên; "" = bỏ phạm vi; chưa có thì tạo (cần quyền sửa dự án). undefined = không đổi. */
+async function scopeByName(perms: Set<PermissionKey>, projectId: string, name: string | undefined): Promise<string | null | undefined> {
+  if (name === undefined) return undefined;
+  if (!name.trim()) return null;
+  const found = await D.findScope(projectId, name);
+  if (found) return found.id;
+  if (!perms.has('project.project.write')) throw new ToolError(`Chưa có phạm vi "${name}" và bạn không có quyền tạo — dùng phạm vi có sẵn`);
+  return (await D.createScope(projectId, { name: name.trim() })).id;
+}
+const scopeMap = (scopes: D.ScopeRow[]) => new Map(scopes.map((s) => [s.id, s.name]));
+
+const taskOut = (t: ReturnType<typeof D.taskView>, p: { satWeight: number; sunWeight: number }, groups: Map<string, string>, t0: string, scopes: Map<string, string> = new Map()) => ({
   subtasks: t.subtasks,
   id: t.id, name: t.name, group: t.groupId ? groups.get(t.groupId) ?? null : null, groupId: t.groupId,
+  scope: t.scopeId ? scopes.get(t.scopeId) ?? null : null, scopeId: t.scopeId,
   assignee: t.assignee, support: t.support, progress: t.progress, startDate: t.startDate, endDate: t.endDate,
   days: D.effortOf(t, p), daysManual: t.days != null, note: t.note,
   status: t.progress >= 100 ? 'done' : t.endDate && t.endDate < t0 ? 'overdue' : 'open',
@@ -101,11 +114,14 @@ export const TOOLS: Record<string, Tool> = {
       const [bundle, who] = await Promise.all([D.projectBundle(p.id), D.projectMembers(p)]);
       const groups = new Map(bundle.groups.map((g) => [g.id, g.name]));
       const t0 = today();
-      const tasks = bundle.tasks.map((t) => taskOut(t, p, groups, t0)).filter((t) => a.includeDone !== false || t.status !== 'done');
+      const scopes = scopeMap(bundle.scopes);
+      const tasks = bundle.tasks.map((t) => taskOut(t, p, groups, t0, scopes)).filter((t) => a.includeDone !== false || t.status !== 'done');
       return {
         today: t0, id: p.id, name: p.name, code: p.code, customer: p.customer, description: p.description, startDate: p.startDate, archived: p.archived, myRole: p.myRole,
         owner: who.owner.name || who.owner.email, members: who.members.map((m) => ({ email: m.email, name: m.name, role: m.role })),
         groups: bundle.groups.map((g) => ({ id: g.id, name: g.name, taskCount: bundle.tasks.filter((t) => t.groupId === g.id).length })),
+        scopes: bundle.scopes.map((s) => ({ id: s.id, name: s.name, owner: s.owner, color: s.color, note: s.note, taskCount: bundle.tasks.filter((t) => t.scopeId === s.id).length })),
+        aiContext: p.aiContext || null,
         tasks,
       };
     },
@@ -129,9 +145,10 @@ export const TOOLS: Record<string, Tool> = {
       assignee: z.string().trim().max(160).optional().describe('Khớp một phần tên người phụ trách hoặc hỗ trợ'),
       status: z.enum(['open', 'done', 'overdue', 'all']).optional().describe('Mặc định all'),
       dueBefore: zAnyDate.optional().describe('Chỉ việc có hạn trước hoặc bằng ngày này'),
+      scope: z.string().trim().max(80).optional().describe('Chỉ việc thuộc phạm vi này (tên)'),
       limit: z.number().int().min(1).max(200).optional(),
     }),
-    run: async (user, a: { projectId?: string; project?: string; query?: string; assignee?: string; status?: string; dueBefore?: string; limit?: number }) => {
+    run: async (user, a: { projectId?: string; project?: string; query?: string; assignee?: string; status?: string; dueBefore?: string; scope?: string; limit?: number }) => {
       const projects = a.projectId || a.project ? [await resolveProject(user, a)] : await D.myProjects(user);
       const t0 = today();
       const due = date(a.dueBefore);
@@ -141,8 +158,10 @@ export const TOOLS: Record<string, Tool> = {
         if (p.archived && !(a.projectId || a.project)) continue;
         const bundle = await D.projectBundle(p.id);
         const groups = new Map(bundle.groups.map((g) => [g.id, g.name]));
+        const scopes = scopeMap(bundle.scopes);
         for (const t of bundle.tasks) {
-          const v = taskOut(t, p, groups, t0);
+          const v = taskOut(t, p, groups, t0, scopes);
+          if (a.scope && (v.scope ?? '').toLowerCase() !== a.scope.toLowerCase()) continue;
           if (q && !`${t.name} ${t.note}`.toLowerCase().includes(q)) continue;
           if (who && !`${t.assignee} ${t.support}`.toLowerCase().includes(who)) continue;
           if (a.status && a.status !== 'all' && v.status !== a.status) continue;
@@ -216,9 +235,11 @@ export const TOOLS: Record<string, Tool> = {
       const p = await editableProject(user, a);
       const perms = await effectivePermissions(rolesOf(user));
       const groupId = a.groupId ?? (await groupByName(user, perms, p.id, a.group));
-      const t = await D.insertTask(p.id, D.taskCreate.parse({ groupId: groupId ?? null, name: a.name, assignee: a.assignee, support: a.support, progress: a.progress, startDate: date(a.startDate as string), endDate: date(a.endDate as string), days: a.days ?? null, note: a.note, subtasks: a.subtasks }));
-      const groups = new Map((await D.projectBundle(p.id)).groups.map((g) => [g.id, g.name]));
-      return { project: p.name, task: taskOut(t, p, groups, today()), url: `https://project.vnlab.id.vn/du-an/${p.id}?task=${t.id}` };
+      const scopeId = await scopeByName(perms, p.id, a.scope as string | undefined);
+      const t = await D.insertTask(p.id, D.taskCreate.parse({ groupId: groupId ?? null, scopeId: scopeId ?? null, name: a.name, assignee: a.assignee, support: a.support, progress: a.progress, startDate: date(a.startDate as string), endDate: date(a.endDate as string), days: a.days ?? null, note: a.note, subtasks: a.subtasks }));
+      const bundle = await D.projectBundle(p.id);
+      const groups = new Map(bundle.groups.map((g) => [g.id, g.name]));
+      return { project: p.name, task: taskOut(t, p, groups, today(), scopeMap(bundle.scopes)), url: `https://project.vnlab.id.vn/du-an/${p.id}?task=${t.id}` };
     },
   },
   create_tasks: {
@@ -237,7 +258,8 @@ export const TOOLS: Record<string, Tool> = {
         const key = t.group?.trim() || null;
         if (key && !(await D.findGroup(p.id, key)) && !perms.has('project.project.write')) throw new ToolError(`Chưa có nhóm "${key}" và bạn không có quyền tạo nhóm`);
         if (!byGroup.has(key)) byGroup.set(key, { name: key, tasks: [] });
-        byGroup.get(key)!.tasks.push(D.taskCreate.omit({ groupId: true }).parse({ name: t.name, assignee: t.assignee, support: t.support, progress: t.progress, startDate: date(t.startDate as string), endDate: date(t.endDate as string), days: t.days ?? null, note: t.note, subtasks: t.subtasks }));
+        const scopeId = await scopeByName(perms, p.id, t.scope as string | undefined);
+        byGroup.get(key)!.tasks.push(D.taskCreate.omit({ groupId: true }).parse({ scopeId: scopeId ?? null, name: t.name, assignee: t.assignee, support: t.support, progress: t.progress, startDate: date(t.startDate as string), endDate: date(t.endDate as string), days: t.days ?? null, note: t.note, subtasks: t.subtasks }));
       }
       const r = await D.importGroups(p.id, [...byGroup.values()]);
       return { project: p.name, groupsCreated: r.groups, tasksCreated: r.tasks, url: `https://project.vnlab.id.vn/du-an/${p.id}` };
@@ -245,7 +267,7 @@ export const TOOLS: Record<string, Tool> = {
   },
   update_task: {
     title: 'Sửa việc',
-    description: 'Đổi tên, tiến độ, người phụ trách/hỗ trợ, ngày, ngày công, ghi chú hoặc chuyển nhóm của một việc (theo taskId từ get_project / find_tasks). Chỉ gửi trường cần đổi.',
+    description: 'Đổi tên, tiến độ, người phụ trách/hỗ trợ, ngày, ngày công, ghi chú, phạm vi (scope) hoặc chuyển nhóm của một việc (theo taskId từ get_project / find_tasks). Chỉ gửi trường cần đổi.',
     input: z.object({
       taskId: z.uuid(),
       name: z.string().trim().min(1).max(300).optional(),
@@ -266,13 +288,15 @@ export const TOOLS: Record<string, Tool> = {
       if (a.endDate !== undefined) patch.endDate = date(a.endDate as string);
       if (a.days !== undefined) patch.days = a.days as number;
       if (a.note !== undefined) patch.note = a.note as string;
-      if (a.group !== undefined) {
+      if (a.group !== undefined || a.scope !== undefined) {
         const perms = await effectivePermissions(rolesOf(user));
-        patch.groupId = a.group.trim() ? await groupByName(user, perms, p.id, a.group) : null;
+        if (a.group !== undefined) patch.groupId = a.group.trim() ? await groupByName(user, perms, p.id, a.group) : null;
+        if (a.scope !== undefined) patch.scopeId = await scopeByName(perms, p.id, a.scope as string);
       }
       const t = await D.updateTask(p.id, task.id, D.taskFields.partial().parse(patch), user.id);
-      const groups = new Map((await D.projectBundle(p.id)).groups.map((g) => [g.id, g.name]));
-      return { project: p.name, task: taskOut(t, p, groups, today()) };
+      const bundle = await D.projectBundle(p.id);
+      const groups = new Map(bundle.groups.map((g) => [g.id, g.name]));
+      return { project: p.name, task: taskOut(t, p, groups, today(), scopeMap(bundle.scopes)) };
     },
   },
   delete_task: {
@@ -331,6 +355,7 @@ TOOLS.update_project = {
     satWeight: z.number().min(0).max(1).optional().describe('Ngày công thứ 7 (0, 0.5, 1)'), sunWeight: z.number().min(0).max(1).optional().describe('Ngày công chủ nhật'),
     archived: z.boolean().optional().describe('Lưu trữ / bỏ lưu trữ (chỉ chủ dự án)'),
     exportColumns: z.array(z.enum(ALL_COLUMNS)).max(20).nullable().optional().describe(`Cột khi xuất Excel / đồng bộ Sheet: ${ALL_COLUMNS.join(', ')}; null = tất cả`),
+    aiContext: z.string().max(20000).optional().describe('Hướng dẫn / ngữ cảnh cho AI của dự án (thay toàn bộ). Muốn thêm thì đọc get_ai_context rồi gửi bản đầy đủ'),
   }),
   write: true, destructive: false, perm: 'project.project.write',
   run: async (user, a: Record<string, unknown> & { projectId?: string; project?: string }) => {
@@ -344,6 +369,101 @@ TOOLS.update_project = {
     if (!Object.keys(patch).length) throw new ToolError('Không có gì để sửa');
     const row = await D.updateProject(p, patch);
     return { project: D.projectView(row), changed: Object.keys(patch) };
+  },
+};
+
+/** Phạm vi theo id hoặc tên. */
+async function scopeRef(p: { id: string; name: string }, a: { scope?: string; scopeId?: string }) {
+  const all = (await D.projectBundle(p.id)).scopes;
+  const s = a.scopeId ? all.find((x) => x.id === a.scopeId) : a.scope?.trim() ? all.find((x) => x.name.toLowerCase() === a.scope!.trim().toLowerCase()) : undefined;
+  if (!s) throw new ToolError(a.scope || a.scopeId ? `Không có phạm vi "${a.scope ?? a.scopeId}" trong ${p.name}` : 'Cần `scope` (tên) hoặc `scopeId`');
+  return s;
+}
+const scopeArgs = { scope: z.string().trim().max(80).optional().describe('Tên phạm vi'), scopeId: z.uuid().optional() };
+
+TOOLS.create_scope = {
+  title: 'Tạo phạm vi',
+  description: 'Tạo phạm vi (tag) cho dự án, kèm người phụ trách phạm vi (ghi tên tay), màu #RRGGBB và ghi chú. Mỗi việc gắn một phạm vi qua `scope` ở create_task / update_task.',
+  input: z.object({ ...projectRef, name: z.string().trim().min(1).max(80), owner: z.string().trim().max(200).optional().describe('Người phụ trách phạm vi'), color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(), note: z.string().trim().max(1000).optional() }),
+  write: true, destructive: false, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string; name: string; owner?: string; color?: string; note?: string }) => {
+    const p = await editableProject(user, a);
+    return { project: p.name, scope: await D.createScope(p.id, { name: a.name, owner: a.owner, color: a.color, note: a.note }) };
+  },
+};
+
+TOOLS.update_scope = {
+  title: 'Sửa phạm vi',
+  description: 'Đổi tên (`newName`), người phụ trách (`owner`), màu hoặc ghi chú của một phạm vi.',
+  input: z.object({ ...projectRef, ...scopeArgs, newName: z.string().trim().min(1).max(80).optional(), owner: z.string().trim().max(200).optional(), color: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(), note: z.string().trim().max(1000).optional() }),
+  write: true, destructive: false, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string; scope?: string; scopeId?: string; newName?: string; owner?: string; color?: string; note?: string }) => {
+    const p = await editableProject(user, a);
+    const s = await scopeRef(p, a);
+    const patch: Record<string, string> = {};
+    if (a.newName) patch.name = a.newName;
+    if (a.owner !== undefined) patch.owner = a.owner;
+    if (a.color) patch.color = a.color;
+    if (a.note !== undefined) patch.note = a.note;
+    if (!Object.keys(patch).length) throw new ToolError('Cần newName, owner, color hoặc note');
+    return { project: p.name, scope: await D.updateScope(p.id, s.id, patch) };
+  },
+};
+
+TOOLS.delete_scope = {
+  title: 'Xoá phạm vi',
+  description: 'Xoá một phạm vi; các việc đang gắn chỉ bị bỏ tag, không bị xoá. Chỉ gọi khi người dùng nói rõ.',
+  input: z.object({ ...projectRef, ...scopeArgs }),
+  write: true, destructive: true, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string; scope?: string; scopeId?: string }) => {
+    const p = await editableProject(user, a);
+    const s = await scopeRef(p, a);
+    const r = await D.deleteScope(p.id, s.id);
+    return { project: p.name, deleted: s.name, tasksUntagged: r.untagged };
+  },
+};
+
+TOOLS.reorder_scopes = {
+  title: 'Sắp xếp thứ tự phạm vi',
+  description: '`order` là danh sách tên (hoặc id) phạm vi theo thứ tự mong muốn; phạm vi không nêu xếp sau.',
+  input: z.object({ ...projectRef, order: z.array(z.string().trim().min(1).max(80)).min(1).max(200) }),
+  write: true, destructive: false, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string; order: string[] }) => {
+    const p = await editableProject(user, a);
+    const all = (await D.projectBundle(p.id)).scopes;
+    const picked: string[] = [];
+    for (const key of a.order) {
+      const s = all.find((x) => x.id === key) ?? all.find((x) => x.name.toLowerCase() === key.toLowerCase());
+      if (!s) throw new ToolError(`Không có phạm vi "${key}" trong ${p.name}`);
+      if (!picked.includes(s.id)) picked.push(s.id);
+    }
+    const ids = [...picked, ...all.map((s) => s.id).filter((id) => !picked.includes(id))];
+    await D.reorderScopes(p.id, ids);
+    return { project: p.name, scopes: ids.map((id) => all.find((s) => s.id === id)!.name) };
+  },
+};
+
+TOOLS.get_ai_context = {
+  title: 'Hướng dẫn cho AI của dự án',
+  description: 'Đọc phần hướng dẫn / ngữ cảnh người dùng lưu cho AI ở dự án này (quy ước đặt tên, cách chia phạm vi, ai phụ trách gì…). Đọc trước khi tạo hay sửa việc và làm theo.',
+  input: z.object({ ...projectRef }),
+  run: async (user, a: { projectId?: string; project?: string }) => {
+    const p = await resolveProject(user, a);
+    return { project: p.name, aiContext: p.aiContext || '' };
+  },
+};
+
+TOOLS.set_ai_context = {
+  title: 'Lưu hướng dẫn cho AI',
+  description: 'Ghi phần hướng dẫn / ngữ cảnh cho AI của dự án. mode "replace" (mặc định) thay toàn bộ, "append" thêm vào cuối. Chỉ ghi khi người dùng muốn lưu lại quy ước.',
+  input: z.object({ ...projectRef, text: z.string().max(20000), mode: z.enum(['replace', 'append']).optional() }),
+  write: true, destructive: false, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string; text: string; mode?: 'replace' | 'append' }) => {
+    const p = await editableProject(user, a);
+    const next = a.mode === 'append' && p.aiContext ? `${p.aiContext.trimEnd()}\n\n${a.text.trim()}` : a.text.trim();
+    if (next.length > 20000) throw new ToolError('Hướng dẫn dài quá 20.000 ký tự');
+    await D.updateProject(p, { aiContext: next });
+    return { project: p.name, length: next.length };
   },
 };
 
@@ -545,6 +665,11 @@ function describeTool(name: string, a: Record<string, unknown> | null): string {
     case 'delete_task': return 'Xoá việc';
     case 'delete_group': return `Xoá nhóm ${q(a?.group)}`.trim();
     case 'update_project': return 'Sửa thông tin dự án';
+    case 'create_scope': return `Tạo phạm vi ${q(a?.name)}`.trim();
+    case 'update_scope': return `Sửa phạm vi ${q(a?.scope)}`.trim();
+    case 'delete_scope': return `Xoá phạm vi ${q(a?.scope)}`.trim();
+    case 'reorder_scopes': return 'Sắp xếp thứ tự phạm vi';
+    case 'set_ai_context': return 'Lưu hướng dẫn cho AI';
     case 'delete_project': return 'Xoá dự án';
     case 'set_member': return `Mời / đổi quyền ${typeof a?.email === 'string' ? a.email : ''}`.trim();
     case 'remove_member': return `Gỡ thành viên ${typeof a?.email === 'string' ? a.email : ''}`.trim();

@@ -12,6 +12,7 @@ Hôm nay là ${today()} (giờ Việt Nam). Ngày ghi dạng YYYY-MM-DD; tiến 
 Bắt đầu bằng list_projects (hoặc get_overview) để lấy projectId; get_project để thấy nhóm và việc kèm id trước khi sửa/xoá.
 Khi người dùng đọc cả kế hoạch (nhiều dòng) thì dùng create_tasks một lần, ghi tên nhóm vào từng việc. Không tự bịa ngày, người phụ trách hay tiến độ: thiếu thì để trống và hỏi lại.
 Xoá việc chỉ khi người dùng nói rõ. Bạn chỉ thấy dự án mình là chủ hoặc được mời; dự án "chỉ xem" không ghi được.
+Mỗi dự án có thể có phần hướng dẫn cho AI (aiContext trong get_project, hoặc get_ai_context): đọc trước khi tạo/sửa việc và làm theo. Việc được gắn phạm vi (scope = tag, có người phụ trách phạm vi); khi tạo việc hãy gắn scope phù hợp từ danh sách scopes của dự án.
 Mọi thay đổi hiện ngay trên giao diện web (real-time) và, nếu dự án đã liên kết Google Sheet, tự ghi sang sheet sau khoảng 30 giây — không cần gọi sync_google_sheet trừ khi người dùng muốn ghi ngay.`;
 
 export function buildMcp(user: UserRow) {

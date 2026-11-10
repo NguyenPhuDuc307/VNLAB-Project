@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEven
 import { planShift, type Group, type ProjectDetail, type Task, type TaskInput, type Subtask } from '../lib/api';
 import { addDays, coveredDays, dayNumber, diffDays, fmtDayMonth, fmtShort, fmtNum, fromDayNumber, mondayOf, WEEKDAY_SHORT, weekday, workDays } from '../lib/dates';
 import { cx, IconButton } from './ui';
+import { ScopeChip } from './ScopesEditor';
 
 export type GanttView = 'gantt' | 'list';
 
@@ -372,6 +373,7 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
     const s0 = t.startDate ?? t.endDate, e0 = t.endDate ?? t.startDate;
     return !!s0 && !!e0 && t.progress < 100 && s0 <= weekEnd && e0 >= weekStart;
   };
+  const scopeById = useMemo(() => new Map((project.scopes ?? []).map((s) => [s.id, s])), [project.scopes]);
   const list = view === 'list';
   const dayCells = (rowKey: string) => (
     <>
@@ -503,7 +505,7 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
                   {collapsedTasks.includes(t.id) ? <CaretRight size={12} /> : <CaretDown size={12} />}
                 </button>}
                 {t.progress >= 100 && !editable(t, 'name') && <CheckCircle size={15} weight="fill" className="shrink-0 text-ok" aria-label="Đã xong" />}
-                {editable(t, 'name') ? <InlineTaskName value={t.name} onCommit={(v) => { setEdit(null); commitEdit(t, 'name', v); }} onCancel={() => setEdit(null)} onNext={(v) => { commitEdit(t, 'name', v); nextField(t, 'name'); }} /> : <div className="min-w-0 flex-1"><TaskName text={t.name} completed={t.progress >= 100} />
+                {editable(t, 'name') ? <InlineTaskName value={t.name} onCommit={(v) => { setEdit(null); commitEdit(t, 'name', v); }} onCancel={() => setEdit(null)} onNext={(v) => { commitEdit(t, 'name', v); nextField(t, 'name'); }} /> : <div className="min-w-0 flex-1"><TaskName text={t.name} completed={t.progress >= 100} />{t.scopeId && scopeById.get(t.scopeId) && <ScopeChip scope={scopeById.get(t.scopeId)!} className="mt-0.5" />}
 
                 </div>}
                 {late && !editable(t, 'name') && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-danger" title="Quá hạn" />}

@@ -203,6 +203,24 @@ const MIGRATIONS: string[] = [
     check (jsonb_typeof(subtasks) = 'array');`,
   // 10: dự án đã liên kết Google Sheet thì tự đồng bộ sau mỗi thay đổi (kể cả qua MCP); liên kết mới mặc định bật.
   `update projects set sheet_auto = true where sheet_id is not null and sheet_auto = false;`,
+  // 11: phạm vi (tag) theo dự án — màu, người phụ trách (điền tay); mỗi việc gắn tối đa một phạm vi.
+  //     Hướng dẫn / ngữ cảnh cho AI (MCP) lưu theo dự án.
+  `
+  create table scopes (
+    id uuid primary key default gen_random_uuid(),
+    project_id uuid not null references projects(id) on delete cascade,
+    name text not null,
+    color text not null default '#4274bc',
+    owner text not null default '',
+    note text not null default '',
+    sort int not null default 0,
+    created_at timestamptz not null default now()
+  );
+  create unique index scopes_project_name on scopes (project_id, lower(name));
+  alter table tasks add column scope_id uuid references scopes(id) on delete set null;
+  create index on tasks (scope_id);
+  alter table projects add column ai_context text not null default '';
+  `,
 ];
 
 export async function migrate() {

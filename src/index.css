@@ -667,3 +667,13 @@ body::before {
   /* Chạm (không có hover): luôn hiện số, không hiện tay kéo. */
   .gantt .c-no .num { display: inline !important; }
 }
+
+/* Nhãn phạm vi: chấm màu + tên, nền nhạt theo màu phạm vi. */
+.scope-chip {
+  display: inline-flex; align-items: center; gap: 4px; max-width: 100%;
+  padding: 1px 7px 1px 6px; border-radius: 999px;
+  font-size: 10.5px; font-weight: 700; line-height: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: color-mix(in srgb, var(--scope) 78%, var(--ink));
+  background: color-mix(in srgb, var(--scope) 13%, transparent);
+}
+.scope-chip::before { content: ''; flex-shrink: 0; width: 6px; height: 6px; border-radius: 999px; background: var(--scope); }

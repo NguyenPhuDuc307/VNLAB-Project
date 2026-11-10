@@ -4,12 +4,13 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, ROLE_LABEL, useAction, useCan, useMe, type GoogleStatus, type Member, type Project, type ProjectDetail } from '../lib/api';
 import { ColumnPicker, normalizeColumns } from './ColumnPicker';
+import { ScopesEditor } from './ScopesEditor';
 import { Avatar, Button, Chip, DateInput, Field, IconButton, Input, Segmented, Select, Sheet, Textarea, Toggle, useFeedback, cx } from './ui';
 
 export const PROJECT_COLORS = ['#4274bc', '#6e9edc', '#0f7c8c', '#1f8a4c', '#b8860b', '#c74a1c', '#5b4bc4', '#a23b8a', '#6b5a52'];
 
-type Form = { name: string; code: string; customer: string; description: string; startDate: string; color: string; satWeight: number; sunWeight: number; archived: boolean };
-const empty: Form = { name: '', code: '', customer: '', description: '', startDate: '', color: PROJECT_COLORS[0], satWeight: 0.5, sunWeight: 0, archived: false };
+type Form = { name: string; code: string; customer: string; description: string; startDate: string; color: string; satWeight: number; sunWeight: number; archived: boolean; aiContext: string };
+const empty: Form = { name: '', code: '', customer: '', description: '', startDate: '', color: PROJECT_COLORS[0], satWeight: 0.5, sunWeight: 0, archived: false, aiContext: '' };
 
 /** Tạo hoặc sửa dự án; chủ dự án còn lưu trữ / xoá được. */
 export function ProjectSheet({ open, onClose, project, onImport }: { open: boolean; onClose: () => void; project?: ProjectDetail | null; onImport?: () => void }) {
@@ -18,14 +19,14 @@ export function ProjectSheet({ open, onClose, project, onImport }: { open: boole
   const nav = useNavigate();
   const [f, setF] = useState<Form>(empty);
   useEffect(() => {
-    if (open) setF(project ? { name: project.name, code: project.code, customer: project.customer, description: project.description, startDate: project.startDate ?? '', color: project.color, satWeight: project.satWeight, sunWeight: project.sunWeight, archived: project.archived } : empty);
+    if (open) setF(project ? { name: project.name, code: project.code, customer: project.customer, description: project.description, startDate: project.startDate ?? '', color: project.color, satWeight: project.satWeight, sunWeight: project.sunWeight, archived: project.archived, aiContext: project.aiContext ?? '' } : empty);
   }, [open, project]);
   const owner = !project || project.myRole === 'owner';
 
   const save = useAction(async (b: Form) => {
     const body = { ...b, startDate: b.startDate || null };
     if (project) return api<Project>(`/projects/${project.id}`, { method: 'PATCH', body: owner ? body : { ...body, archived: undefined } });
-    const { archived: _a, ...create } = body;
+    const { archived: _a, aiContext: _c, ...create } = body;
     return api<Project>('/projects', { method: 'POST', body: create });
   }, { onSuccess: (p) => { toast(project ? 'Đã lưu dự án' : 'Đã tạo dự án'); onClose(); if (!project) nav(`/du-an/${p.id}`); } });
   const remove = useAction(() => api(`/projects/${project!.id}`, { method: 'DELETE' }), { onSuccess: () => { toast('Đã xoá dự án'); onClose(); nav('/du-an'); } });
@@ -79,8 +80,14 @@ export function ProjectSheet({ open, onClose, project, onImport }: { open: boole
         <Field label="Mô tả">
           <Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} maxLength={2000} rows={2} />
         </Field>
+        {project && (
+          <Field label="Hướng dẫn cho AI (MCP)" hint="AI bên ngoài đọc phần này trước khi tạo / sửa việc: quy ước đặt tên, cách chia phạm vi, ai phụ trách gì… AI cũng tự ghi thêm được khi bạn bảo nó nhớ.">
+            <Textarea value={f.aiContext} onChange={(e) => setF({ ...f, aiContext: e.target.value })} maxLength={20000} rows={5} placeholder={'VD:\n- Tên việc bắt đầu bằng động từ.\n- Việc nào cũng gắn phạm vi; phạm vi Kho do Lương phụ trách.'} />
+          </Field>
+        )}
         {project && owner && <Toggle checked={f.archived} onChange={(v) => setF({ ...f, archived: v })} label="Lưu trữ dự án" desc="Ẩn khỏi Tổng quan, vẫn mở được trong danh sách Dự án" />}
       </form>
+      {project && <ScopesEditor project={project} canEdit={project.myRole !== 'viewer' && can('project.project.write')} />}
       {project && onImport && (
         <div className="mt-5 rounded-2xl border border-line bg-fill/40 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">

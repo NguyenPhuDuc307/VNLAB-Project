@@ -373,7 +373,7 @@ auth.get('/projects/:id', async (c) => {
 auth.patch('/projects/:id', requirePermission('project.project.write'), async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
   D.editable(p);
-  const b = await body(c, D.projectSchema.partial().extend({ archived: z.boolean().optional(), exportColumns: z.array(z.enum(ALL_COLUMNS)).max(20).nullable().optional() }));
+  const b = await body(c, D.projectSchema.partial().extend({ aiContext: zText(20000).optional(), archived: z.boolean().optional(), exportColumns: z.array(z.enum(ALL_COLUMNS)).max(20).nullable().optional() }));
   if (b.archived !== undefined) D.owned(p);
   if (b.exportColumns) b.exportColumns = normalizeColumns(b.exportColumns) as typeof b.exportColumns;
   if (!Object.keys(b).length) return c.json(D.projectView(p));
@@ -479,6 +479,33 @@ auth.delete('/projects/:id/groups/:gid', requirePermission('project.project.writ
   const p = await D.projectOf(c.get('user'), param(c));
   D.editable(p);
   await D.deleteGroup(p.id, param(c, 'gid'), c.req.query('keepTasks') === '1');
+  return c.json({ ok: true });
+});
+
+// ---- phạm vi (tag): ai sửa được dự án thì quản lý được phạm vi
+auth.post('/projects/:id/scopes', requirePermission('project.project.write'), async (c) => {
+  const p = await D.projectOf(c.get('user'), param(c));
+  D.editable(p);
+  // Không dùng default của scopeSchema: màu bỏ trống thì createScope tự xoay vòng bảng màu.
+  const b = await body(c, z.object({ name: zText(80).min(1, 'Nhập tên phạm vi'), color: D.zColor.optional(), owner: zText(200).optional(), note: zText(1000).optional() }));
+  return c.json(await D.createScope(p.id, b), 201);
+});
+auth.patch('/projects/:id/scopes/:sid', requirePermission('project.project.write'), async (c) => {
+  const p = await D.projectOf(c.get('user'), param(c));
+  D.editable(p);
+  const b = await body(c, z.object({ name: zText(80).min(1).optional(), color: D.zColor.optional(), owner: zText(200).optional(), note: zText(1000).optional() }));
+  return c.json(await D.updateScope(p.id, param(c, 'sid'), b));
+});
+auth.delete('/projects/:id/scopes/:sid', requirePermission('project.project.write'), async (c) => {
+  const p = await D.projectOf(c.get('user'), param(c));
+  D.editable(p);
+  return c.json(await D.deleteScope(p.id, param(c, 'sid')));
+});
+auth.put('/projects/:id/scopes/order', requirePermission('project.project.write'), async (c) => {
+  const p = await D.projectOf(c.get('user'), param(c));
+  D.editable(p);
+  const b = await body(c, z.object({ ids: z.array(zId).max(200) }));
+  await D.reorderScopes(p.id, b.ids);
   return c.json({ ok: true });
 });
 
