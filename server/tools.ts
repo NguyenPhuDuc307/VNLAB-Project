@@ -35,6 +35,7 @@ const projectRef = {
   project: z.string().trim().max(160).optional().describe('Hoặc tên / mã ngắn của dự án; nếu khớp nhiều dự án sẽ báo để chọn.'),
 };
 const taskBody = {
+  subtasks: z.array(D.subtaskFields).max(100).optional().describe('Danh sách đầy đủ task con (id, name, assignee, progress). Không có lịch riêng; tiến độ cha là trung bình task con. Gửi [] để bỏ task con.'),
   assignee: z.string().trim().max(160).optional().describe('Người phụ trách chính'),
   support: z.string().trim().max(300).optional().describe('Người hỗ trợ, nhiều người cách nhau bằng dấu phẩy'),
   progress: z.number().int().min(0).max(100).optional().describe('Tiến độ 0–100 (%)'),
@@ -72,6 +73,7 @@ async function groupByName(user: D.UserRow, perms: Set<PermissionKey>, projectId
 }
 
 const taskOut = (t: ReturnType<typeof D.taskView>, p: { satWeight: number; sunWeight: number }, groups: Map<string, string>, t0: string) => ({
+  subtasks: t.subtasks,
   id: t.id, name: t.name, group: t.groupId ? groups.get(t.groupId) ?? null : null, groupId: t.groupId,
   assignee: t.assignee, support: t.support, progress: t.progress, startDate: t.startDate, endDate: t.endDate,
   days: D.effortOf(t, p), daysManual: t.days != null, note: t.note,
@@ -190,7 +192,7 @@ export const TOOLS: Record<string, Tool> = {
       const p = await editableProject(user, a);
       const perms = await effectivePermissions(rolesOf(user));
       const groupId = a.groupId ?? (await groupByName(user, perms, p.id, a.group));
-      const t = await D.insertTask(p.id, D.taskCreate.parse({ groupId: groupId ?? null, name: a.name, assignee: a.assignee, support: a.support, progress: a.progress, startDate: date(a.startDate as string), endDate: date(a.endDate as string), days: a.days ?? null, note: a.note }));
+      const t = await D.insertTask(p.id, D.taskCreate.parse({ groupId: groupId ?? null, name: a.name, assignee: a.assignee, support: a.support, progress: a.progress, startDate: date(a.startDate as string), endDate: date(a.endDate as string), days: a.days ?? null, note: a.note, subtasks: a.subtasks }));
       const groups = new Map((await D.projectBundle(p.id)).groups.map((g) => [g.id, g.name]));
       return { project: p.name, task: taskOut(t, p, groups, today()), url: `https://project.vnlab.id.vn/du-an/${p.id}?task=${t.id}` };
     },
@@ -211,7 +213,7 @@ export const TOOLS: Record<string, Tool> = {
         const key = t.group?.trim() || null;
         if (key && !(await D.findGroup(p.id, key)) && !perms.has('project.project.write')) throw new ToolError(`Chưa có nhóm "${key}" và bạn không có quyền tạo nhóm`);
         if (!byGroup.has(key)) byGroup.set(key, { name: key, tasks: [] });
-        byGroup.get(key)!.tasks.push(D.taskCreate.omit({ groupId: true }).parse({ name: t.name, assignee: t.assignee, support: t.support, progress: t.progress, startDate: date(t.startDate as string), endDate: date(t.endDate as string), days: t.days ?? null, note: t.note }));
+        byGroup.get(key)!.tasks.push(D.taskCreate.omit({ groupId: true }).parse({ name: t.name, assignee: t.assignee, support: t.support, progress: t.progress, startDate: date(t.startDate as string), endDate: date(t.endDate as string), days: t.days ?? null, note: t.note, subtasks: t.subtasks }));
       }
       const r = await D.importGroups(p.id, [...byGroup.values()]);
       return { project: p.name, groupsCreated: r.groups, tasksCreated: r.tasks, url: `https://project.vnlab.id.vn/du-an/${p.id}` };
@@ -231,6 +233,7 @@ export const TOOLS: Record<string, Tool> = {
       const { task, project: p } = await D.taskOf(user, a.taskId);
       D.editable(p);
       const patch: D.TaskPatch = {};
+      if (a.subtasks !== undefined) patch.subtasks = a.subtasks as D.TaskPatch['subtasks'];
       if (a.name !== undefined) patch.name = a.name;
       if (a.assignee !== undefined) patch.assignee = a.assignee as string;
       if (a.support !== undefined) patch.support = a.support as string;

@@ -198,6 +198,9 @@ const MIGRATIONS: string[] = [
   `,
   // 8: bù cột export_columns cho DB đã qua version 6 trước khi bước (6) được thêm.
   `alter table projects add column if not exists export_columns text[];`,
+  // 9: đầu việc con chỉ có người phụ trách và tiến độ; lịch thuộc task cha.
+  `alter table tasks add column subtasks jsonb not null default '[]'::jsonb
+    check (jsonb_typeof(subtasks) = 'array');`,
 ];
 
 export async function migrate() {

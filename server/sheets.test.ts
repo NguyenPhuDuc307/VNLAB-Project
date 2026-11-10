@@ -127,6 +127,34 @@ test('đồng bộ Google Sheets: tạo sheet mới + chia sẻ, ghi PLAN/Dữ l
     assert.equal(detail.sheetId, 'EXISTING00000000000000000000');
     assert.ok(detail.sheetSyncedAt);
     assert.equal(detail.sheetError, null);
+    // Đồng bộ task con thành hàng riêng trong PLAN và tab Dữ liệu.
+    const parent = detail.tasks[0];
+    const changed = await j('PATCH', `/projects/${p.id}/tasks/${parent.id}`, { subtasks: [
+      { name: 'API đăng nhập', assignee: 'An', progress: 100 },
+      { name: 'Giao diện đăng nhập', assignee: 'Bình', progress: 0 },
+    ] });
+    assert.equal(changed.body.progress, 50);
+    g.calls.length = 0;
+    assert.equal((await j('POST', `/projects/${p.id}/sheet/sync`, {})).status, 200);
+    const childReqs = g.calls.filter((c) => c.path.endsWith(':batchUpdate')).flatMap((c) => c.body.requests as any[]);
+    const planId = g.sheets.get('EXISTING00000000000000000000')!.tabs.find((t) => t.title === 'PLAN')!.sheetId;
+    const groupRow = childReqs.find((r) => r.updateCells?.range?.sheetId === planId && r.updateCells.range.startRowIndex === 7).updateCells.rows[0].values;
+    assert.equal(groupRow[0].userEnteredValue.stringValue, 'Thiết kế (1)');
+    assert.equal(groupRow[4].userEnteredValue.numberValue, 0.5);
+    assert.ok(groupRow[5].userEnteredValue.numberValue > 0);
+    assert.ok(groupRow[6].userEnteredValue.numberValue >= groupRow[5].userEnteredValue.numberValue);
+    assert.equal(groupRow[8].userEnteredValue.numberValue, 5.5);
+    const childRow = childReqs.find((r) => r.updateCells?.range?.sheetId === planId && r.updateCells.range.startRowIndex === 9).updateCells.rows[0].values;
+    assert.equal(childRow[0].userEnteredValue.stringValue, '1.1');
+    assert.equal(childRow[1].userEnteredValue.stringValue, '↳ API đăng nhập');
+    assert.equal(childRow[2].userEnteredValue.stringValue, 'An');
+    assert.equal(childRow[4].userEnteredValue.numberValue, 1);
+    for (const index of [5, 6, 8]) assert.equal(childRow[index].userEnteredValue, undefined);
+    const rawRows = childReqs.find((r) => r.updateCells?.range?.sheetId === dataTab.sheetId && r.updateCells.rows?.length === 4).updateCells.rows;
+    assert.equal(rawRows[2].values[0].userEnteredValue.stringValue, '1.1');
+    assert.equal(rawRows[2].values[10].userEnteredValue.stringValue, parent.name);
+    assert.equal(rawRows[2].values[6].userEnteredValue, undefined);
+
     // Đồng bộ lần hai: luật CF cũ bị xoá trước khi thêm lại (không chồng luật).
     await j('POST', `/projects/${p.id}/sheet/sync`, {});
     assert.equal(g.sheets.get('EXISTING00000000000000000000')!.tabs.find((t) => t.title === 'PLAN')!.cf, 2);
@@ -143,7 +171,7 @@ test('đồng bộ Google Sheets: tạo sheet mới + chia sẻ, ghi PLAN/Dữ l
     await j('PATCH', `/projects/${p.id}/sheet`, { sheetUrl: 'EXISTING00000000000000000000', sheetAuto: true });
     g.calls.length = 0;
     const t = detail.tasks[0];
-    await j('PATCH', `/projects/${p.id}/tasks/${t.id}`, { progress: 50 });
+    await j('PATCH', `/projects/${p.id}/tasks/${t.id}`, { subtasks: changed.body.subtasks.map((s: any) => ({ ...s, progress: 100 })) });
     await new Promise((r) => setTimeout(r, 1200));
     assert.ok(g.calls.some((c) => c.path.endsWith(':batchUpdate')), 'tự đồng bộ chưa chạy');
 

@@ -9,6 +9,14 @@ React 19 + Vite + Tailwind 4 (poster Ecosystem v4, màu cam đất) + server Nod
 TypeScript; dữ liệu ở Postgres riêng (`deploy/compose.yaml`), sao lưu hằng ngày.
 Một tiến trình Node phục vụ cả API `/api/*` lẫn SPA đã build.
 
+Task cha có thể chứa các **task con** (tên, phụ trách, tiến độ riêng). Task con dùng
+lịch và ngày công của cha; chỉ task cha có thanh Gantt và được tính vào thống kê.
+Khi có task con, tiến độ cha tự lấy trung bình cộng (làm tròn %). Sửa task → Task con
+để thêm / sửa / xoá; có thể tách tên nhiều dòng thành các task con trước khi lưu.
+API / MCP nhận `subtasks: [{ id?, name, assignee?, progress? }]`; khi sửa, gửi toàn bộ
+danh sách cần giữ. JSON xuất giữ các task con. Excel / Sheets có hàng task con ngay dưới cha (STT 1.1, 1.2), với phụ trách / tiến độ riêng; ngày và ngày công để trống ở hàng con, thanh Gantt chỉ có ở cha. Tab Dữ liệu có thêm cột Task cha. CSV vẫn là kế hoạch theo task cha.
+
+
 ## Đăng nhập và quyền
 
 - Chỉ đăng nhập bằng **VNLab ID** (Logto `https://auth.vnlab.id.vn`, app SPA riêng

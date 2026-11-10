@@ -1,6 +1,6 @@
 import { CaretDown, CaretRight, CheckCircle, CornersIn, CornersOut, DotsSixVertical, DotsThree, Plus } from '@phosphor-icons/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
-import { planShift, type Group, type ProjectDetail, type Task, type TaskInput } from '../lib/api';
+import { planShift, type Group, type ProjectDetail, type Task, type TaskInput, type Subtask } from '../lib/api';
 import { addDays, coveredDays, dayNumber, diffDays, fmtDayMonth, fmtShort, fmtNum, fromDayNumber, mondayOf, WEEKDAY_SHORT, weekday, workDays } from '../lib/dates';
 import { cx, IconButton } from './ui';
 
@@ -18,6 +18,10 @@ type Props = {
   onAddTask: (groupId: string | null) => void;
   onGroupMenu: (g: Group, anchor: HTMLElement) => void;
   onToggleGroup: (g: Group, collapsed: boolean) => void;
+  collapsedTasks: string[];
+  onToggleTask: (id: string) => void;
+  collapsedUngrouped: boolean;
+  onToggleUngrouped: (collapsed: boolean) => void;
   onChangeDates: (t: Task, startDate: string, endDate: string) => void;
   /** Sửa tại chỗ một ô (tên, phụ trách, hỗ trợ, tiến độ, ngày, ngày công). */
   onPatchTask: (t: Task, patch: Partial<TaskInput>) => void;
@@ -33,14 +37,18 @@ type Props = {
 export type EditField = 'name' | 'assignee' | 'support' | 'progress' | 'startDate' | 'endDate' | 'days';
 const FIELD_ORDER: EditField[] = ['name', 'assignee', 'support', 'progress', 'startDate', 'endDate', 'days'];
 
-type Row = { kind: 'group'; group: Group | null; tasks: Task[] } | { kind: 'task'; task: Task; index: number };
+type Row = { kind: 'group'; group: Group | null; tasks: Task[] } | { kind: 'task'; task: Task; index: number } | { kind: 'subtask'; task: Task; subtask: Subtask; index: string };
 
 export const UNGROUPED = '__none__';
 
 /** Hàng hiển thị: mỗi nhóm một hàng tóm tắt, rồi các việc (nếu nhóm không thu gọn); việc chưa phân nhóm xếp cuối. */
-export function buildRows(project: ProjectDetail): Row[] {
+export function buildRows(project: ProjectDetail, collapsedTasks: string[] = [], collapsedUngrouped = false): Row[] {
   const rows: Row[] = [];
   let index = 0;
+  const pushTask = (task: Task) => {
+    rows.push({ kind: 'task', task, index: ++index });
+    if (!collapsedTasks.includes(task.id)) for (const [i, subtask] of (task.subtasks ?? []).entries()) rows.push({ kind: 'subtask', task, subtask, index: `${index}.${i + 1}` });
+  };
   const byGroup = new Map<string, Task[]>();
   for (const t of project.tasks) {
     const k = t.groupId ?? UNGROUPED;
@@ -49,12 +57,12 @@ export function buildRows(project: ProjectDetail): Row[] {
   for (const g of project.groups) {
     const tasks = byGroup.get(g.id) ?? [];
     rows.push({ kind: 'group', group: g, tasks });
-    if (!g.collapsed) for (const t of tasks) rows.push({ kind: 'task', task: t, index: ++index });
+    if (!g.collapsed) for (const t of tasks) pushTask(t);
   }
   const loose = byGroup.get(UNGROUPED) ?? [];
   if (loose.length) {
     rows.push({ kind: 'group', group: null, tasks: loose });
-    for (const t of loose) rows.push({ kind: 'task', task: t, index: ++index });
+    if (!collapsedUngrouped) for (const t of loose) pushTask(t);
   }
   return rows;
 }
@@ -73,7 +81,7 @@ export function spanOf(tasks: Task[]): { start: string; end: string } | null {
 
 const isOverdue = (t: Task, today: string) => !!t.endDate && t.endDate < today && t.progress < 100;
 
-export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTask, onAddTask, onGroupMenu, onToggleGroup, onChangeDates, onPatchTask, showBaseline = true, onReorder, fullscreen, onToggleFullscreen }: Props) {
+export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTask, onAddTask, onGroupMenu, onToggleGroup, collapsedTasks, onToggleTask, collapsedUngrouped, onToggleUngrouped, onChangeDates, onPatchTask, showBaseline = true, onReorder, fullscreen, onToggleFullscreen }: Props) {
   // Kéo thả hàng (ở ô số thứ tự): chưa di quá 4px thì coi là bấm -> mở chi tiết.
   type RowDrag = { task: Task; groupKey: string; x0: number; y0: number; active: boolean; overId: string | null; after: boolean };
   const [rowDrag, setRowDrag] = useState<RowDrag | null>(null);
@@ -110,7 +118,7 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
     ids.splice(at + (d.after ? 1 : 0), 0, d.task.id);
     onReorder(d.groupKey === UNGROUPED ? null : d.groupKey, ids);
   };
-  const rows = useMemo(() => buildRows(project), [project]);
+  const rows = useMemo(() => buildRows(project, collapsedTasks, collapsedUngrouped), [project, collapsedTasks, collapsedUngrouped]);
   // Sửa tại chỗ: ô đang sửa; Enter lưu, Esc huỷ, Tab sang ô kế trong hàng.
   const [edit, setEdit] = useState<{ id: string; field: EditField } | null>(null);
   const names = useMemo(() => {
@@ -133,13 +141,13 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
   };
   const nextField = (t: Task, field: EditField) => setEdit({ id: t.id, field: FIELD_ORDER[(FIELD_ORDER.indexOf(field) + 1) % FIELD_ORDER.length] });
   const editable = (t: Task, field: EditField) => canEdit && edit?.id === t.id && edit.field === field;
-  const startEdit = (t: Task, field: EditField) => (e: React.MouseEvent) => { if (!canEdit) return; e.stopPropagation(); setEdit({ id: t.id, field }); };
+  const startEdit = (t: Task, field: EditField) => (e: React.MouseEvent) => { if (field === 'progress' && t.subtasks?.length) return; if (!canEdit) return; e.stopPropagation(); setEdit({ id: t.id, field }); };
   const inputFor = (t: Task, field: EditField, type: 'text' | 'number' | 'date', value: string, extra: Record<string, unknown> = {}) => (
     <InlineInput key={`${t.id}-${field}`} type={type} value={value} list={field === 'assignee' || field === 'support' ? 'gantt-names' : undefined} {...extra}
       onCommit={(v) => { setEdit(null); commitEdit(t, field, v); }} onCancel={() => setEdit(null)} onNext={(v) => { commitEdit(t, field, v); nextField(t, field); }} />
   );
 
-  // Khoảng ngày của lưới: bắt đầu đúng thứ Hai của tuần chứa mốc sớm nhất (việc sớm nhất;
+  // Khoảng ngày của lưới: bắt đầu từ ngày 1 của tháng chứa mốc sớm nhất (việc sớm nhất;
   // chưa có việc thì ngày bắt đầu dự án; không có gì thì hôm nay), tới sau mốc muộn nhất
   // 2 tuần, tối thiểu 10 tuần, tối đa 2 năm.
   const range = useMemo(() => {
@@ -148,7 +156,7 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
     const first = anchor < today ? anchor : today;
     const lasts = [span?.end, today, project.startDate].filter((x): x is string => !!x);
     const last = lasts.reduce((a, b) => (a > b ? a : b));
-    const start = mondayOf(first);
+    const start = `${first.slice(0, 7)}-01`;
     let end = addDays(mondayOf(last), 7 * 3 - 1);
     if (diffDays(start, end) < 70) end = addDays(start, 69);
     if (diffDays(start, end) > 730) end = addDays(start, 730);
@@ -158,13 +166,55 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
   const days = useMemo(() => Array.from({ length: range.days }, (_, i) => addDays(range.start, i)), [range]);
   const weeks = useMemo(() => {
     const out: { start: string; count: number }[] = [];
-    for (let i = 0; i < days.length; i += 7) out.push({ start: days[i], count: Math.min(7, days.length - i) });
+    for (let i = 0; i < days.length;) {
+      const count = Math.min(7 - ((weekday(days[i]) + 6) % 7), days.length - i);
+      out.push({ start: days[i], count });
+      i += count;
+    }
     return out;
   }, [days]);
 
   const shell = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(0);
+  const [columnWidths, setColumnWidths] = useState<Record<string, string>>({});
+  useLayoutEffect(() => {
+    let active = true;
+    const measure = () => {
+      if (!active || !box.current) return;
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+      const textWidth = (text: string, el: Element | null, fallback: string) => {
+        const style = el ? getComputedStyle(el) : null;
+        ctx.font = style?.font || fallback;
+        const spacing = parseFloat(style?.letterSpacing || '0') || 0;
+        return ctx.measureText(text).width + spacing * text.length;
+      };
+      const widths: Record<string, string> = {};
+      const fit = (key: string, selector: string, values: string[], min = 0, max = 160) => {
+        const head = box.current!.querySelector(`.gantt-head ${selector}`);
+        const cell = box.current!.querySelector(`[data-task-row] ${selector}`);
+        const header = textWidth((head?.textContent ?? '').toLocaleUpperCase('vi'), head, '700 10.5px sans-serif');
+        const content = Math.max(0, ...values.map((v) => textWidth(v, cell, '12px sans-serif')));
+        widths[`--col-${key}`] = `${Math.ceil(Math.min(max, Math.max(min, header + 14, content + 14)))}px`;
+      };
+      fit('asg', '.c-asg', project.tasks.flatMap((t) => [t.assignee, ...(t.subtasks ?? []).map((s) => s.assignee)]));
+      fit('sup', '.c-sup', project.tasks.map((t) => t.support));
+      fit('start', '.c-start', project.tasks.map((t) => fmtShort(t.startDate)));
+      fit('end', '.c-end', project.tasks.map((t) => fmtShort(t.endDate)));
+      // Huy hiệu gia hạn nằm cùng ô ngày kết thúc.
+      const badge = Math.max(0, ...project.tasks.map((t) => { const shift = planShift(t); return shift ? 16 + String(shift.end || '↔').length * 7 : 0; }));
+      widths['--col-end'] = `${parseInt(widths['--col-end']) + badge}px`;
+      fit('days', '.c-days', project.tasks.map((t) => fmtNum(effortOf(t, project))));
+      widths['--col-progress'] = '76px';
+      setColumnWidths(widths);
+    };
+    measure();
+    void document.fonts.ready.then(measure);
+    return () => { active = false; };
+  }, [project, view]);
+
   const [split, setSplit] = useState(() => {
     try {
       const saved = Number(localStorage.getItem('project:gantt-split'));
@@ -198,12 +248,12 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
   }, [dayWidth]);
   const x = (d: string) => (dayNumber(d) - dayNumber(range.start)) * dayWidth;
 
-  // Cuộn tới ngày được yêu cầu (lần đầu: hôm nay), chừa 2 cột cho dễ nhìn.
+  // Lần đầu hiển thị đủ đầu tháng; các nút điều hướng vẫn tới ngày được yêu cầu.
   useEffect(() => {
     const el = box.current;
     if (!el) return;
     if (view !== 'gantt') { el.scrollTo({ left: 0 }); return; }
-    const target = focus.date >= range.start && focus.date <= range.end ? focus.date : today;
+    const target = !focus.tick ? range.start : focus.date >= range.start && focus.date <= range.end ? focus.date : today;
     el.scrollTo({ left: Math.max(0, x(target) - dayWidth * 2), behavior: focus.tick ? 'smooth' : 'auto' });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus.tick, view, range.start]);
@@ -253,7 +303,7 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
 
   return (
     <div ref={shell} className={cx('gantt-shell', resizing && 'resizing')} style={{ ['--left' as string]: `${leftWidth}px` }}>
-    <div ref={box} data-density={density} className={cx('gantt', list && 'list')} style={{ ['--day' as string]: `${dayWidth}px` }} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => setDrag(null)}>
+    <div ref={box} data-density={density} className={cx('gantt', list && 'list')} style={{ ...columnWidths, ['--day' as string]: `${dayWidth}px` }} onPointerMove={move} onPointerUp={finish} onPointerCancel={() => setDrag(null)}>
       {/* ---- đầu bảng */}
       <div className="gantt-head border-b border-line">
         <div className="gantt-row">
@@ -302,19 +352,18 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
           const avg = r.tasks.length ? Math.round(r.tasks.reduce((s, t) => s + t.progress, 0) / r.tasks.length) : 0;
           // Ngày có việc của nhóm: việc chạy song song chỉ tính một lần (không cộng dồn từng việc).
           const totalDays = coveredDays(r.tasks, project.satWeight, project.sunWeight);
-          const collapsed = !!g?.collapsed;
+          const collapsed = g ? !!g.collapsed : collapsedUngrouped;
+          const toggleGroup = () => g ? onToggleGroup(g, !collapsed) : onToggleUngrouped(!collapsed);
           return (
             <div key={`g-${key}`} className="gantt-row gantt-group border-b border-line">
               <div className="gantt-left min-h-9 gantt-group-left">
                 <div className="c-no flex items-center justify-center">
-                  {g ? (
-                    <IconButton label={collapsed ? 'Mở nhóm' : 'Thu gọn nhóm'} className="h-7 w-7 rounded-lg" onClick={() => onToggleGroup(g, !collapsed)}>
+                  <IconButton label={collapsed ? 'Mở nhóm' : 'Thu gọn nhóm'} className="h-7 w-7 rounded-lg" onClick={toggleGroup}>
                       {collapsed ? <CaretRight size={14} weight="bold" /> : <CaretDown size={14} weight="bold" />}
                     </IconButton>
-                  ) : <span className="h-7 w-7" />}
                 </div>
                 <div className="flex min-w-0 items-center gap-1.5 px-2">
-                  <button type="button" className="min-w-0 line-clamp-2 break-words text-left text-[13px] font-extrabold leading-snug tracking-tight hover:text-primary" title={g ? g.name : undefined} onClick={() => g && onToggleGroup(g, !collapsed)}>
+                  <button type="button" className="min-w-0 line-clamp-2 break-words text-left text-[13px] font-extrabold leading-snug tracking-tight hover:text-primary" title={g ? g.name : undefined} onClick={toggleGroup}>
                     {g ? g.name : 'Chưa phân nhóm'}
                   </button>
                   <span className="num shrink-0 text-[11px] font-semibold text-muted">{r.tasks.length}</span>
@@ -343,6 +392,9 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
             </div>
           );
         }
+        if (r.kind === 'subtask') return <SubtaskRow key={`sub-${r.subtask.id}`} parent={r.task} subtask={r.subtask} index={r.index} canEdit={canEdit} onPatch={onPatchTask}>
+          {!list && <div className="gantt-days min-h-10">{dayCells(`sub-${r.subtask.id}`)}</div>}
+        </SubtaskRow>;
         const t = r.task;
         const late = isOverdue(t, today);
         const effort = effortOf(t, project);
@@ -360,8 +412,15 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
                 <DotsSixVertical size={16} weight="bold" className="hidden group-hover/no:block" />
               </button>
               <div className={cx('flex min-w-0 items-center gap-1.5 px-2', canEdit && 'cursor-text')} onClick={startEdit(t, 'name')}>
+                {!!t.subtasks?.length && <button type="button" className="flex h-5 w-4 shrink-0 items-center justify-center rounded text-primary hover:bg-fill"
+                  aria-label={collapsedTasks.includes(t.id) ? 'Mở rộng task con' : 'Thu gọn task con'} aria-expanded={!collapsedTasks.includes(t.id)}
+                  onClick={(e) => { e.stopPropagation(); onToggleTask(t.id); }} onDoubleClick={(e) => e.stopPropagation()}>
+                  {collapsedTasks.includes(t.id) ? <CaretRight size={12} /> : <CaretDown size={12} />}
+                </button>}
                 {t.progress >= 100 && !editable(t, 'name') && <CheckCircle size={15} weight="fill" className="shrink-0 text-ok" aria-label="Đã xong" />}
-                {editable(t, 'name') ? inputFor(t, 'name', 'text', t.name) : <span className={cx('min-w-0 line-clamp-2 break-words text-[13px] font-medium leading-snug', t.progress >= 100 && 'text-ink-2')} title={t.name}>{t.name}</span>}
+                {editable(t, 'name') ? <InlineTaskName value={t.name} onCommit={(v) => { setEdit(null); commitEdit(t, 'name', v); }} onCancel={() => setEdit(null)} onNext={(v) => { commitEdit(t, 'name', v); nextField(t, 'name'); }} /> : <div className="min-w-0 flex-1"><TaskName text={t.name} completed={t.progress >= 100} />
+
+                </div>}
                 {late && !editable(t, 'name') && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-danger" title="Quá hạn" />}
               </div>
               <div className={cx('c-asg min-w-0 px-2 text-[12px] text-ink-2', canEdit && 'cursor-text')} title={t.assignee} onClick={startEdit(t, 'assignee')}>
@@ -508,4 +567,89 @@ function InlineInput({ type, value, list, onCommit, onCancel, onNext, ...rest }:
       {...rest}
     />
   );
+}
+
+/** Enter lưu; Shift+Enter xuống dòng trong tên việc. */
+function InlineTaskName({ value, onCommit, onCancel, onNext }: {
+  value: string; onCommit: (value: string) => void; onCancel: () => void; onNext: (value: string) => void;
+}) {
+  const [valueNow, setValueNow] = useState(value);
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const done = useRef(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; }
+  }, [valueNow]);
+  useEffect(() => { ref.current?.focus(); ref.current?.select(); }, []);
+  const finish = (fn: () => void) => { if (!done.current) { done.current = true; fn(); } };
+  return <textarea ref={ref} value={valueNow} rows={1} maxLength={300}
+    aria-label="Tên việc" title="Enter để lưu · Shift+Enter để xuống dòng"
+    className="gantt-input min-w-0 flex-1 resize-none overflow-hidden"
+    onChange={(e) => setValueNow(e.target.value)}
+    onClick={(e) => e.stopPropagation()}
+    onBlur={() => finish(() => onCommit(valueNow))}
+    onKeyDown={(e) => {
+      if (e.nativeEvent.isComposing) return;
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finish(() => onCommit(valueNow)); }
+      else if (e.key === 'Escape') { e.preventDefault(); finish(onCancel); }
+      else if (e.key === 'Tab') { e.preventDefault(); finish(() => onNext(valueNow)); }
+    }} />;
+}
+
+/** Giữ hàng Gantt gọn; vẫn xem được đầy đủ tên và các dòng mô tả. */
+function TaskName({ text, completed }: { text: string; completed: boolean }) {
+  const ref = useRef<HTMLSpanElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [long, setLong] = useState(false);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => setLong(el.scrollHeight > parseFloat(getComputedStyle(el).lineHeight) * 3 + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [text]);
+  return <div className="min-w-0 flex-1">
+    <span ref={ref} className={cx('gantt-task-name min-w-0 whitespace-pre-wrap break-words text-[13px] font-medium leading-snug', expanded ? 'block' : 'line-clamp-3', completed && 'text-ink-2')} title={text}>{text}</span>
+    {long && <button type="button" className="block text-[11px] font-semibold leading-5 text-primary hover:underline" aria-expanded={expanded}
+      onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
+      onDoubleClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+      {expanded ? 'Thu gọn' : 'Xem thêm'}
+    </button>}
+  </div>;
+}
+
+function SubtaskRow({ parent, subtask, index, canEdit, onPatch, children }: {
+  parent: Task; subtask: Subtask; index: string; canEdit: boolean;
+  onPatch: Props['onPatchTask']; children: React.ReactNode;
+}) {
+  const [editing, setEditing] = useState<'name' | 'assignee' | 'progress' | null>(null);
+  const commit = (field: 'name' | 'assignee' | 'progress', value: string) => {
+    setEditing(null);
+    const v = field === 'progress' ? Math.max(0, Math.min(100, Math.round(Number(value)))) : value.trim();
+    if (field === 'name' && !v || typeof v === 'number' && !Number.isFinite(v)) return;
+    if (v !== subtask[field]) onPatch(parent, { subtasks: (parent.subtasks ?? []).map((s) => s.id === subtask.id ? { ...s, [field]: v } : s) });
+  };
+  const edit = (field: 'name' | 'assignee' | 'progress') => { if (canEdit) setEditing(field); };
+  return <div className="gantt-row border-b border-line" data-subtask-row={subtask.id}>
+    <div className="gantt-left min-h-10 bg-fill/30 py-1.5 text-[12px]">
+      <span className="c-no num text-center text-[10px] text-muted">{index}</span>
+      <div className="flex min-w-0 items-center gap-1 pl-4" onClick={() => edit('name')}>
+        <span className="shrink-0 text-muted" aria-hidden="true">↳</span>
+        {editing === 'name' ? <InlineTaskName value={subtask.name} onCommit={(v) => commit('name', v)} onCancel={() => setEditing(null)} onNext={(v) => commit('name', v)} /> : <span className="min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]" title={subtask.name}>{subtask.name}</span>}
+      </div>
+      <div className="c-asg min-w-0" onClick={() => edit('assignee')}>
+        {editing === 'assignee' ? <InlineInput type="text" value={subtask.assignee} list="gantt-names" onCommit={(v) => commit('assignee', v)} onCancel={() => setEditing(null)} onNext={(v) => commit('assignee', v)} /> : <span className="block truncate" title={subtask.assignee}>{subtask.assignee || '—'}</span>}
+      </div>
+      <span className="c-sup" />
+      <div className="flex items-center gap-2" onClick={() => edit('progress')}>
+        {editing === 'progress' ? <InlineInput type="number" value={String(subtask.progress)} min={0} max={100} onCommit={(v) => commit('progress', v)} onCancel={() => setEditing(null)} onNext={(v) => commit('progress', v)} /> : <><span className="h-1 flex-1 rounded bg-fill"><span className="block h-full rounded bg-primary" style={{ width: `${subtask.progress}%` }} /></span><span className="num w-8 shrink-0 text-right">{subtask.progress}%</span></>}
+      </div>
+      <span className="c-start text-muted" title="Lịch do task cha quản lý">—</span>
+      <span className="c-end text-muted" title="Lịch do task cha quản lý">—</span>
+      <span className="c-days text-right text-muted" title="Ngày công được tính ở task cha">—</span>
+    </div>
+    {children}
+  </div>;
 }

@@ -23,7 +23,9 @@ export type GoogleStatus = { configured: boolean; email: string | null };
 export type ProjectStats = { taskCount: number; doneCount: number; overdueCount: number; progress: number; firstStart: string | null; lastEnd: string | null };
 export type ProjectSummary = Project & { myRole: MemberRole; owner: { name: string; email: string }; memberCount: number; stats: ProjectStats };
 export type Group = { id: string; name: string; sort: number; collapsed: boolean };
+export type Subtask = { id: string; name: string; assignee: string; progress: number };
 export type Task = {
+  subtasks?: Subtask[];
   id: string; projectId: string; groupId: string | null; name: string; assignee: string; support: string; progress: number;
   startDate: string | null; endDate: string | null;
   /** Ngày công ước tính; null = tự tính từ khoảng ngày. */

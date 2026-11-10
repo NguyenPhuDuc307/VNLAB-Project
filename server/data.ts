@@ -2,6 +2,7 @@
 // dự án (chủ / được sửa / chỉ xem) và mọi lệnh ghi đều đi qua đây để hai đường
 // không bao giờ lệch nhau. Lỗi ném ra là HTTPException (REST trả thẳng, MCP đổi
 // thành thông báo cho AI).
+import { randomUUID } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
@@ -19,7 +20,9 @@ export type ProjectRow = {
   sheetId: string | null; sheetAuto: boolean; sheetSyncedAt: Date | null; sheetError: string | null;
   exportColumns: string[] | null;
 };
+export type Subtask = { id: string; name: string; assignee: string; progress: number };
 export type TaskRow = {
+  subtasks: Subtask[];
   id: string; projectId: string; groupId: string | null; name: string; assignee: string; support: string; progress: number;
   startDate: string | null; endDate: string | null; days: number | null; note: string; sort: number; createdAt: Date; updatedAt: Date;
   baselineStart: string | null; baselineEnd: string | null;
@@ -77,6 +80,7 @@ export const projectView = (p: ProjectRow) => ({
 
 export const taskView = (t: Record<string, unknown>) => ({
   id: t.id as string, projectId: t.projectId as string, groupId: (t.groupId as string | null) ?? null, name: t.name as string,
+  subtasks: (t.subtasks ?? []) as Subtask[],
   assignee: t.assignee as string, support: t.support as string, progress: t.progress as number,
   startDate: (t.startDate as string | null) ?? null, endDate: (t.endDate as string | null) ?? null,
   days: t.days == null ? null : Number(t.days), note: t.note as string, sort: t.sort as number,
@@ -234,7 +238,17 @@ export async function deleteGroup(projectId: string, groupId: string, keepTasks:
 
 // ---------------------------------------------------------------- ghi: việc
 
+export const subtaskFields = z.strictObject({
+  id: zId.optional(), name: zText(300).min(1), assignee: zText(160).default(''), progress: z.number().int().min(0).max(100).default(0),
+});
+const normalizeSubtasks = (items: z.infer<typeof subtaskFields>[]): Subtask[] => {
+  const out = items.map((s) => ({ ...s, id: s.id ?? randomUUID() }));
+  if (new Set(out.map((s) => s.id)).size !== out.length) throw bad('Mã task con bị trùng');
+  return out;
+};
+const subtaskProgress = (items: Subtask[], fallback: number) => items.length ? Math.round(items.reduce((sum, s) => sum + s.progress, 0) / items.length) : fallback;
 export const taskFields = z.object({
+  subtasks: z.array(subtaskFields).max(100).optional(),
   groupId: zId.nullable(),
   name: zText(300).min(1, 'Nhập tên việc'),
   assignee: zText(160),
@@ -258,9 +272,10 @@ export async function insertTask(projectId: string, b: TaskCreate) {
   await groupBelongs(projectId, b.groupId);
   const groupId = b.groupId ?? null;
   const both = !!(b.startDate && b.endDate);
+  const subtasks = normalizeSubtasks(b.subtasks ?? []);
   const [t] = await sql`
-    insert into tasks (project_id, group_id, name, assignee, support, progress, start_date, end_date, days, note, baseline_start, baseline_end, sort)
-    values (${projectId}, ${groupId}, ${b.name}, ${b.assignee ?? ''}, ${b.support ?? ''}, ${b.progress ?? 0}, ${b.startDate ?? null}, ${b.endDate ?? null}, ${b.days ?? null}, ${b.note ?? ''},
+    insert into tasks (project_id, group_id, name, assignee, support, progress, start_date, end_date, days, note, subtasks, baseline_start, baseline_end, sort)
+    values (${projectId}, ${groupId}, ${b.name}, ${b.assignee ?? ''}, ${b.support ?? ''}, ${subtaskProgress(subtasks, b.progress ?? 0)}, ${b.startDate ?? null}, ${b.endDate ?? null}, ${b.days ?? null}, ${b.note ?? ''}, ${sql.json(subtasks)},
       ${both ? b.startDate! : null}, ${both ? b.endDate! : null},
       (select coalesce(max(sort), -1) + 1 from tasks where project_id = ${projectId} and group_id is not distinct from ${groupId}))
     returning *`;
@@ -269,24 +284,26 @@ export async function insertTask(projectId: string, b: TaskCreate) {
 }
 
 /** Trường được ghi lịch sử khi đổi. */
-const TRACKED: (keyof TaskPatch)[] = ['name', 'groupId', 'assignee', 'support', 'progress', 'startDate', 'endDate', 'days', 'note'];
-const asText = (v: unknown) => (v === null || v === undefined || v === '' ? null : String(v));
+const TRACKED: (keyof TaskPatch)[] = ['name', 'groupId', 'assignee', 'support', 'progress', 'startDate', 'endDate', 'days', 'note', 'subtasks'];
+const asText = (v: unknown) => (v === null || v === undefined || v === '' ? null : typeof v === 'object' ? JSON.stringify(v) : String(v));
 
 export async function updateTask(projectId: string, taskId: string, b: TaskPatch, actorId: string | null = null) {
   if (!Object.keys(b).length) throw bad('Không có gì để sửa');
-  const [cur] = await sql<TaskRow[]>`select * from tasks where id = ${taskId} and project_id = ${projectId}`;
-  if (!cur) throw notFound();
-  const next = { ...cur, ...b };
-  checkDates(next);
   if (b.groupId !== undefined) await groupBelongs(projectId, b.groupId);
-  const changes = TRACKED.filter((k) => k in b && asText((cur as Record<string, unknown>)[k]) !== asText(b[k]));
-  const patch: Record<string, unknown> = { ...b, updatedAt: new Date() };
-  // Lần đầu có đủ ngày bắt đầu + kết thúc -> chốt làm kế hoạch gốc; về sau gốc giữ nguyên để so.
-  if (!cur.baselineStart && !cur.baselineEnd && next.startDate && next.endDate) { patch.baselineStart = next.startDate; patch.baselineEnd = next.endDate; }
   const t = await sql.begin(async (tx) => {
+    const [cur] = await tx<TaskRow[]>`select * from tasks where id = ${taskId} and project_id = ${projectId} for update`;
+    if (!cur) throw notFound();
+    const subtasks = normalizeSubtasks(b.subtasks ?? cur.subtasks ?? []);
+    const update = { ...b, progress: subtaskProgress(subtasks, b.progress ?? cur.progress), ...(b.subtasks !== undefined ? { subtasks } : {}) };
+    const next = { ...cur, ...update };
+    checkDates(next);
+    const changes = TRACKED.filter((k) => k in update && asText((cur as Record<string, unknown>)[k]) !== asText(update[k]));
+    const patch: Record<string, unknown> = { ...update, updatedAt: new Date() };
+    if (b.subtasks !== undefined) patch.subtasks = tx.json(subtasks);
+    if (!cur.baselineStart && !cur.baselineEnd && next.startDate && next.endDate) { patch.baselineStart = next.startDate; patch.baselineEnd = next.endDate; }
     const [row] = await tx`update tasks set ${tx(patch)} where id = ${taskId} returning *`;
     for (const k of changes) {
-      await tx`insert into task_history (task_id, project_id, user_id, field, old_value, new_value) values (${taskId}, ${projectId}, ${actorId}, ${k}, ${asText((cur as Record<string, unknown>)[k])}, ${asText(b[k])})`;
+      await tx`insert into task_history (task_id, project_id, user_id, field, old_value, new_value) values (${taskId}, ${projectId}, ${actorId}, ${k}, ${asText((cur as Record<string, unknown>)[k])}, ${asText(update[k])})`;
     }
     return row;
   });
@@ -378,9 +395,10 @@ export async function importGroups(projectId: string, groups: ImportGroup[]) {
       for (const t of g.tasks) {
         checkDates(t);
         const both = !!(t.startDate && t.endDate);
+        const subtasks = normalizeSubtasks(t.subtasks ?? []);
         await tx`
-          insert into tasks (project_id, group_id, name, assignee, support, progress, start_date, end_date, days, note, baseline_start, baseline_end, sort)
-          values (${projectId}, ${groupId}, ${t.name}, ${t.assignee ?? ''}, ${t.support ?? ''}, ${t.progress ?? 0}, ${t.startDate ?? null}, ${t.endDate ?? null}, ${t.days ?? null}, ${t.note ?? ''},
+          insert into tasks (project_id, group_id, name, assignee, support, progress, start_date, end_date, days, note, subtasks, baseline_start, baseline_end, sort)
+          values (${projectId}, ${groupId}, ${t.name}, ${t.assignee ?? ''}, ${t.support ?? ''}, ${subtaskProgress(subtasks, t.progress ?? 0)}, ${t.startDate ?? null}, ${t.endDate ?? null}, ${t.days ?? null}, ${t.note ?? ''}, ${tx.json(subtasks)},
             ${both ? t.startDate! : null}, ${both ? t.endDate! : null},
             (select coalesce(max(sort), -1) + 1 from tasks where project_id = ${projectId} and group_id is not distinct from ${groupId}))`;
         tasks++;

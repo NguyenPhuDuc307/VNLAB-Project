@@ -68,7 +68,7 @@ test('MCP: token vpj_ ở Cài đặt, công cụ dùng chung tầng dữ liệu
     assert.match(await call(token, 'create_task', { projectId: created.id, name: 'X', startDate: 'thứ ba tuần sau' }, true), /Không hiểu ngày/);
     // Nhiều việc một lần: nhóm có sẵn được dùng lại, nhóm mới được tạo.
     const bulk = await call(token, 'create_tasks', { projectId: created.id, tasks: [
-      { name: 'Thiết kế trang sản phẩm', group: 'thiết kế', startDate: d5, endDate: addDays(t0, 7) },
+      { name: 'Thiết kế trang sản phẩm', group: 'thiết kế', startDate: d5, endDate: addDays(t0, 7), subtasks: [{ name: 'Bố cục', assignee: 'An', progress: 40 }] },
       { name: 'Dựng API giỏ hàng', group: 'Lập trình', assignee: 'An', progress: 100, startDate: addDays(t0, -6), endDate: addDays(t0, -2) },
       { name: 'Việc quá hạn', group: 'Lập trình', endDate: addDays(t0, -1) },
     ] });
@@ -79,6 +79,8 @@ test('MCP: token vpj_ ở Cài đặt, công cụ dùng chung tầng dữ liệu
     assert.equal(proj.tasks.find((t: { name: string }) => t.name === 'Dựng API giỏ hàng').status, 'done');
     // Tự tính ngày công khi không nhập: 5 ngày T2–T6 trong tuần, T7 nửa ngày.
     const auto = proj.tasks.find((t: { name: string }) => t.name === 'Thiết kế trang sản phẩm');
+    assert.equal(auto.subtasks[0].name, "Bố cục");
+    assert.equal(auto.progress, 40);
     assert.equal(auto.daysManual, false);
     assert.ok(auto.days > 0);
     // Tìm, tổng quan, sửa, xoá.
@@ -90,6 +92,9 @@ test('MCP: token vpj_ ở Cài đặt, công cụ dùng chung tầng dữ liệu
     const upd = await call(token, 'update_task', { taskId: made1.task.id, progress: 60, group: 'Lập trình', note: 'đang test' });
     assert.equal(upd.task.progress, 60);
     assert.equal(upd.task.group, 'Lập trình');
+    const withChildren = await call(token, 'update_task', { taskId: made1.task.id, subtasks: [{ name: 'API', assignee: 'An', progress: 100 }, { name: 'UI', progress: 0 }] });
+    assert.equal(withChildren.task.progress, 50);
+    assert.equal(withChildren.task.subtasks.length, 2);
     assert.match(await call(token, 'update_task', { taskId: made1.task.id, startDate: addDays(t0, 9), endDate: addDays(t0, 8) }, true), /kết thúc/);
     // REST thấy đúng dữ liệu MCP ghi.
     const viaRest = await R('GET', `/projects/${created.id}`);

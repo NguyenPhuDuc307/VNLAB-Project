@@ -1,8 +1,8 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowsClockwise, CaretLeft, ClockCounterClockwise, CrosshairSimple, DownloadSimple, GearSix, Minus, Plus, SortAscending, TableIcon, Trash, Users } from '@phosphor-icons/react';
+import { ArrowsClockwise, ArrowsInLineVertical, ArrowsOutLineVertical, CalendarBlank, Flag, FolderPlus, ListPlus, CaretLeft, ClockCounterClockwise, CrosshairSimple, DownloadSimple, GearSix, Minus, Plus, SortAscending, TableIcon, Trash, Users } from '@phosphor-icons/react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { Gantt, spanOf, type GanttView } from '../components/Gantt';
+import { Gantt, spanOf, UNGROUPED, type GanttView } from '../components/Gantt';
 import { ImportSheet } from '../components/ImportSheet';
 import { MembersSheet, ProjectSheet } from '../components/ProjectSheet';
 import { TaskSheet } from '../components/TaskSheet';
@@ -50,6 +50,7 @@ export function ProjectPage() {
     return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
   }, [full]);
   const [collapsed, setCollapsed] = useState<string[]>(() => pref(`project:${id}:collapsed`, [], (v): v is string[] => Array.isArray(v)));
+  const [collapsedTasks, setCollapsedTasks] = useState<string[]>(() => pref(`project:${id}:collapsed-tasks`, [], (v): v is string[] => Array.isArray(v) && v.every((x) => typeof x === 'string')));
   const [taskSheet, setTaskSheet] = useState<{ open: boolean; task?: Task | null; groupId?: string | null }>({ open: false });
   const [groupSheet, setGroupSheet] = useState<{ open: boolean; group?: Group | null }>({ open: false });
   const [settings, setSettings] = useState(false);
@@ -59,6 +60,7 @@ export function ProjectPage() {
   useEffect(() => savePref('project:view', view), [view]);
   useEffect(() => savePref('project:day', dayWidth), [dayWidth]);
   useEffect(() => savePref(`project:${id}:collapsed`, collapsed), [collapsed, id]);
+  useEffect(() => savePref(`project:${id}:collapsed-tasks`, collapsedTasks), [collapsedTasks, id]);
 
   const p = q.data;
   // Từ Tổng quan tới thẳng một việc: ?task=<id>.
@@ -83,7 +85,7 @@ export function ProjectPage() {
     onMutate: async (a) => {
       await qc.cancelQueries({ queryKey: ['project', id] });
       const prev = qc.getQueryData<ProjectDetail>(['project', id]);
-      if (prev) qc.setQueryData<ProjectDetail>(['project', id], { ...prev, tasks: prev.tasks.map((t) => (t.id === a.task.id ? { ...t, ...a.patch } as Task : t)) });
+      if (prev) qc.setQueryData<ProjectDetail>(['project', id], { ...prev, tasks: prev.tasks.map((t) => { if (t.id !== a.task.id) return t; const next = { ...t, ...a.patch } as Task; if (next.subtasks?.length) next.progress = Math.round(next.subtasks.reduce((sum, s) => sum + s.progress, 0) / next.subtasks.length); return next; }) });
       return { prev };
     },
     onError: (e, _a, ctx) => { if (ctx?.prev) qc.setQueryData(['project', id], ctx.prev); toast((e as Error).message, 'error'); },
@@ -162,27 +164,34 @@ export function ProjectPage() {
         <Segmented size="sm" value={view} onChange={setView} options={[{ value: 'gantt', label: 'Gantt' }, { value: 'list', label: 'Danh sách' }]} className="w-44" />
         {view === 'gantt' && (
           <>
-            <Button variant="secondary" size="sm" onClick={() => setFocus({ date: today, tick: focus.tick + 1 })}><CrosshairSimple size={15} /> Hôm nay</Button>
-            {p.startDate && <Button variant="ghost" size="sm" className="hidden md:inline-flex" onClick={() => setFocus({ date: p.startDate!, tick: focus.tick + 1 })}>Đầu dự án</Button>}
-            <Button variant={showBaseline ? 'secondary' : 'ghost'} size="sm" className="hidden md:inline-flex" onClick={() => setShowBaseline((v) => !v)} title="Khung nét đứt = khoảng ngày ban đầu của việc đã dời / gia hạn" aria-pressed={showBaseline}>
-              <ClockCounterClockwise size={15} /> Kế hoạch gốc
-            </Button>
+            <IconButton label="Hôm nay" onClick={() => setFocus({ date: today, tick: focus.tick + 1 })}><CrosshairSimple size={18} /></IconButton>
+            <IconButton label="Đầu tháng" onClick={() => setFocus({ date: `${today.slice(0, 7)}-01`, tick: focus.tick + 1 })}><CalendarBlank size={18} /></IconButton>
+            {p.startDate && <IconButton label="Đầu dự án" className="hidden md:inline-flex" onClick={() => setFocus({ date: p.startDate!, tick: focus.tick + 1 })}><Flag size={18} /></IconButton>}
+            <IconButton label="Kế hoạch gốc" className={cx("hidden md:inline-flex", showBaseline && "bg-fill text-primary")} onClick={() => setShowBaseline((v) => !v)} title="Kế hoạch gốc: khung nét đứt là khoảng ngày ban đầu" aria-pressed={showBaseline}>
+              <ClockCounterClockwise size={18} />
+            </IconButton>
             <span className="inline-flex items-center rounded-lg bg-fill p-0.5">
               <IconButton label="Thu nhỏ" className="h-7 w-7 rounded-md" onClick={() => setDayWidth((w) => Math.max(18, w - 4))} disabled={dayWidth <= 18}><Minus size={14} weight="bold" /></IconButton>
               <IconButton label="Phóng to" className="h-7 w-7 rounded-md" onClick={() => setDayWidth((w) => Math.min(60, w + 4))} disabled={dayWidth >= 60}><Plus size={14} weight="bold" /></IconButton>
             </span>
           </>
         )}
+        {p.tasks.some((t) => t.subtasks?.length) && <span className="inline-flex items-center gap-1">
+          <IconButton label="Thu gọn tất cả task con" onClick={() => {
+            setCollapsedTasks(p.tasks.filter((t) => t.subtasks?.length).map((t) => t.id));
+          }}><ArrowsInLineVertical size={18} /></IconButton>
+          <IconButton label="Mở rộng tất cả task con" onClick={() => setCollapsedTasks([])}><ArrowsOutLineVertical size={18} /></IconButton>
+        </span>}
         <span className="ml-auto flex flex-wrap items-center gap-2">
           {p.sheetUrl && editor && can('project.project.write') && (
-            <Button variant="ghost" size="sm" onClick={() => syncSheet.mutate()} disabled={syncSheet.isPending} title={p.sheetSyncedAt ? `Đồng bộ lần cuối ${new Date(p.sheetSyncedAt).toLocaleString('vi-VN')}` : 'Chưa đồng bộ'}>
-              <ArrowsClockwise size={15} className={syncSheet.isPending ? 'animate-spin' : undefined} /> <span className="hidden sm:inline">Đồng bộ Sheets</span><span className="sm:hidden">Sheets</span>
-            </Button>
+            <IconButton label="Đồng bộ Sheets" onClick={() => syncSheet.mutate()} disabled={syncSheet.isPending} title={p.sheetSyncedAt ? `Đồng bộ Sheets · lần cuối ${new Date(p.sheetSyncedAt).toLocaleString('vi-VN')}` : 'Đồng bộ Sheets'}>
+              <ArrowsClockwise size={18} className={syncSheet.isPending ? 'animate-spin' : undefined} />
+            </IconButton>
           )}
-          {can('project.data.export') && <Button variant="ghost" size="sm" onClick={() => setExportOpen(true)}><DownloadSimple size={15} /> Xuất</Button>}
-          {canTask && p.tasks.length > 1 && <Button variant="ghost" size="sm" onClick={sortAll} disabled={sortByDate.isPending} title="Sắp xếp việc trong từng nhóm theo ngày bắt đầu"><SortAscending size={15} /> <span className="hidden lg:inline">Sắp xếp theo ngày</span><span className="lg:hidden">Sắp xếp</span></Button>}
-          {canStruct && <Button variant="secondary" size="sm" onClick={() => setGroupSheet({ open: true, group: null })}><Plus size={14} weight="bold" /> Nhóm</Button>}
-          {canTask && <Button size="sm" onClick={() => setTaskSheet({ open: true, task: null, groupId: p.groups[0]?.id ?? null })}><Plus size={14} weight="bold" /> Việc</Button>}
+          {can('project.data.export') && <IconButton label="Xuất" onClick={() => setExportOpen(true)}><DownloadSimple size={18} /></IconButton>}
+          {canTask && p.tasks.length > 1 && <IconButton label="Sắp xếp theo ngày" onClick={sortAll} disabled={sortByDate.isPending} title="Sắp xếp việc trong từng nhóm theo ngày bắt đầu"><SortAscending size={18} /></IconButton>}
+          {canStruct && <IconButton label="Thêm nhóm" onClick={() => setGroupSheet({ open: true, group: null })}><FolderPlus size={18} /></IconButton>}
+          {canTask && <Button size="sm" className="w-9 !px-0" aria-label="Thêm việc" title="Thêm việc" onClick={() => setTaskSheet({ open: true, task: null, groupId: p.groups[0]?.id ?? null })}><ListPlus size={18} /></Button>}
         </span>
       </div>
 
@@ -208,6 +217,10 @@ export function ProjectPage() {
         dayWidth={dayWidth}
         canEdit={canTask}
         focus={focus}
+        collapsedTasks={collapsedTasks}
+        onToggleTask={(taskId) => setCollapsedTasks((ids) => ids.includes(taskId) ? ids.filter((id) => id !== taskId) : [...ids, taskId])}
+        collapsedUngrouped={collapsed.includes(UNGROUPED)}
+        onToggleUngrouped={(c) => setCollapsed((ids) => c ? [...new Set([...ids, UNGROUPED])] : ids.filter((id) => id !== UNGROUPED))}
         onEditTask={(t) => setTaskSheet({ open: true, task: t })}
         onAddTask={(groupId) => setTaskSheet({ open: true, task: null, groupId })}
         onGroupMenu={(g) => setGroupSheet({ open: true, group: g })}

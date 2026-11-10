@@ -22,7 +22,7 @@ export type Layout = {
   freeze: { rows: number; cols: number };
   /** Lưới ngày + hai luật conditional formatting (cú pháp en-US, tham chiếu ô đầu vùng); null = không xuất lưới. */
   grid: { range: Range; barFormula: string; todayFormula: string; barColor: string; todayColor: string; borderColor: string } | null;
-  /** Sheet dữ liệu phẳng (luôn đủ cột, để dán ngược vào app). */
+  /** Sheet dữ liệu đủ cột, có liên kết task con với task cha. */
   data: { header: string[]; rows: (string | number | null)[][]; dateCols: number[]; widths: number[] };
   lastRow: number;
   lastCol: number;
@@ -32,6 +32,7 @@ export type LayoutGroup = { id: string; name: string };
 export type LayoutTask = {
   id: string; groupId: string | null; name: string; assignee: string; support: string; progress: number;
   startDate: string | null; endDate: string | null; days: number | null; note: string;
+  subtasks?: { id: string; name: string; assignee: string; progress: number }[];
 };
 export type LayoutProject = { name: string; code: string; customer: string; startDate: string | null; satWeight: number; sunWeight: number };
 export type Effort = (t: LayoutTask, p: LayoutProject) => number;
@@ -137,13 +138,18 @@ export function buildPlanLayout(p: LayoutProject, owner: string, groups: LayoutG
   const firstBodyRow = r;
   let no = 0;
   const gridRow = (row: number) => { for (let c = firstDayCol; c <= lastDayCol; c++) put(row, c, null, { border: 'grid' }); };
-  const taskRow = (row: number, t?: LayoutTask) => {
-    const eff = t ? effort(t, p) : 0;
+  const rowHeights: Record<number, number> = withGrid ? { 4: 18, 6: 28 } : { 6: 22 };
+  const taskRow = (row: number, t?: LayoutTask, childNo?: string) => {
+    const eff = t && !childNo ? effort(t, p) : 0;
+    if (t) {
+      const lines = t.name.split('\n').reduce((sum, line) => sum + Math.max(1, Math.ceil(line.length / (childNo ? 45 : 48))), 0);
+      rowHeights[row] = Math.max(22, lines * 15 + 6);
+    }
     for (const c of table) {
       const k = c.key, at = col.get(k)!;
       switch (k) {
-        case 'no': put(row, at, t ? ++no : null, { align: 'center', border: 'box' }); break;
-        case 'task': put(row, at, t?.name ?? null, { border: 'box', wrap: true }); break;
+        case 'no': put(row, at, childNo ?? (t ? ++no : null), { align: 'center', border: 'box' }); break;
+        case 'task': put(row, at, t ? `${childNo ? '↳ ' : ''}${t.name}` : null, { border: 'box', wrap: true, bold: !!t?.subtasks?.length }); break;
         case 'assignee': put(row, at, t?.assignee || null, { align: 'center', border: 'box' }); break;
         case 'support': put(row, at, t?.support || null, { align: 'center', border: 'box' }); break;
         case 'progress': put(row, at, t ? t.progress / 100 : null, { fmt: 'pct', align: 'center', border: 'box' }); break;
@@ -159,18 +165,30 @@ export function buildPlanLayout(p: LayoutProject, owner: string, groups: LayoutG
   let i = 0;
   for (const g of order) {
     merges.push({ r1: r, c1: 2, r2: r, c2: 3 });
-    put(r, 2, g.group ? g.group.name : 'Chưa phân nhóm', { bold: true, fill: COLORS.group, border: 'box' });
-    for (let c = 4; c <= lastTableCol; c++) put(r, c, null, { fill: COLORS.group, border: 'box' });
-    if (col.has('days')) {
-      // Ngày có việc của nhóm (việc gối nhau chỉ tính một lần), không cộng dồn từng việc.
-      const total = coveredDays(g.tasks, p.satWeight, p.sunWeight);
-      put(r, col.get('days')!, total ? Math.round(total * 2) / 2 : null, { bold: true, fill: COLORS.group, align: 'center', fmt: 'num', border: 'box' });
+    const groupName = g.group ? g.group.name : 'Chưa phân nhóm';
+    put(r, 2, `${groupName} (${g.tasks.length})`, { bold: true, fill: COLORS.group, border: 'box' });
+    const starts = g.tasks.map((t) => t.startDate ?? t.endDate).filter((d): d is string => !!d);
+    const ends = g.tasks.map((t) => t.endDate ?? t.startDate).filter((d): d is string => !!d);
+    const start = starts.length ? starts.reduce((a, b) => a < b ? a : b) : null;
+    const end = ends.length ? ends.reduce((a, b) => a > b ? a : b) : null;
+    const total = coveredDays(g.tasks, p.satWeight, p.sunWeight);
+    const avg = g.tasks.length ? Math.round(g.tasks.reduce((sum, t) => sum + t.progress, 0) / g.tasks.length) / 100 : null;
+    // Mỗi ô chỉ ghi một lần để Excel và Sheets cùng nhận đủ giá trị tổng hợp.
+    for (const c of table.slice(2)) {
+      const value = c.key === 'progress' ? avg : c.key === 'start' ? start && serial(start) : c.key === 'end' ? end && serial(end) : c.key === 'days' ? total || null : null;
+      put(r, col.get(c.key)!, value, { bold: true, fill: COLORS.group, border: 'box', align: 'center',
+        fmt: c.key === 'progress' ? 'pct' : c.key === 'start' || c.key === 'end' ? 'ddate' : c.key === 'days' ? 'num' : undefined });
     }
     gridRow(r);
     r++;
     for (const t of g.tasks) {
       taskRow(r++, t);
-      dataRows.push([++i, g.group?.name ?? '', t.name, t.assignee, t.support, t.progress, t.startDate ? serial(t.startDate) : null, t.endDate ? serial(t.endDate) : null, t.days ?? (effort(t, p) || null), t.note]);
+      dataRows.push([++i, g.group?.name ?? '', t.name, t.assignee, t.support, t.progress, t.startDate ? serial(t.startDate) : null, t.endDate ? serial(t.endDate) : null, t.days ?? (effort(t, p) || null), t.note, null]);
+      for (const [j, child] of (t.subtasks ?? []).entries()) {
+        const childNo = `${no}.${j + 1}`;
+        taskRow(r++, { ...child, groupId: t.groupId, support: '', startDate: null, endDate: null, days: null, note: '' }, childNo);
+        dataRows.push([`${i}.${j + 1}`, g.group?.name ?? '', child.name, child.assignee, null, child.progress, null, null, null, null, t.name]);
+      }
     }
   }
   for (let k = 0; k < 3; k++) taskRow(r++);
@@ -181,7 +199,7 @@ export function buildPlanLayout(p: LayoutProject, owner: string, groups: LayoutG
     const K = colName(firstDayCol), S = colName(col.get('start')!), E = colName(col.get('end')!);
     grid = {
       range: { r1: firstBodyRow, c1: firstDayCol, r2: lastRow, c2: lastDayCol },
-      barFormula: `AND($${S}${firstBodyRow}<>"",$${E}${firstBodyRow}<>"",${K}$5>=$${S}${firstBodyRow},${K}$5<=$${E}${firstBodyRow},WEEKDAY(${K}$5)<>1)`,
+      barFormula: `AND(ISNUMBER($B${firstBodyRow}),$${S}${firstBodyRow}<>"",$${E}${firstBodyRow}<>"",${K}$5>=$${S}${firstBodyRow},${K}$5<=$${E}${firstBodyRow},WEEKDAY(${K}$5)<>1)`,
       todayFormula: `${K}$5=TODAY()`,
       barColor: COLORS.bar, todayColor: COLORS.today, borderColor: COLORS.grid,
     };
@@ -191,12 +209,12 @@ export function buildPlanLayout(p: LayoutProject, owner: string, groups: LayoutG
     cells,
     merges,
     colWidths,
-    rowHeights: withGrid ? { 4: 18, 6: 28 } : { 6: 22 },
+    rowHeights,
     freeze: { rows: HEAD_ROW, cols: withGrid ? lastTableCol : 0 },
     grid,
     data: {
-      header: ['STT', 'Nhóm', 'Việc', 'Phụ trách', 'Hỗ trợ', 'Tiến độ (%)', 'Bắt đầu', 'Kết thúc', 'Ngày công', 'Ghi chú'],
-      rows: dataRows, dateCols: [7, 8], widths: [5, 22, 50, 14, 16, 11, 12, 12, 10, 30],
+      header: ['STT', 'Nhóm', 'Việc', 'Phụ trách', 'Hỗ trợ', 'Tiến độ (%)', 'Bắt đầu', 'Kết thúc', 'Ngày công', 'Ghi chú', 'Task cha'],
+      rows: dataRows, dateCols: [7, 8], widths: [7, 22, 50, 14, 16, 11, 12, 12, 10, 30, 50],
     },
     lastRow, lastCol: lastDayCol,
   };

@@ -143,6 +143,35 @@ test('SSO, dự án, thành viên, nhập/xuất và API dịch vụ phân quy�
     assert.equal(detail.body.members[0].userId, null);
     assert.equal((await D('POST', `/projects/${pid}/tasks`, { name: 'X', startDate: '2026-11-10', endDate: '2026-11-09' })).status, 400);
 
+    // Task con dùng lịch cha; tiến độ cha do server tổng hợp, không đếm trùng việc/ngày công.
+    const parent = await D('POST', `/projects/${pid}/tasks`, {
+      name: 'Task cha', startDate: '2026-11-02', endDate: '2026-11-07', progress: 99,
+      subtasks: [{ name: 'API', assignee: 'An', progress: 100 }, { name: 'Giao diện', assignee: 'Bình', progress: 20 }],
+    });
+    assert.equal(parent.status, 201);
+    assert.equal(parent.body.progress, 60);
+    assert.equal(parent.body.subtasks.length, 2);
+    assert.ok(parent.body.subtasks[0].id);
+    const childId = parent.body.subtasks[0].id;
+    const path = `/projects/${pid}/tasks/${parent.body.id}`;
+    const movedParent = await D('PATCH', path, { endDate: '2026-11-09', progress: 1 });
+    assert.equal(movedParent.body.progress, 60);
+    assert.equal(movedParent.body.endDate, '2026-11-09');
+    assert.deepEqual(movedParent.body.subtasks, parent.body.subtasks);
+    const completed = await D('PATCH', path, { subtasks: parent.body.subtasks.map((s: Record<string, unknown>) => ({ ...s, progress: 100 })) });
+    assert.equal(completed.body.progress, 100);
+    assert.equal(completed.body.subtasks[0].id, childId);
+    const refreshed = await D('GET', `/projects/${pid}`);
+    assert.equal(refreshed.body.tasks.length, 4);
+    assert.equal(refreshed.body.tasks.find((t: { id: string }) => t.id === parent.body.id).progress, 100);
+    assert.equal((await D('PATCH', path, { subtasks: [{ name: 'Không có lịch riêng', startDate: '2026-11-01' }] })).status, 400);
+    assert.equal((await D('PATCH', path, { subtasks: [{ name: 'Sai tiến độ', progress: 101 }] })).status, 400);
+    assert.equal((await D('PATCH', path, { subtasks: [parent.body.subtasks[0], parent.body.subtasks[0]] })).status, 400);
+    const removedChildren = await D('PATCH', path, { subtasks: [], progress: 35 });
+    assert.equal(removedChildren.body.progress, 35);
+    assert.deepEqual(removedChildren.body.subtasks, []);
+    assert.equal((await D('DELETE', path)).status, 200);
+
     // Bình đăng nhập (roles chỉ có ở userinfo): lời mời tự gắn, thấy dự án với quyền sửa.
     const binh = await ssoLogin(base, 'binh', ['project:user'], 'userinfo');
     assert.ok(binh.session);

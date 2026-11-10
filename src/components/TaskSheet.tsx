@@ -1,3 +1,4 @@
+import { SubtasksEditor } from './SubtasksEditor';
 import { ArrowDown, ArrowUp, ClockCounterClockwise, Trash } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
@@ -15,7 +16,7 @@ type Props = {
   canEdit: boolean;
 };
 
-const empty = (groupId: string | null): TaskInput => ({ name: '', groupId, assignee: '', support: '', progress: 0, startDate: null, endDate: null, days: null, note: '' });
+const empty = (groupId: string | null): TaskInput => ({ subtasks: [], name: '', groupId, assignee: '', support: '', progress: 0, startDate: null, endDate: null, days: null, note: '' });
 
 export function TaskSheet({ open, onClose, project, task, groupId = null, canEdit }: Props) {
   const { toast, confirm } = useFeedback();
@@ -66,6 +67,14 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, canEdi
     [siblings[i], siblings[j]] = [siblings[j], siblings[i]];
     reorder.mutate({ groupId: task.groupId ?? null, ids: siblings });
   };
+  const children = f.subtasks ?? [];
+  const progress = children.length ? Math.round(children.reduce((sum, item) => sum + item.progress, 0) / children.length) : f.progress ?? 0;
+  const setChildren = (subtasks: NonNullable<Task['subtasks']>) => setF({ ...f, subtasks });
+  const splitName = () => {
+    const lines = f.name.split('\n').map((line) => line.trim().replace(/^[•*\-]\s*/, '')).filter(Boolean);
+    if (lines.length < 2) return;
+    setF({ ...f, name: lines[0], subtasks: [...children, ...lines.slice(1).map((name) => ({ id: crypto.randomUUID(), name, assignee: f.assignee ?? '', progress: f.progress ?? 0 }))].slice(0, 100) });
+  };
   const busy = save.isPending || remove.isPending;
   const readOnly = !canEdit || !can('project.task.write');
 
@@ -86,7 +95,7 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, canEdi
               </>
             )}
             <Button variant="secondary" className="ml-auto" onClick={onClose}>Huỷ</Button>
-            <Button type="submit" form="task-form" disabled={busy || !f.name.trim()}>{busy ? 'Đang lưu…' : task ? 'Lưu' : 'Thêm'}</Button>
+            <Button type="submit" form="task-form" disabled={busy || !f.name.trim() || children.some((s) => !s.name.trim())}>{busy ? 'Đang lưu…' : task ? 'Lưu' : 'Thêm'}</Button>
           </div>
         )
       }
@@ -94,8 +103,10 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, canEdi
       <form id="task-form" onSubmit={submit} className="pt-1">
         <fieldset disabled={readOnly} className="min-w-0 border-0 p-0">
           <Field label="Tên việc">
-            <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required maxLength={300} autoFocus={!task} placeholder="VD: Thiết kế màn hình đăng nhập" />
+            <Textarea rows={2} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required maxLength={300} autoFocus={!task} placeholder="VD: Thiết kế màn hình đăng nhập" />
           </Field>
+          {!readOnly && f.name.includes('\n') && <Button className="mb-3" type="button" size="sm" variant="ghost" onClick={splitName}>Tách các dòng thành task con</Button>}
+          <SubtasksEditor items={children} onChange={setChildren} readOnly={readOnly} />
           <div className="grid gap-x-3 sm:grid-cols-2">
             <Field label="Nhóm">
               <Select value={f.groupId ?? ''} onChange={(e) => setF({ ...f, groupId: e.target.value || null })}>
@@ -103,10 +114,10 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, canEdi
                 {project.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
               </Select>
             </Field>
-            <Field label="Tiến độ" hint={<span className="num">{f.progress}%</span>}>
+            <Field label="Tiến độ" hint={<span className="num">{progress}%{children.length ? " · Tự tổng hợp" : ""}</span>}>
               <div className="flex h-11 items-center gap-3">
-                <input type="range" min={0} max={100} step={5} value={f.progress ?? 0} onChange={(e) => setF({ ...f, progress: Number(e.target.value) })} className="w-full accent-[var(--primary)]" aria-label="Tiến độ" />
-                <Input type="number" min={0} max={100} value={f.progress ?? 0} onChange={(e) => setF({ ...f, progress: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })} className="num w-20 text-center" />
+                <input type="range" min={0} max={100} step={5} disabled={children.length > 0} value={progress} onChange={(e) => setF({ ...f, progress: Number(e.target.value) })} className="w-full accent-[var(--primary)]" aria-label="Tiến độ" />
+                <Input type="number" min={0} max={100} disabled={children.length > 0} value={progress} onChange={(e) => setF({ ...f, progress: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })} className="num w-20 text-center" />
               </div>
             </Field>
             <Field label="Phụ trách">
@@ -159,9 +170,10 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, canEdi
   );
 }
 
-const FIELD_LABEL: Record<string, string> = { name: 'tên', groupId: 'nhóm', assignee: 'phụ trách', support: 'hỗ trợ', progress: 'tiến độ', startDate: 'bắt đầu', endDate: 'kết thúc', days: 'ngày công', note: 'ghi chú', baseline: 'kế hoạch gốc' };
+const FIELD_LABEL: Record<string, string> = { name: 'tên', groupId: 'nhóm', assignee: 'phụ trách', support: 'hỗ trợ', progress: 'tiến độ', startDate: 'bắt đầu', endDate: 'kết thúc', days: 'ngày công', note: 'ghi chú', baseline: 'kế hoạch gốc', subtasks: 'task con' };
 const fmtVal = (field: string, v: string | null) => {
   if (v === null) return 'trống';
+  if (field === 'subtasks') { try { return `${JSON.parse(v).length} task con`; } catch { return v; } }
   if (field === 'startDate' || field === 'endDate') return fmtShort(v);
   if (field === 'progress') return `${v}%`;
   if (field === 'baseline') return v.split('..').map(fmtShort).join(' → ');

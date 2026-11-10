@@ -38,7 +38,7 @@ test('xuất Excel theo mẫu Gantt: sheet PLAN có tiêu đề, bảng, nhóm, 
     assert.equal(ws.getCell('K6').value, 'T');
     assert.equal(ws.getCell('Q6').value, 'C'); // Chủ nhật 8/11
     // Hàng nhóm rồi các việc: nhóm ở B8 (merge B:C), DAYS tổng = 5.5 + 4 (tự tính 9–12/11).
-    assert.equal(ws.getCell('B8').value, 'Thiết kế');
+    assert.equal(ws.getCell('B8').value, 'Thiết kế (2)');
     assert.equal(ws.getCell('J8').value, 9.5);
     assert.equal(ws.getCell('B9').value, 1);
     assert.equal(ws.getCell('C9').value, 'Thiết kế màn hình đăng nhập');
@@ -47,7 +47,7 @@ test('xuất Excel theo mẫu Gantt: sheet PLAN có tiêu đề, bảng, nhóm, 
     assert.equal(ws.getCell('J9').value, 5.5);
     assert.equal(ws.getCell('E10').value, 'Bình, Chi');
     assert.equal(ws.getCell('J10').value, 4);
-    assert.equal(ws.getCell('B11').value, 'Lập trình');
+    assert.equal(ws.getCell('B11').value, 'Lập trình (1)');
     assert.equal(ws.getCell('I12').value, 'phụ thuộc thiết kế');
     assert.equal(ws.getCell('J12').value, 2.5);
     // DAYS tô vàng, nhóm tô xám, tiêu đề nền sẫm chữ trắng.
@@ -66,6 +66,49 @@ test('xuất Excel theo mẫu Gantt: sheet PLAN có tiêu đề, bảng, nhóm, 
     assert.equal(data.getCell('B2').value, 'Thiết kế');
     assert.equal(data.getCell('C4').value, 'Dựng API giỏ hàng');
     assert.equal(data.rowCount, 4);
+
+    // Task con xuất thành hàng riêng ngay dưới cha; không có lịch / ngày công riêng.
+    const detail = await j('GET', `/projects/${p.id}`);
+    await j('PATCH', `/projects/${p.id}/tasks/${detail.tasks[0].id}`, { subtasks: [
+      { name: 'Xây API', assignee: 'An', progress: 100 },
+      { name: 'Làm giao diện', assignee: 'Bình', progress: 0 },
+    ] });
+    const withChildren = await fetch(`${base}/api/projects/${p.id}/export?format=xlsx`, { headers: { cookie } });
+    const childrenBook = new ExcelJS.Workbook();
+    await childrenBook.xlsx.load(Buffer.from(await withChildren.arrayBuffer()) as never);
+    const plan = childrenBook.getWorksheet('PLAN')!;
+    assert.equal(plan.getCell('F9').value, 0.5);
+    assert.equal(plan.getCell('B10').value, '1.1');
+    assert.equal(plan.getCell('C10').value, '↳ Xây API');
+    assert.equal(plan.getCell('D10').value, 'An');
+    assert.equal(plan.getCell('F10').value, 1);
+    assert.equal(plan.getCell('B11').value, '1.2');
+    assert.equal(plan.getCell('C11').value, '↳ Làm giao diện');
+    assert.equal(plan.getCell('D11').value, 'Bình');
+    assert.equal(plan.getCell('F11').value, 0);
+    for (const row of [10, 11]) for (const col of ['G', 'H', 'J']) assert.equal(plan.getCell(`${col}${row}`).value, null);
+    assert.equal(plan.getCell('B12').value, 2);
+    assert.equal(plan.getCell('J8').value, 9.5);
+    assert.equal(plan.getCell('F8').value, 0.25);
+    assert.equal((plan.getCell('G8').value as Date).toISOString().slice(0, 10), '2026-11-02');
+    assert.equal((plan.getCell('H8').value as Date).toISOString().slice(0, 10), '2026-11-12');
+    assert.equal(plan.getCell('B8').value, 'Thiết kế (2)');
+    assert.equal(plan.getCell('J9').value, 5.5);
+    const raw = childrenBook.getWorksheet('Dữ liệu')!;
+    assert.equal(raw.rowCount, 6);
+    assert.equal(raw.getCell('K1').value, 'Task cha');
+    assert.equal(raw.getCell('A3').value, '1.1');
+    assert.equal(raw.getCell('C3').value, 'Xây API');
+    assert.equal(raw.getCell('K3').value, detail.tasks[0].name);
+    assert.equal(raw.getCell('G3').value, null);
+    assert.equal(raw.getCell('I3').value, null);
+    // Chọn ít cột / không xuất lưới vẫn giữ các hàng con, đúng thứ tự cột.
+    const narrow = await fetch(`${base}/api/projects/${p.id}/export?format=xlsx&cols=assignee,progress`, { headers: { cookie } });
+    const narrowBook = new ExcelJS.Workbook();
+    await narrowBook.xlsx.load(Buffer.from(await narrow.arrayBuffer()) as never);
+    assert.equal(narrowBook.getWorksheet('PLAN')!.getCell('E10').value, 1);
+    assert.equal(narrowBook.getWorksheet('PLAN')!.getCell('C11').value, '↳ Làm giao diện');
+
   } finally {
     await srv.stop();
     await mem.close();

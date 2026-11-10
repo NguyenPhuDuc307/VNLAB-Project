@@ -348,9 +348,9 @@ body::before {
 /* Hàng nhóm: dải màu rõ, cả phần bảng lẫn phần lưới ngày. */
 .gantt-group { background: color-mix(in srgb, var(--ink) 9%, var(--surface)); }
 .gantt-group-left { background: color-mix(in srgb, var(--ink) 9%, var(--surface)); border-top: 1px solid color-mix(in srgb, var(--ink) 14%, transparent); }
-.gantt-group .gantt-days /* Ranh giới tháng: vạch đậm ở mép trái ngày mồng 1, chạy suốt đầu bảng và mọi hàng. */
-.gantt-day.month-start { box-shadow: inset 2px 0 0 color-mix(in oklab, var(--primary) 70%, var(--line)); }
-.gantt-day.weekend { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+.gantt-group .gantt-days .gantt-day.weekend { background: color-mix(in srgb, var(--ink) 5%, transparent); }
+/* Ranh giới tháng: vạch đậm ở mép trái ngày mồng 1, chạy suốt đầu bảng và mọi hàng. */
+.gantt-day.month-start { box-shadow: inset 2px 0 0 #eab308; }
 .gantt-day.weekend {
   background: var(--weekend);
 }
@@ -574,20 +574,20 @@ body::before {
 .resizing .gantt-splitter::before, .gantt-splitter:hover span,
 .gantt-splitter:focus-visible span, .resizing .gantt-splitter span { background: var(--primary); }
 .gantt-splitter:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
-.gantt { --cols: 32px minmax(0, 1fr) 84px 84px 88px 72px 72px 44px; }
+.gantt { --col-asg: 84px; --col-sup: 72px; --col-progress: 76px; --col-start: 66px; --col-end: 72px; --col-days: 44px; --cols: 32px minmax(0, 1fr) var(--col-asg) var(--col-sup) var(--col-progress) var(--col-start) var(--col-end) var(--col-days); }
 .gantt-left { grid-template-columns: var(--cols); }
 .gantt-left > * { min-width: 0; padding-inline: 6px; }
 /* Mật độ cột theo bề rộng bảng trái (kéo vạch chia): full ≥ 620 đủ 8 cột; medium ẩn Ngày công;
    compact ẩn thêm Hỗ trợ; tight chỉ #, Việc, Tiến độ; narrow chỉ Việc, Tiến độ. */
-.gantt:not(.list)[data-density="wide"] { --cols: 36px minmax(0, 1fr) 120px 120px 110px 84px 84px 64px; }
-.gantt:not(.list)[data-density="full"] { --cols: 32px minmax(0, 1fr) 96px 96px 84px 70px 70px 48px; }
-.gantt:not(.list)[data-density="medium"] { --cols: 32px minmax(0, 1fr) 92px 92px 80px 68px 68px; }
+.gantt:not(.list)[data-density="wide"] { --cols: 32px minmax(0, 1fr) var(--col-asg) var(--col-sup) var(--col-progress) var(--col-start) var(--col-end) var(--col-days); }
+.gantt:not(.list)[data-density="full"] { --cols: 32px minmax(0, 1fr) var(--col-asg) var(--col-sup) var(--col-progress) var(--col-start) var(--col-end) var(--col-days); }
+.gantt:not(.list)[data-density="medium"] { --cols: 32px minmax(0, 1fr) var(--col-asg) var(--col-sup) var(--col-progress) var(--col-start) var(--col-end); }
 .gantt:not(.list)[data-density="medium"] .c-days { display: none !important; }
-.gantt:not(.list)[data-density="compact"] { --cols: 32px minmax(0, 1fr) 88px 80px 66px 66px; }
+.gantt:not(.list)[data-density="compact"] { --cols: 32px minmax(0, 1fr) var(--col-asg) var(--col-progress) var(--col-start) var(--col-end); }
 .gantt:not(.list)[data-density="compact"] :is(.c-sup, .c-days) { display: none !important; }
-.gantt:not(.list)[data-density="tight"] { --cols: 32px minmax(0, 1fr) 84px; }
+.gantt:not(.list)[data-density="tight"] { --cols: 32px minmax(0, 1fr) var(--col-progress); }
 .gantt:not(.list)[data-density="tight"] :is(.c-sup, .c-days, .c-asg, .c-start, .c-end) { display: none !important; }
-.gantt:not(.list)[data-density="narrow"] { --cols: minmax(0, 1fr) 64px; }
+.gantt:not(.list)[data-density="narrow"] { --cols: minmax(0, 1fr) var(--col-progress); }
 .gantt:not(.list)[data-density="narrow"] :is(.c-sup, .c-days, .c-asg, .c-start, .c-end, .c-no) { display: none !important; }
 /* Chế độ danh sách: không có lưới ngày, bảng trái chiếm hết bề ngang và thêm cột. */
 .gantt.list .gantt-row { grid-template-columns: minmax(0, 1fr); min-width: 0; width: 100%; }
@@ -596,13 +596,13 @@ body::before {
 /* Danh sách không có hai hàng lịch nên tiêu đề bảng cần chiều cao riêng, chữ căn giữa dọc. */
 .gantt.list .gantt-head .gantt-left { min-height: 44px; }
 .gantt.list .gantt-head .gantt-left > * { align-items: center !important; padding-bottom: 0 !important; }
-.gantt.list { --cols: 36px minmax(0, 1fr) 120px 120px 110px 84px 84px 64px; }
+.gantt.list { --cols: 32px minmax(0, 1fr) var(--col-asg) var(--col-sup) var(--col-progress) var(--col-start) var(--col-end) var(--col-days); }
 @media (max-width: 1279px) {
   .gantt.list .c-sup, .gantt.list .c-days { display: none !important; }
-  .gantt.list { --cols: 32px minmax(0, 1fr) 84px 88px 72px 72px; }
+  .gantt.list { --cols: 32px minmax(0, 1fr) var(--col-asg) var(--col-progress) var(--col-start) var(--col-end); }
 }
 @media (max-width: 1023px) {
-  .gantt.list { --cols: 32px minmax(0, 1fr) 84px 88px 72px 72px; }
+  .gantt.list { --cols: 32px minmax(0, 1fr) var(--col-asg) var(--col-progress) var(--col-start) var(--col-end); }
   .gantt.list .c-asg, .gantt.list .c-start, .gantt.list .c-end { display: flex !important; }
   .gantt.list .c-sup, .gantt.list .c-days { display: none !important; }
 }
@@ -611,3 +611,6 @@ body::before {
   .gantt.list .c-asg, .gantt.list .c-start, .gantt.list .c-no { display: none !important; }
   .gantt.list .c-end { display: flex !important; }
 }
+
+/* Hiện đầy đủ tên việc và giữ các dòng người dùng nhập. */
+.gantt-task-name { overflow-wrap: anywhere; }
