@@ -1,14 +1,15 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowsClockwise, ArrowsInLineVertical, ArrowsOutLineVertical, CalendarBlank, Flag, FolderPlus, ListPlus, CaretLeft, ClockCounterClockwise, CrosshairSimple, DownloadSimple, GearSix, Minus, Plus, SortAscending, TableIcon, Trash, Users } from '@phosphor-icons/react';
+import { ArrowDown, ArrowSquareOut, ArrowUp, ArrowsClockwise, ArrowsDownUp, ArrowsInLineVertical, ArrowsOutLineVertical, CalendarBlank, CaretLeft, CheckCircle, ClockCounterClockwise, Copy, CornersIn, CornersOut, CrosshairSimple, DownloadSimple, Flag, FolderPlus, FolderSimple, GearSix, ListPlus, Minus, PencilSimple, Percent, Plus, SortAscending, TableIcon, Tag, Trash, Users } from '@phosphor-icons/react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { Gantt, spanOf, UNGROUPED, type GanttView } from '../components/Gantt';
+import { Gantt, spanOf, UNGROUPED, type GanttView, type MenuTarget } from '../components/Gantt';
+import type { MenuItem } from '../components/ContextMenu';
 import { ImportSheet } from '../components/ImportSheet';
 import { MembersSheet, ProjectSheet } from '../components/ProjectSheet';
 import { TaskSheet } from '../components/TaskSheet';
 import { ColumnPicker, normalizeColumns, type ColKey } from '../components/ColumnPicker';
-import { Button, Chip, Empty, Field, IconButton, Input, PageHeader, Segmented, Sheet, Skeleton, useFeedback, cx, Select } from '../components/ui';
-import { api, canEditRole, ROLE_LABEL, useAction, useCan, useProject, type Group, type ProjectDetail, type Task, type TaskInput } from '../lib/api';
+import { Button, Chip, Empty, Field, IconButton, Input, PageHeader, Segmented, Sheet, Skeleton, useFeedback, cx } from '../components/ui';
+import { api, canEditRole, planShift, ROLE_LABEL, useAction, useCan, useProject, type Group, type ProjectDetail, type Task, type TaskInput } from '../lib/api';
 import { diffDays, fmtShort, todayStr } from '../lib/dates';
 
 const pref = <T,>(key: string, fallback: T, ok: (v: unknown) => v is T): T => {
@@ -35,6 +36,8 @@ export function ProjectPage() {
   const [focus, setFocus] = useState({ date: today, tick: 0 });
   const [showBaseline, setShowBaseline] = useState(() => pref('project:baseline', true, (v): v is boolean => typeof v === 'boolean'));
   useEffect(() => savePref('project:baseline', showBaseline), [showBaseline]);
+  const [showScopes, setShowScopes] = useState(() => pref('project:scopes-visible', true, (v): v is boolean => typeof v === 'boolean'));
+  useEffect(() => savePref('project:scopes-visible', showScopes), [showScopes]);
   // Toàn màn hình: thanh công cụ + cả bảng phủ kín cửa sổ (trên sidebar, dưới hộp thoại); Esc thoát, khoá cuộn trang.
   const [full, setFull] = useState(false);
   useEffect(() => {
@@ -158,6 +161,128 @@ export function ProjectPage() {
   const overdue = p.tasks.filter((t) => t.endDate && t.endDate < today && t.progress < 100).length;
   const avg = p.tasks.length ? Math.round(p.tasks.reduce((s, t) => s + t.progress, 0) / p.tasks.length) : 0;
 
+  // ---- Menu chuột phải trên bảng: thao tác theo chỗ được bấm.
+  const refresh = () => qc.invalidateQueries({ queryKey: ['project', id] });
+  const ask = async (title: string, desc: string, ok: string) => confirm({ title, desc: <p>{desc}</p>, ok, danger: true });
+  const setDone = (t: Task, done: boolean) => t.subtasks?.length
+    ? patchTask.mutate({ task: t, patch: { subtasks: t.subtasks.map((s) => ({ ...s, progress: done ? 100 : 0 })) } })
+    : patchTask.mutate({ task: t, patch: { progress: done ? 100 : 0 } });
+  const groupIds = (gid: string | null) => p.tasks.filter((x) => (x.groupId ?? null) === gid).map((x) => x.id);
+  const moveInGroup = (t: Task, where: 'top' | 'bottom' | 'up' | 'down') => {
+    const ids = groupIds(t.groupId ?? null);
+    const i = ids.indexOf(t.id);
+    ids.splice(i, 1);
+    const at = where === 'top' ? 0 : where === 'bottom' ? ids.length : where === 'up' ? Math.max(0, i - 1) : Math.min(ids.length, i + 1);
+    ids.splice(at, 0, t.id);
+    reorder.mutate({ groupId: t.groupId ?? null, ids });
+  };
+  const duplicate = async (t: Task) => {
+    try {
+      const body: TaskInput = { name: `${t.name} (bản sao)`, groupId: t.groupId, scopeId: t.scopeId ?? null, assignee: t.assignee, support: t.support, progress: 0, startDate: t.startDate, endDate: t.endDate, days: t.days, note: t.note, subtasks: (t.subtasks ?? []).map((s) => ({ ...s, id: crypto.randomUUID(), progress: 0 })) };
+      await api(`/projects/${id}/tasks`, { method: 'POST', body });
+      toast('Đã nhân bản việc');
+      refresh();
+    } catch (e) { toast((e as Error).message, 'error'); }
+  };
+  const removeTask = async (t: Task) => {
+    if (!(await ask('Xoá việc này?', `“${t.name}” sẽ bị xoá khỏi dự án. Không hoàn tác được.`, 'Xoá việc'))) return;
+    try { await api(`/projects/${id}/tasks/${t.id}`, { method: 'DELETE' }); toast('Đã xoá việc'); refresh(); } catch (e) { toast((e as Error).message, 'error'); }
+  };
+  const rebaseline = async (t: Task) => {
+    try { await api(`/projects/${id}/tasks/${t.id}/rebaseline`, { method: 'POST', body: {} }); toast('Đã chốt kế hoạch gốc mới'); refresh(); } catch (e) { toast((e as Error).message, 'error'); }
+  };
+  const moveGroup = (g: Group, dir: -1 | 1) => {
+    const ids = p.groups.map((x) => x.id);
+    const i = ids.indexOf(g.id), j = i + dir;
+    if (j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    reorderGroups.mutate(ids);
+  };
+  const toggleCollapse = (gid: string, c: boolean) => setCollapsed((xs) => (c ? [...new Set([...xs, gid])] : xs.filter((x) => x !== gid)));
+  const blankItems = (date?: string): MenuItem[] => [
+    ...(canTask ? [{ label: 'Thêm việc', icon: <Plus size={14} />, onSelect: () => setTaskSheet({ open: true, task: null, groupId: p.groups[0]?.id ?? null }) }] : []),
+    ...(canStruct ? [{ label: 'Thêm nhóm', icon: <FolderPlus size={14} />, onSelect: () => setGroupSheet({ open: true, group: null }) }] : []),
+    ...(canTask || canStruct ? ['sep' as const] : []),
+    { label: 'Về hôm nay', icon: <CrosshairSimple size={14} />, onSelect: () => setFocus({ date: today, tick: focus.tick + 1 }) },
+    ...(date ? [{ label: `Cuộn tới ${fmtShort(date)}`, icon: <CalendarBlank size={14} />, onSelect: () => setFocus({ date, tick: focus.tick + 1 }) }] : []),
+    { label: 'Thu gọn mọi nhóm', icon: <ArrowsInLineVertical size={14} />, onSelect: () => setCollapsed([...p.groups.map((g) => g.id), UNGROUPED]) },
+    { label: 'Mở mọi nhóm', icon: <ArrowsOutLineVertical size={14} />, onSelect: () => setCollapsed([]) },
+    ...(canTask && p.tasks.length > 1 ? ['sep' as const, { label: 'Sắp xếp tất cả theo ngày', icon: <SortAscending size={14} />, onSelect: () => void sortAll() }] : []),
+    'sep', { label: full ? 'Thoát toàn màn hình' : 'Toàn màn hình', icon: full ? <CornersIn size={14} /> : <CornersOut size={14} />, hint: full ? 'Esc' : undefined, onSelect: () => setFull((v) => !v) },
+  ];
+  const menuFor = (target: MenuTarget): MenuItem[] => {
+    if (target.kind === 'blank') return blankItems(target.date);
+    if (target.kind === 'group') {
+      const g = target.group, gid = g?.id ?? null, key = g?.id ?? UNGROUPED;
+      const isCollapsed = collapsed.includes(key);
+      const gi = g ? p.groups.findIndex((x) => x.id === g.id) : -1;
+      return [
+        ...(canTask ? [{ label: 'Thêm việc vào nhóm', icon: <Plus size={14} />, onSelect: () => setTaskSheet({ open: true, task: null, groupId: gid }) }] : []),
+        { label: isCollapsed ? 'Mở nhóm' : 'Thu gọn nhóm', icon: isCollapsed ? <ArrowsOutLineVertical size={14} /> : <ArrowsInLineVertical size={14} />, onSelect: () => toggleCollapse(key, !isCollapsed) },
+        ...(canTask && target.tasks.length > 1 ? [{ label: 'Sắp xếp việc trong nhóm theo ngày', icon: <SortAscending size={14} />, onSelect: () => sortByDate.mutate(gid) }] : []),
+        ...(g && canStruct ? [
+          'sep' as const,
+          { label: 'Lên trên', icon: <ArrowUp size={14} />, disabled: gi <= 0, onSelect: () => moveGroup(g, -1) },
+          { label: 'Xuống dưới', icon: <ArrowDown size={14} />, disabled: gi >= p.groups.length - 1, onSelect: () => moveGroup(g, 1) },
+          'sep' as const,
+          { label: 'Đổi tên, xoá nhóm…', icon: <PencilSimple size={14} />, onSelect: () => setGroupSheet({ open: true, group: g }) },
+        ] : []),
+      ];
+    }
+    if (target.kind === 'subtask') {
+      const { task: t, subtask: s } = target;
+      const done = s.progress >= 100;
+      return [
+        { label: 'Mở chi tiết task cha', icon: <ArrowSquareOut size={14} />, onSelect: () => setTaskSheet({ open: true, task: t }) },
+        ...(canTask ? [
+          'sep' as const,
+          { label: done ? 'Đánh dấu chưa xong' : 'Đánh dấu xong', icon: <CheckCircle size={14} />, onSelect: () => patchTask.mutate({ task: t, patch: { subtasks: (t.subtasks ?? []).map((x) => (x.id === s.id ? { ...x, progress: done ? 0 : 100 } : x)) } }) },
+          { label: 'Tiến độ', icon: <Percent size={14} />, children: [0, 25, 50, 75, 100].map((v) => ({ label: `${v}%`, checked: s.progress === v, onSelect: () => patchTask.mutate({ task: t, patch: { subtasks: (t.subtasks ?? []).map((x) => (x.id === s.id ? { ...x, progress: v } : x)) } }) })) },
+          'sep' as const,
+          { label: 'Xoá task con', icon: <Trash size={14} />, danger: true, onSelect: async () => { if (await ask('Xoá task con?', `“${s.name}” sẽ bị xoá khỏi “${t.name}”.`, 'Xoá')) patchTask.mutate({ task: t, patch: { subtasks: (t.subtasks ?? []).filter((x) => x.id !== s.id) } }); } },
+        ] : []),
+      ];
+    }
+    const t = target.task;
+    const done = t.progress >= 100;
+    const ids = groupIds(t.groupId ?? null), pos = ids.indexOf(t.id);
+    const d = target.date;
+    if (!canTask) return [{ label: 'Mở chi tiết', icon: <ArrowSquareOut size={14} />, onSelect: () => setTaskSheet({ open: true, task: t }) }];
+    return [
+      { label: 'Mở chi tiết', icon: <ArrowSquareOut size={14} />, onSelect: () => setTaskSheet({ open: true, task: t }) },
+      ...(d ? [
+        'sep' as const,
+        { label: `Bắt đầu từ ${fmtShort(d)}`, icon: <CalendarBlank size={14} />, onSelect: () => patchTask.mutate({ task: t, patch: { startDate: d, endDate: t.endDate && t.endDate >= d ? t.endDate : d } }) },
+        { label: `Kết thúc vào ${fmtShort(d)}`, icon: <Flag size={14} />, onSelect: () => patchTask.mutate({ task: t, patch: { endDate: d, startDate: t.startDate && t.startDate <= d ? t.startDate : d } }) },
+      ] : []),
+      'sep',
+      { label: done ? 'Đánh dấu chưa xong' : 'Đánh dấu xong', icon: <CheckCircle size={14} />, onSelect: () => setDone(t, !done) },
+      ...(t.subtasks?.length ? [] : [{ label: 'Tiến độ', icon: <Percent size={14} />, children: [0, 25, 50, 75, 100].map((v) => ({ label: `${v}%`, checked: t.progress === v, onSelect: () => patchTask.mutate({ task: t, patch: { progress: v } }) })) }]),
+      ...(p.scopes?.length ? [{ label: 'Phạm vi', icon: <Tag size={14} />, children: [
+        ...p.scopes.map((sc) => ({ label: sc.owner ? `${sc.name} · ${sc.owner}` : sc.name, checked: t.scopeId === sc.id, icon: <span className="block h-2.5 w-2.5 rounded-full" style={{ background: sc.color }} />, onSelect: () => patchTask.mutate({ task: t, patch: { scopeId: sc.id } }) })),
+        'sep' as const,
+        { label: 'Bỏ phạm vi', checked: !t.scopeId, onSelect: () => patchTask.mutate({ task: t, patch: { scopeId: null } }) },
+      ] }] : []),
+      { label: 'Chuyển nhóm', icon: <FolderSimple size={14} />, children: [
+        ...p.groups.map((g) => ({ label: g.name, checked: t.groupId === g.id, onSelect: () => patchTask.mutate({ task: t, patch: { groupId: g.id } }) })),
+        'sep' as const,
+        { label: 'Chưa phân nhóm', checked: !t.groupId, onSelect: () => patchTask.mutate({ task: t, patch: { groupId: null } }) },
+      ] },
+      { label: 'Thứ tự', icon: <ArrowsDownUp size={14} />, children: [
+        { label: 'Lên đầu nhóm', disabled: pos <= 0, onSelect: () => moveInGroup(t, 'top') },
+        { label: 'Lên một bậc', disabled: pos <= 0, onSelect: () => moveInGroup(t, 'up') },
+        { label: 'Xuống một bậc', disabled: pos >= ids.length - 1, onSelect: () => moveInGroup(t, 'down') },
+        { label: 'Xuống cuối nhóm', disabled: pos >= ids.length - 1, onSelect: () => moveInGroup(t, 'bottom') },
+      ] },
+      'sep',
+      { label: 'Thêm task con…', icon: <ListPlus size={14} />, onSelect: () => setTaskSheet({ open: true, task: t }) },
+      { label: 'Nhân bản việc', icon: <Copy size={14} />, onSelect: () => void duplicate(t) },
+      ...(planShift(t) ? [{ label: 'Chốt kế hoạch gốc', icon: <ClockCounterClockwise size={14} />, onSelect: () => void rebaseline(t) }] : []),
+      'sep',
+      { label: 'Xoá việc', icon: <Trash size={14} />, danger: true, onSelect: () => void removeTask(t) },
+    ];
+  };
+
   return (
     <div>
       <Link to="/du-an" className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold text-ink-2 hover:text-ink"><CaretLeft size={14} weight="bold" /> Dự án</Link>
@@ -192,11 +317,15 @@ export function ProjectPage() {
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Segmented size="sm" value={view} onChange={setView} options={[{ value: 'gantt', label: 'Gantt' }, { value: 'list', label: 'Danh sách' }]} className="w-44" />
         {!!p.scopes?.length && (
-          <Select aria-label="Lọc theo phạm vi" value={activeScope} onChange={(e) => setScopeFilter(e.target.value)} className={cx('h-9 w-auto max-w-[200px] py-0 text-[13px]', activeScope && 'border-primary text-primary')}>
-            <option value="">Mọi phạm vi</option>
-            {p.scopes.map((s) => <option key={s.id} value={s.id}>{s.name}{s.owner ? ` · ${s.owner}` : ''}</option>)}
-            <option value="none">Chưa gắn phạm vi</option>
-          </Select>
+          <span className="inline-flex items-center gap-1">
+            <select aria-label="Lọc theo phạm vi" value={activeScope} onChange={(e) => setScopeFilter(e.target.value)}
+              className={cx('h-9 max-w-[180px] rounded-xl border bg-card px-2.5 text-[13px] font-semibold outline-none transition focus:border-primary', activeScope ? 'border-primary text-primary' : 'border-line text-ink-2')}>
+              <option value="">Mọi phạm vi</option>
+              {p.scopes.map((s) => <option key={s.id} value={s.id}>{s.name}{s.owner ? ` · ${s.owner}` : ''}</option>)}
+              <option value="none">Chưa gắn phạm vi</option>
+            </select>
+            <IconButton label={showScopes ? 'Ẩn nhãn phạm vi' : 'Hiện nhãn phạm vi'} aria-pressed={showScopes} className={cx(showScopes && 'bg-fill text-primary')} onClick={() => setShowScopes((v) => !v)}><Tag size={18} weight={showScopes ? 'fill' : 'regular'} /></IconButton>
+          </span>
         )}
         {view === 'gantt' && (
           <>
@@ -268,6 +397,8 @@ export function ProjectPage() {
         onReorderGroups={canStruct ? (ids) => reorderGroups.mutate(ids) : undefined}
         fullscreen={full}
         onToggleFullscreen={() => setFull((v) => !v)}
+        menuFor={menuFor}
+        showScopes={showScopes}
       />
       )}
       {view === 'gantt' && !full && <p className="mt-2 hidden px-1 text-[12px] text-muted md:block">Bấm đúp vào ô để sửa tại chỗ (Enter lưu, Esc huỷ, Tab sang ô kế); bấm số thứ tự để mở chi tiết, ghi chú, lịch sử. Kéo thanh để dời ngày, kéo hai mép đổi ngày bắt đầu / kết thúc. Khung nét đứt "gốc" là khoảng ngày ban đầu của việc đã dời / gia hạn. Kéo ô số thứ tự để đổi thứ tự trong nhóm; nút ⤢ ở góc bảng để phóng to cả bảng ra toàn màn hình (Esc thoát).</p>}
