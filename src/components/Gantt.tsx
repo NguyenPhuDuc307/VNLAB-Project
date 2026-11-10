@@ -636,19 +636,19 @@ function SubtaskRow({ parent, subtask, index, canEdit, onPatch, children }: {
     <div className="gantt-left min-h-10 bg-fill/30 py-1.5">
       <span className="c-no num text-center text-[12px] text-muted">{index}</span>
       {/* Task con: thụt lề tên vào một chút, cùng cỡ chữ với task cha cho dễ đọc. */}
-      <div className="flex min-w-0 items-center pl-5" onClick={() => edit('name')}>
-        {editing === 'name' ? <InlineTaskName value={subtask.name} onCommit={(v) => commit('name', v)} onCancel={() => setEditing(null)} onNext={(v) => commit('name', v)} /> : <span className="min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]" title={subtask.name}>{subtask.name}</span>}
+      <div className={cx('flex min-w-0 items-center pl-6 pr-2', canEdit && 'cursor-text')} onClick={() => edit('name')}>
+        {editing === 'name' ? <InlineTaskName value={subtask.name} onCommit={(v) => commit('name', v)} onCancel={() => setEditing(null)} onNext={(v) => commit('name', v)} /> : <span className="min-w-0 whitespace-pre-wrap break-words text-[13px] leading-snug [overflow-wrap:anywhere]" title={subtask.name}>{subtask.name}</span>}
       </div>
-      <div className="c-asg min-w-0" onClick={() => edit('assignee')}>
-        {editing === 'assignee' ? <InlineInput type="text" value={subtask.assignee} list="gantt-names" onCommit={(v) => commit('assignee', v)} onCancel={() => setEditing(null)} onNext={(v) => commit('assignee', v)} /> : <span className="block truncate" title={subtask.assignee}>{subtask.assignee || '—'}</span>}
+      <div className={cx('c-asg min-w-0 px-2 text-[12px] text-ink-2', canEdit && 'cursor-text')} onClick={() => edit('assignee')}>
+        {editing === 'assignee' ? <InlineInput type="text" value={subtask.assignee} list="gantt-names" onCommit={(v) => commit('assignee', v)} onCancel={() => setEditing(null)} onNext={(v) => commit('assignee', v)} /> : <span className="block truncate" title={subtask.assignee}>{subtask.assignee || <span className="text-muted/60">—</span>}</span>}
       </div>
       <span className="c-sup" />
-      <div className="flex items-center gap-2" onClick={() => edit('progress')}>
-        {editing === 'progress' ? <InlineInput type="number" value={String(subtask.progress)} min={0} max={100} onCommit={(v) => commit('progress', v)} onCancel={() => setEditing(null)} onNext={(v) => commit('progress', v)} /> : <><span className="h-1 flex-1 rounded bg-fill"><span className="block h-full rounded bg-primary" style={{ width: `${subtask.progress}%` }} /></span><span className="num w-8 shrink-0 text-right">{subtask.progress}%</span></>}
+      <div className={cx('flex items-center gap-2 px-2', canEdit && 'cursor-text')} onClick={() => edit('progress')}>
+        {editing === 'progress' ? <InlineInput type="number" value={String(subtask.progress)} min={0} max={100} onCommit={(v) => commit('progress', v)} onCancel={() => setEditing(null)} onNext={(v) => commit('progress', v)} /> : <><span className="h-1.5 flex-1 overflow-hidden rounded-full bg-fill"><span className="block h-full rounded-full bg-primary" style={{ width: `${subtask.progress}%` }} /></span><span className="num w-8 shrink-0 text-right text-[12px] font-semibold">{subtask.progress}%</span></>}
       </div>
-      <span className="c-start text-muted" title="Lịch do task cha quản lý">—</span>
-      <span className="c-end text-muted" title="Lịch do task cha quản lý">—</span>
-      <span className="c-days text-right text-muted" title="Ngày công được tính ở task cha">—</span>
+      <span className="c-start px-2 text-[12px] text-muted/60" title="Lịch do task cha quản lý">—</span>
+      <span className="c-end px-2 text-[12px] text-muted/60" title="Lịch do task cha quản lý">—</span>
+      <span className="c-days px-2 text-right text-[12px] text-muted/60" title="Ngày công được tính ở task cha">—</span>
     </div>
     {children}
   </div>;
