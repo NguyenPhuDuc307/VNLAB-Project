@@ -633,10 +633,10 @@ function SubtaskRow({ parent, subtask, index, canEdit, onPatch, children }: {
   };
   const edit = (field: 'name' | 'assignee' | 'progress') => { if (canEdit) setEditing(field); };
   return <div className="gantt-row border-b border-line" data-subtask-row={subtask.id}>
-    <div className="gantt-left min-h-10 bg-fill/30 py-1.5 text-[12px]">
-      <span className="c-no num text-center text-[10px] text-muted">{index}</span>
-      <div className="flex min-w-0 items-center gap-1 pl-4" onClick={() => edit('name')}>
-        <span className="shrink-0 text-muted" aria-hidden="true">↳</span>
+    <div className="gantt-left min-h-10 bg-fill/30 py-1.5 text-[13px]">
+      <span className="c-no num text-center text-[11px] text-muted">{index}</span>
+      {/* Task con: thụt lề tên vào một chút, cùng cỡ chữ với task cha cho dễ đọc. */}
+      <div className="flex min-w-0 items-center pl-5" onClick={() => edit('name')}>
         {editing === 'name' ? <InlineTaskName value={subtask.name} onCommit={(v) => commit('name', v)} onCancel={() => setEditing(null)} onNext={(v) => commit('name', v)} /> : <span className="min-w-0 whitespace-pre-wrap break-words [overflow-wrap:anywhere]" title={subtask.name}>{subtask.name}</span>}
       </div>
       <div className="c-asg min-w-0" onClick={() => edit('assignee')}>
