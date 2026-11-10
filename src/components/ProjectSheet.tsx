@@ -39,6 +39,7 @@ export function ProjectSheet({ open, onClose, project, onImport }: { open: boole
 
   return (
     <Sheet
+      wide
       open={open}
       onClose={onClose}
       title={project ? 'Cài đặt dự án' : 'Dự án mới'}

@@ -7,7 +7,8 @@ import { cookieOf, memoryDb, startServer } from './test-helpers.ts';
 /** Getfly giả theo hành vi API v3 đã kiểm chứng trên acs.getflycrm.com: task_info, task_creator bắt buộc, ngày Y-m-d H:i,
  *  sửa / xoá theo task_code, danh sách bỏ qua bộ lọc, không có trường tiến độ / trạng thái. */
 async function fakeGetfly() {
-  const calls: { method: string; path: string; body: any }[] = [];
+  const calls: { method: string; path: string; body: any; at: number }[] = [];
+  let limitedMethod: string | null = null;
   const tasks = new Map<number, any>();
   tasks.set(8689, { task_id: '8689', task_code: 'CVI/2026-11/008676', task_name: 'Xây dựng Module Giao Hàng', project_id: '1', project_name: '12. R&D_ Nghiên cứu', task_status: '11' });
   for (let i = 1; i <= 150; i++) tasks.set(9000 + i, { task_id: String(9000 + i), task_code: `CVI/X/${i}`, task_name: `Việc khác ${i}`, project_id: '2', project_name: 'Khác', task_status: '11' });
@@ -17,8 +18,9 @@ async function fakeGetfly() {
     for await (const chunk of req) raw += chunk;
     const body = raw ? JSON.parse(raw) : null;
     const url = new URL(req.url!, 'http://x');
-    calls.push({ method: req.method!, path: url.pathname, body });
+    calls.push({ method: req.method!, path: url.pathname, body, at: Date.now() });
     const json = (o: unknown, status = 200) => { res.writeHead(status, { 'content-type': 'application/json' }); res.end(JSON.stringify(o)); };
+    if (limitedMethod === req.method) { limitedMethod = null; res.setHeader('retry-after', '1'); return json({ message: 'Too many requests performed' }, 429); }
     if (req.headers['x-api-key'] !== 'khoa-getfly') return json({ message: 'Unauthorized' }, 401);
     if (url.pathname === '/api/v3/users') return json([{ id: '25', name: 'Nguyễn Phú Đức', email: 'ducnp@acs.vn', dept_name: 'R&D' }, { id: '4', name: 'Nguyễn Công Quyết', email: 'q@acs.vn', dept_name: 'R&D' }]);
     if (url.pathname === '/api/v3/tasks' && req.method === 'GET') {
@@ -58,10 +60,10 @@ async function fakeGetfly() {
   server.listen(0, '127.0.0.1');
   await once(server, 'listening');
   const port = (server.address() as { port: number }).port;
-  return { base: `http://127.0.0.1:${port}`, calls, tasks, close: () => server.close() };
+  return { base: `http://127.0.0.1:${port}`, calls, tasks, limitNext: (method: string) => { limitedMethod = method; }, close: () => server.close() };
 }
 
-test('đồng bộ Getfly (API v3): việc cha từ link, tạo / sửa / xoá, task con dưới việc tương ứng, ghép id người dùng, việc xong chỉ ghi chú', { timeout: 90_000 }, async () => {
+test('Getfly: cha riêng theo nhóm, bỏ qua mục chưa gắn, giữ liên kết, không đẩy task con, kế thừa dự án và thử lại khi giới hạn request', { timeout: 90_000 }, async () => {
   const gf = await fakeGetfly();
   const mem = await memoryDb();
   const srv = await startServer({ PROJECT_DATABASE_URL: mem.url, PROJECT_DEV_LOGIN: '1', GETFLY_BASE_URL: `${gf.base}/`, GETFLY_API_KEY: 'khoa-getfly' });
@@ -83,60 +85,88 @@ test('đồng bộ Getfly (API v3): việc cha từ link, tạo / sửa / xoá, 
       return { status: r.status, body: await r.json().catch(() => null) as any };
     };
     assert.deepEqual((await R('GET', '/getfly/status')).body.configured, true);
+    gf.limitNext('GET');
     assert.equal((await R('GET', '/getfly/users')).body.length, 2);
+    const userCalls = gf.calls.filter((c) => c.path.endsWith('/users'));
+    assert.equal(userCalls.length, 2);
+    assert.ok(userCalls[1].at - userCalls[0].at >= 1900);
     const p = (await R('POST', '/projects', { name: 'Đồng bộ thử' })).body;
     await R('POST', `/projects/${p.id}/getfly/sync`);
     for (let i = 0; i < 50 && (await R('GET', `/projects/${p.id}/getfly/job`)).body.status === 'running'; i++) await new Promise((r) => setTimeout(r, 50));
-    assert.match((await R('GET', `/projects/${p.id}/getfly/job`)).body.error, /việc cha/); // chưa đặt việc cha -> job lỗi
-    // Việc cha: dán link Getfly -> lật danh sách tìm id 8689 -> mã + dự án Getfly.
-    const cfg = await R('PATCH', `/projects/${p.id}/getfly`, { parent: 'https://acs.getflycrm.com/#/tasks/?project_id=1;view_type=list;task_id=8689', creatorId: '25', users: { 'Đức': '25', 'Quyết': '4' } });
-    assert.equal(cfg.status, 200, JSON.stringify(cfg.body));
-    assert.deepEqual([cfg.body.getflyParentCode, cfg.body.getflyParentId, cfg.body.getflyProjectId, cfg.body.getflyProjectName], ['CVI/2026-11/008676', 8689, '1', '12. R&D_ Nghiên cứu']);
-    assert.equal((await R('PATCH', `/projects/${p.id}/getfly`, { parent: '1' })).status, 404);
-
-    const grp = (await R('POST', `/projects/${p.id}/groups`, { name: 'Giao hàng – Luồng chính' })).body;
+    assert.match((await R('GET', `/projects/${p.id}/getfly/job`)).body.error, /người tạo/);
+    assert.equal((await R('PATCH', `/projects/${p.id}/getfly`, { creatorId: '25', users: { 'Đức': '25', 'Quyết': '4' } })).status, 200);
+    const empty = await run(`/projects/${p.id}/getfly/sync`);
+    assert.deepEqual([empty.created, empty.errors], [0, []]);
+    const badGroup = await R('POST', `/projects/${p.id}/groups`, { name: 'Không được lưu', getflyParent: '1' });
+    assert.equal(badGroup.status, 404);
+    assert.equal((await R('GET', `/projects/${p.id}`)).body.groups.length, 0);
+    const grp = (await R('POST', `/projects/${p.id}/groups`, { name: 'Giao hàng – Luồng chính', getflyParent: 'https://acs.getflycrm.com/#/tasks/?task_id=8689' })).body;
     const grp2 = (await R('POST', `/projects/${p.id}/groups`, { name: 'Kho' })).body;
     // Nhóm "Kho" gắn với việc có sẵn trên Getfly (id 9001) -> không tạo việc cho nhóm này.
     assert.equal((await R('PATCH', `/projects/${p.id}/getfly`, { groups: { [grp2.id]: '9001' } })).body.getflyGroups[grp2.id].code, 'CVI/X/1');
-    await R('POST', `/projects/${p.id}/tasks`, { groupId: grp2.id, name: 'Nhập kho', note: 'Ghi chú kho' });
+    const warehouse = (await R('POST', `/projects/${p.id}/tasks`, { groupId: grp2.id, name: 'Nhập kho', note: 'Ghi chú kho' })).body;
+    const unlinked = (await R('POST', `/projects/${p.id}/groups`, { name: 'Chưa gắn cha' })).body;
+    await R('POST', `/projects/${p.id}/tasks`, { groupId: unlinked.id, name: 'Chưa được đẩy', subtasks: [{ name: 'Con chưa được đẩy' }] });
     const t1 = (await R('POST', `/projects/${p.id}/tasks`, { groupId: grp.id, name: 'Màn hình giao hàng', assignee: 'Đức', support: 'Quyết, Người lạ', startDate: '2026-11-10', endDate: '2026-11-12', subtasks: [{ name: 'Danh sách chuyến', assignee: 'Quyết', progress: 0 }] })).body;
     const t2 = (await R('POST', `/projects/${p.id}/tasks`, { name: 'Việc không có ngày', assignee: 'Người lạ' })).body;
     const s1 = await run(`/projects/${p.id}/getfly/sync`);
-    assert.deepEqual([s1.created, s1.updated, s1.errors], [5, 0, []]); // 1 việc nhóm + 3 việc + 1 task con
+    assert.deepEqual([s1.created, s1.updated, s1.errors], [2, 0, []]);
     const made = [...gf.tasks.values()];
     const parent = made.find((t) => t.task_name === 'Màn hình giao hàng');
-    const groupTask = made.find((t) => t.task_name === 'Giao hàng – Luồng chính');
-    assert.equal(groupTask.task_parent, '8689'); // nhóm -> dưới việc cha của dự án
+    assert.ok(!made.some((t) => t.task_name === 'Giao hàng – Luồng chính'));
+    assert.ok(s1.warnings.some((w: string) => w.includes('Chưa gắn cha')));
+    assert.ok(s1.warnings.some((w: string) => w.includes('chưa phân nhóm')));
+    assert.ok(!made.some((t) => ['Chưa được đẩy', 'Con chưa được đẩy', 'Việc không có ngày'].includes(t.task_name)));
+    assert.equal(made.find((t) => t.task_name === 'Nhập kho').project_id, '2');
     assert.ok(!made.some((t) => t.task_name === 'Kho')); // nhóm gắn sẵn không tạo việc
     assert.equal(made.find((t) => t.task_name === 'Nhập kho').task_parent, '9001');
     assert.equal(made.find((t) => t.task_name === 'Nhập kho').task_description, undefined); // không gửi ghi chú / mô tả
-    assert.equal(made.find((t) => t.task_name === 'Việc không có ngày').task_parent, '8689'); // chưa phân nhóm
-    assert.deepEqual([parent.task_parent, parent.project_id, parent.task_receiver, parent.task_creator, parent.task_start_date], [groupTask.task_id, '1', '25', '25', '2026-11-10 08:00']);
-    assert.equal(made.find((t) => t.task_name === 'Danh sách chuyến').task_parent, parent.task_id); // task con dưới đúng việc cha
+    assert.deepEqual([parent.task_parent, parent.project_id, parent.task_receiver, parent.task_creator, parent.task_start_date], ['8689', '1', '25', '25', '2026-11-10 08:00']);
+    assert.ok(!made.some((t) => t.task_name === 'Danh sách chuyến')); // không tạo task con
     assert.deepEqual(parent.people_involved, ['25', '4']); // phụ trách + hỗ trợ đã ghép -> người liên quan
-    assert.deepEqual(groupTask.people_involved, ['25', '4']);
-    assert.equal(made.find((t) => t.task_name === 'Danh sách chuyến').task_receiver, '4');
-    assert.equal(made.find((t) => t.task_name === 'Việc không có ngày').task_receiver, undefined);
 
     // Bấm lại không đổi gì -> không gửi lệnh ghi nào.
     const writes = () => gf.calls.filter((c) => c.method !== 'GET').length;
     const before = writes();
     const s2 = await run(`/projects/${p.id}/getfly/sync`);
-    assert.deepEqual([s2.created, s2.updated, s2.unchanged], [0, 0, 5]);
+    assert.deepEqual([s2.created, s2.updated, s2.unchanged], [0, 0, 2]);
     assert.equal(writes(), before);
 
-    // Sửa tên + task con xong 100% -> PUT theo task_code, ghi chú "đã xong"; xoá việc -> DELETE.
+    // Bản task con từ lần đồng bộ cũ không được sửa hay xoá khi ngừng đồng bộ task con.
+    const legacySubId = t1.subtasks[0].id;
+    gf.tasks.set(9900, { task_id: '9900', task_code: 'CVI/LEGACY/SUB', task_name: 'Task con cũ', task_parent: parent.task_id });
+    await mem.db.query(`insert into getfly_links (project_id, local_id, parent_local, getfly_code, getfly_id, hash, completed) values ($1, $2, $3, $4, 9900, 'legacy', false)`, [p.id, legacySubId, t1.id, 'CVI/LEGACY/SUB']);
+    // Bỏ gắn cha không làm xoá bản Getfly đã có.
+    await R('PATCH', `/projects/${p.id}/groups/${grp.id}`, { getflyParent: '' });
+    const frozen = await run(`/projects/${p.id}/getfly/sync`);
+    assert.deepEqual([frozen.created, frozen.updated, frozen.deleted, frozen.errors], [0, 0, 0, []]);
+    assert.equal(writes(), before);
+    assert.ok(gf.tasks.has(Number(parent.task_id)));
+    assert.equal((await R('PATCH', `/projects/${p.id}/groups/${grp.id}`, { name: 'Tên sai', getflyParent: '1' })).status, 404);
+    assert.equal((await R('GET', `/projects/${p.id}`)).body.groups.find((g: any) => g.id === grp.id).name, grp.name);
+    await R('PATCH', `/projects/${p.id}/groups/${grp.id}`, { getflyParent: '8689' });
+    // Cấu hình cũ thiếu projectId được tra bổ sung theo cha của nhóm.
+    await mem.db.query(`update projects set getfly_groups = jsonb_set(getfly_groups, ARRAY[$1], (getfly_groups -> $1) - 'projectId' - 'projectName') where id = $2`, [grp.id, p.id]);
+    gf.limitNext('PUT');
+    // Sửa việc chính, task con xong làm tiến độ cha lên 100%; chỉ gửi việc chính.
     await R('PATCH', `/projects/${p.id}/tasks/${t1.id}`, { name: 'Màn hình giao hàng (bản 2)', subtasks: [{ ...t1.subtasks[0], progress: 100 }] });
     await R('DELETE', `/projects/${p.id}/tasks/${t2.id}`);
+    await R('DELETE', `/projects/${p.id}/tasks/${warehouse.id}`);
     const s3 = await run(`/projects/${p.id}/getfly/sync`);
-    assert.deepEqual([s3.updated, s3.completed, s3.deleted, s3.errors], [1, 2, 1, []]); // chỉ việc cha đổi tên; task con xong 100% không gửi gì (không có mô tả)
+    assert.deepEqual([s3.updated, s3.completed, s3.deleted, s3.errors], [1, 1, 1, []]); // chỉ việc cha đổi tên; task con xong 100% không gửi gì (không có mô tả)
     assert.equal(gf.tasks.get(Number(parent.task_id)).task_name, 'Màn hình giao hàng (bản 2)');
     assert.ok(s3.warnings.some((w: string) => /đánh dấu tay/.test(w)));
     assert.ok(![...gf.tasks.values()].some((t) => t.task_name === 'Việc không có ngày'));
     assert.ok((await R('GET', `/projects/${p.id}`)).body.getflySyncedAt);
+    assert.equal(gf.tasks.get(9900).task_name, 'Task con cũ');
+    assert.ok(!gf.calls.some((c) => c.method === 'PUT' && c.body?.task_code === 'CVI/LEGACY/SUB'));
+    await R('PATCH', `/projects/${p.id}/tasks/${t1.id}`, { subtasks: [], progress: 100 });
+    const noSubtasks = await run(`/projects/${p.id}/getfly/sync`);
+    assert.deepEqual([noSubtasks.created, noSubtasks.updated, noSubtasks.deleted, noSubtasks.errors], [0, 0, 0, []]);
+    assert.ok(gf.tasks.has(9900));
     // Gỡ khỏi Getfly: xoá đúng các việc app đã tạo, giữ việc cha 8689 và việc có sẵn 9001.
     const un = await run(`/projects/${p.id}/getfly/unsync`);
-    assert.deepEqual([un.deleted, un.errors], [4, []]);
+    assert.deepEqual([un.deleted, un.errors], [2, []]);
     assert.ok(gf.tasks.has(8689) && gf.tasks.has(9001));
     assert.ok(![...gf.tasks.values()].some((x) => ['Màn hình giao hàng (bản 2)', 'Danh sách chuyến', 'Nhập kho', 'Giao hàng – Luồng chính'].includes(x.task_name)));
   } finally {

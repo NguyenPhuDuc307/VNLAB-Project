@@ -361,11 +361,11 @@ export function ProjectPage() {
         <span className="ml-auto flex flex-wrap items-center gap-2">
           {getfly.data?.configured && editor && can('project.project.write') && (
             <IconButton
-              label={getflyJob.running ? `Đang chạy Getfly ${getflyJob.progress}` : !p.getflyParentCode || !p.getflyCreatorId ? 'Thiết lập đồng bộ Getfly' : p.getflySyncedAt ? `Đồng bộ Getfly (lần cuối ${new Date(p.getflySyncedAt).toLocaleString('vi-VN')})` : 'Đồng bộ Getfly'}
+              label={getflyJob.running ? `Đang chạy Getfly ${getflyJob.progress}` : !p.getflyCreatorId ? 'Thiết lập đồng bộ Getfly' : p.getflySyncedAt ? `Đồng bộ Getfly (lần cuối ${new Date(p.getflySyncedAt).toLocaleString('vi-VN')})` : 'Đồng bộ Getfly'}
               disabled={getflyJob.running}
               onClick={() => {
-                // Chưa đặt việc cha / người tạo thì mở hộp cấu hình Getfly; xong rồi thì bấm là đồng bộ (chuột phải để mở cấu hình).
-                if (!p.getflyParentCode || !p.getflyCreatorId) { setGetflyOpen(true); return; }
+                // Chưa chọn người tạo thì mở hộp cấu hình Getfly; xong rồi thì bấm là đồng bộ (chuột phải để mở cấu hình).
+                if (!p.getflyCreatorId) { setGetflyOpen(true); return; }
                 getflyJob.sync();
               }}
               onContextMenu={(e) => { e.preventDefault(); setGetflyOpen(true); }}
@@ -432,7 +432,7 @@ export function ProjectPage() {
 
       <TaskSheet open={taskSheet.open} onClose={() => setTaskSheet((s) => ({ ...s, open: false }))} project={p} task={taskSheet.task} groupId={taskSheet.groupId ?? null} canEdit={editor} />
       <GroupSheet open={groupSheet.open} onClose={() => setGroupSheet((s) => ({ ...s, open: false }))} project={p} group={groupSheet.group} confirm={confirm} onSort={(g) => { sortByDate.mutate(g.id); setGroupSheet((s) => ({ ...s, open: false })); }} />
-      <Sheet open={getflyOpen} onClose={() => setGetflyOpen(false)} title="Đồng bộ Getfly CRM">
+      <Sheet wide open={getflyOpen} onClose={() => setGetflyOpen(false)} title="Đồng bộ Getfly CRM">
         <GetflyBox project={p} canEdit={editor && can('project.project.write')} />
       </Sheet>
       <ProjectSheet open={settings} onClose={() => setSettings(false)} project={p} onImport={canTask && can('project.data.import') ? () => { setSettings(false); setImportOpen(true); } : undefined} />
@@ -463,10 +463,12 @@ function GroupSheet({ open, onClose, project, group, confirm, onSort }: {
 }) {
   const { toast } = useFeedback();
   const [name, setName] = useState('');
-  useEffect(() => { if (open) setName(group?.name ?? ''); }, [open, group]);
+  const [parentRef, setParentRef] = useState('');
+  const linkedParent = group ? project.getflyGroups?.[group.id] : undefined;
+  useEffect(() => { if (open) { setName(group?.name ?? ''); setParentRef(linkedParent?.code ?? ''); } }, [open, group, linkedParent?.code]);
   const count = group ? project.tasks.filter((t) => t.groupId === group.id).length : 0;
-  const save = useAction((n: string) => group ? api(`/projects/${project.id}/groups/${group.id}`, { method: 'PATCH', body: { name: n } }) : api(`/projects/${project.id}/groups`, { method: 'POST', body: { name: n } }), {
-    onSuccess: () => { toast(group ? 'Đã đổi tên nhóm' : 'Đã thêm nhóm'); onClose(); },
+  const save = useAction((n: string) => group ? api(`/projects/${project.id}/groups/${group.id}`, { method: 'PATCH', body: { name: n, getflyParent: parentRef.trim() === (linkedParent?.code ?? '') ? undefined : parentRef.trim() } }) : api(`/projects/${project.id}/groups`, { method: 'POST', body: { name: n, getflyParent: parentRef.trim() === (linkedParent?.code ?? '') ? undefined : parentRef.trim() } }), {
+    onSuccess: () => { toast(group ? 'Đã lưu nhóm' : 'Đã thêm nhóm'); onClose(); },
   });
   const remove = useAction((keep: boolean) => api(`/projects/${project.id}/groups/${group!.id}${keep ? '?keepTasks=1' : ''}`, { method: 'DELETE' }), { onSuccess: () => { toast('Đã xoá nhóm'); onClose(); } });
   const del = async (keep: boolean) => {
@@ -479,6 +481,7 @@ function GroupSheet({ open, onClose, project, group, confirm, onSort }: {
   };
   return (
     <Sheet
+      wide
       open={open}
       onClose={onClose}
       title={group ? 'Nhóm việc' : 'Thêm nhóm việc'}
@@ -502,6 +505,10 @@ function GroupSheet({ open, onClose, project, group, confirm, onSort }: {
         <Field label="Tên nhóm" hint="VD: Thiết kế, Lập trình, Kiểm thử — mỗi nhóm là một giai đoạn hoặc hạng mục">
           <Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={160} autoFocus />
         </Field>
+        <Field label="Việc cha trên Getfly" hint="Dán link, id hoặc mã việc cha cho nhóm này. Để trống để bỏ qua nhóm khi đồng bộ.">
+          <Input value={parentRef} onChange={(e) => setParentRef(e.target.value)} maxLength={500} placeholder="https://…/#/tasks/?task_id=… hoặc CVI/…" />
+        </Field>
+        {linkedParent && <p className="mb-4 break-words text-[13px] text-muted">Đang gắn: {linkedParent.name} · {linkedParent.code}{linkedParent.projectName ? ` · ${linkedParent.projectName}` : ''}</p>}
       </form>
     </Sheet>
   );

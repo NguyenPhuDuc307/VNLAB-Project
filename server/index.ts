@@ -419,12 +419,12 @@ auth.patch('/projects/:id/getfly', requirePermission('project.project.write'), a
   }
   if (b.creatorId !== undefined) patch.getflyCreatorId = b.creatorId;
   if (b.groups !== undefined) {
-    const next = { ...(p.getflyGroups ?? {}) } as Record<string, { id: number; code: string; name: string }>;
+    const next = { ...(p.getflyGroups ?? {}) } as D.ProjectRow['getflyGroups'];
     for (const [gid, ref] of Object.entries(b.groups)) {
       await D.groupBelongs(p.id, gid);
       if (!ref) { delete next[gid]; continue; }
       const t = await findGetflyTask(ref);
-      next[gid] = { id: t.id, code: t.code, name: t.name };
+      next[gid] = { id: t.id, code: t.code, name: t.name, projectId: t.projectId, projectName: t.projectName };
     }
     patch.getflyGroups = sql.json(next);
   }
@@ -521,13 +521,14 @@ auth.delete('/projects/:id/members/:email', async (c) => {
 
 // ---- nhóm việc
 
-const groupSchema = z.object({ name: zText(160).min(1, 'Nhập tên nhóm') });
+const groupSchema = z.object({ name: zText(160).min(1, 'Nhập tên nhóm'), getflyParent: z.string().trim().max(500).optional() });
 
 auth.post('/projects/:id/groups', requirePermission('project.project.write'), async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
   D.editable(p);
   const b = await body(c, groupSchema);
-  return c.json(await D.createGroup(p.id, b.name), 201);
+  const parent = b.getflyParent ? await findGetflyTask(b.getflyParent) : undefined;
+  return c.json(await D.createGroup(p.id, b.name, parent), 201);
 });
 
 auth.patch('/projects/:id/groups/:gid', requirePermission('project.project.write'), async (c) => {
@@ -535,7 +536,10 @@ auth.patch('/projects/:id/groups/:gid', requirePermission('project.project.write
   D.editable(p);
   const b = await body(c, groupSchema.partial().extend({ collapsed: z.boolean().optional() }));
   if (!Object.keys(b).length) throw new HTTPException(400, { message: 'Không có gì để sửa' });
-  return c.json(await D.updateGroup(p.id, param(c, 'gid'), b));
+  const { getflyParent, ...patch } = b;
+  const current = p.getflyGroups?.[param(c, 'gid')];
+  const parent = getflyParent === undefined || getflyParent === current?.code ? undefined : getflyParent ? await findGetflyTask(getflyParent) : null;
+  return c.json(await D.updateGroup(p.id, param(c, 'gid'), patch, parent));
 });
 
 // ?keepTasks=1: giữ lại việc trong nhóm (chuyển thành "chưa phân nhóm"); mặc định xoá cả việc.

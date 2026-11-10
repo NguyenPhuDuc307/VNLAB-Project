@@ -24,7 +24,7 @@ export type ProjectRow = {
   getflyParentCode: string; getflyParentName: string; getflyProjectName: string; getflyUsers: Record<string, string>;
   getflySyncedAt: Date | null; getflyError: string | null;
   getflyParentId: number | null; getflyProjectId: string; getflyCreatorId: string;
-  getflyGroups: Record<string, { id: number; code: string; name: string }>;
+  getflyGroups: Record<string, { id: number; code: string; name: string; projectId?: string; projectName?: string }>;
 };
 export type Subtask = { id: string; name: string; assignee: string; progress: number };
 export type TaskRow = {
@@ -104,7 +104,7 @@ export const projectView = (p: ProjectRow) => ({
   getflyUsers: (p.getflyUsers ?? {}) as Record<string, string>,
   getflySyncedAt: p.getflySyncedAt ? new Date(p.getflySyncedAt).toISOString() : null, getflyError: p.getflyError ?? null,
   getflyParentId: p.getflyParentId == null ? null : Number(p.getflyParentId), getflyProjectId: p.getflyProjectId ?? '', getflyCreatorId: p.getflyCreatorId ?? '',
-  getflyGroups: (p.getflyGroups ?? {}) as Record<string, { id: number; code: string; name: string }>,
+  getflyGroups: (p.getflyGroups ?? {}) as ProjectRow['getflyGroups'],
 });
 
 export const taskView = (t: Record<string, unknown>) => ({
@@ -237,11 +237,17 @@ export async function createProject(ownerId: string, b: ProjectInput) {
 
 // ---------------------------------------------------------------- ghi: nhóm việc
 
-export async function createGroup(projectId: string, name: string) {
-  const [g] = await sql<{ id: string; name: string; sort: number; collapsed: boolean }[]>`
-    insert into task_groups (project_id, name, sort)
-    values (${projectId}, ${name}, (select coalesce(max(sort), -1) + 1 from task_groups where project_id = ${projectId}))
-    returning id, name, sort, collapsed`;
+type GetflyGroupParent = ProjectRow['getflyGroups'][string];
+
+export async function createGroup(projectId: string, name: string, getflyParent?: GetflyGroupParent | null) {
+  const g = await sql.begin(async (tx) => {
+    const [g] = await tx<{ id: string; name: string; sort: number; collapsed: boolean }[]>`
+      insert into task_groups (project_id, name, sort)
+      values (${projectId}, ${name}, (select coalesce(max(sort), -1) + 1 from task_groups where project_id = ${projectId}))
+      returning id, name, sort, collapsed`;
+    if (getflyParent) await tx`update projects set getfly_groups = coalesce(getfly_groups, '{}'::jsonb) || ${tx.json({ [g.id]: getflyParent })}::jsonb where id = ${projectId}`;
+    return g;
+  });
   await touch(projectId);
   return g;
 }
@@ -423,9 +429,17 @@ export async function removeMember(p: ProjectRow, email: string, selfId?: string
 }
 
 /** Đổi tên / thu gọn nhóm. */
-export async function updateGroup(projectId: string, groupId: string, patch: { name?: string; collapsed?: boolean }) {
-  const [g] = await sql`update task_groups set ${sql(patch)} where id = ${groupId} and project_id = ${projectId} returning id, name, sort, collapsed`;
-  if (!g) throw notFound();
+export async function updateGroup(projectId: string, groupId: string, patch: { name?: string; collapsed?: boolean }, getflyParent?: GetflyGroupParent | null) {
+  const g = await sql.begin(async (tx) => {
+    const [existing] = await tx`select id, name, sort, collapsed from task_groups where id = ${groupId} and project_id = ${projectId} for update`;
+    if (!existing) throw notFound();
+    const [g] = Object.keys(patch).length ? await tx`update task_groups set ${tx(patch)} where id = ${groupId} and project_id = ${projectId} returning id, name, sort, collapsed` : [existing];
+    if (getflyParent !== undefined) {
+      if (getflyParent) await tx`update projects set getfly_groups = coalesce(getfly_groups, '{}'::jsonb) || ${tx.json({ [groupId]: getflyParent })}::jsonb where id = ${projectId}`;
+      else await tx`update projects set getfly_groups = coalesce(getfly_groups, '{}'::jsonb) - ${groupId} where id = ${projectId}`;
+    }
+    return g;
+  });
   await touch(projectId);
   return g as { id: string; name: string; sort: number; collapsed: boolean };
 }

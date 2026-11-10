@@ -100,11 +100,11 @@ tạo/chia sẻ sheet, tự đồng bộ), test với Google API giả ở `serv
 
 ## Đồng bộ Getfly CRM (một chiều app → Getfly, bấm nút)
 
-`server/getfly.ts` dùng API Getfly **v3** (acs.getflycrm.com không có v6.1; cách gọi đã kiểm chứng trên hệ thống thật, ghi đầu file) với `X-API-KEY`. Mỗi dự án đặt một **việc cha** trên Getfly
-(dán link `#/tasks/?…task_id=…`, id hoặc mã việc; app tra ra mã + tên dự án Getfly). Bấm “Đồng bộ
-Getfly” (hoặc MCP `sync_getfly`): việc mới → tạo dưới việc cha, task con → việc con dưới việc tương ứng,
-việc đã đổi → sửa (so băm nội dung đã gửi, không gửi thừa), tiến độ 100% → chỉ ghi chú trong mô tả (API v3 không cho đánh dấu hoàn thành), việc đã xoá →
-xoá trên Getfly. Liên kết lưu ở `getfly_links`. Người phụ trách ghép sang id người dùng Getfly (chọn từ danh sách); phải chọn người tạo việc (Getfly bắt buộc).
+`server/getfly.ts` dùng API Getfly **v3** với `X-API-KEY`. Mỗi nhóm gắn một **việc cha riêng** trên Getfly ngay trong hộp sửa nhóm (dán link `#/tasks/?…task_id=…`, id hoặc mã việc).
+Bấm “Đồng bộ Getfly” (hoặc MCP `sync_getfly`): việc chính được tạo dưới cha của nhóm, dùng dự án Getfly của cha đó. Chỉ đồng bộ nhóm đã gắn cha; báo các nhóm chưa gắn và việc chưa phân nhóm.
+Không tạo, sửa hay tự xoá task con trên Getfly; các bản task con đã đồng bộ trước đây được giữ nguyên. Lệnh gỡ toàn bộ khỏi Getfly vẫn xoá mọi việc app từng tạo sau khi xác nhận.
+Việc chính đã đổi được sửa theo băm nội dung, việc chính đã xoá được xoá trên Getfly. Không gửi ghi chú; tiến độ 100% chỉ nhắc đánh dấu hoàn thành tay. Liên kết lưu ở `getfly_links`.
+Người phụ trách ghép sang id người dùng Getfly; phải chọn người tạo việc. Request được giãn cách, lưu đệm tra cha và thử lại có chờ khi Getfly giới hạn số yêu cầu.
 Cấu hình máy chủ: `./scripts/getfly-setup.sh` (ghi `GETFLY_BASE_URL`, `GETFLY_API_KEY` vào `.env` trên VPS).
 
 ## Chạy local
