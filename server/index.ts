@@ -752,6 +752,11 @@ app.route('/api', auth);
 // ---------------------------------------------------------------- static SPA
 
 app.get('/healthz', (c) => c.text('ok'));
+// Client MCP (Codex, SDK MCP) gặp 401 ở /mcp sẽ dò OAuth ở /.well-known/…. Trả
+// trang SPA với 200 ở đây là bảo chúng "có OAuth, cấu hình đây" rồi chúng vỡ
+// khi parse JSON ("SDK auth failed: JSON Parse error"). /mcp chỉ nhận token
+// vpj_… dán tay, không có OAuth -> nói thẳng là không có.
+app.all('/.well-known/*', (c) => c.json({ error: 'not_found' }, 404));
 app.use('/assets/*', async (c, next) => {
   await next();
   if (c.res.status === 200) c.header('Cache-Control', 'public, max-age=31536000, immutable');
