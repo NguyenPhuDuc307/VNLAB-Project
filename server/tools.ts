@@ -832,7 +832,7 @@ TOOLS.unsync_getfly = {
 
 TOOLS.sync_getfly = {
   title: 'Đồng bộ sang Getfly',
-  description: 'Đẩy việc của dự án sang Getfly CRM: tạo việc mới, sửa việc đã đổi, xoá việc đã xoá (việc 100% chỉ được ghi chú — API Getfly không cho đánh dấu hoàn thành). Task con thành việc con dưới việc tương ứng. Như bấm nút "Đồng bộ Getfly".',
+  description: 'Đẩy việc của dự án sang Getfly CRM: tạo việc mới, sửa việc đã đổi, xoá việc đã xoá. Không đồng bộ tiến độ hay trạng thái hoàn thành (API Getfly không cho). Task con thành việc con dưới việc tương ứng. Như bấm nút "Đồng bộ Getfly".',
   input: z.object({ ...projectRef }),
   write: true, destructive: false, perm: 'project.project.write',
   run: async (user, a: { projectId?: string; project?: string }) => {

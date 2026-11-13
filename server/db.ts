@@ -271,6 +271,8 @@ const MIGRATIONS: string[] = [
   alter table tasks add column phase_id uuid references phases(id) on delete set null;
   create index on tasks (phase_id);
   `,
+  // 17: bỏ hẳn đồng bộ trạng thái hoàn thành sang Getfly (API không cho) — cột không còn dùng.
+  `alter table getfly_links drop column if exists completed;`,
 ];
 
 export async function migrate() {

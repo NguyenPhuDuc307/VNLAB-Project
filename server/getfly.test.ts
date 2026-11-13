@@ -147,7 +147,7 @@ test('Getfly: cha riêng theo nhóm, bỏ qua mục chưa gắn, giữ liên k�
     // Bản task con từ lần đồng bộ cũ không được sửa hay xoá khi ngừng đồng bộ task con.
     const legacySubId = t1.subtasks[0].id;
     gf.tasks.set(9900, { task_id: '9900', task_code: 'CVI/LEGACY/SUB', task_name: 'Task con cũ', task_parent: parent.task_id });
-    await mem.db.query(`insert into getfly_links (project_id, local_id, parent_local, getfly_code, getfly_id, hash, completed) values ($1, $2, $3, $4, 9900, 'legacy', false)`, [p.id, legacySubId, t1.id, 'CVI/LEGACY/SUB']);
+    await mem.db.query(`insert into getfly_links (project_id, local_id, parent_local, getfly_code, getfly_id, hash) values ($1, $2, $3, $4, 9900, 'legacy')`, [p.id, legacySubId, t1.id, 'CVI/LEGACY/SUB']);
     // Bỏ gắn cha không làm xoá bản Getfly đã có.
     await R('PATCH', `/projects/${p.id}/groups/${grp.id}`, { getflyParent: '' });
     const frozen = await run(`/projects/${p.id}/getfly/sync`);
@@ -166,7 +166,7 @@ test('Getfly: cha riêng theo nhóm, bỏ qua mục chưa gắn, giữ liên k�
     await R('DELETE', `/projects/${p.id}/tasks/${t2.id}`);
     await R('DELETE', `/projects/${p.id}/tasks/${warehouse.id}`);
     const s3 = await run(`/projects/${p.id}/getfly/sync`);
-    assert.deepEqual([s3.updated, s3.completed, s3.deleted, s3.errors], [1, 0, 1, []]); // cập nhật việc chính và danh sách task con trong mô tả
+    assert.deepEqual([s3.updated, s3.deleted, s3.errors], [1, 1, []]); // cập nhật việc chính và danh sách task con trong mô tả
     assert.equal(gf.tasks.get(Number(parent.task_id)).task_name, 'Màn hình giao hàng (bản 2)');
     const updatedDescription = gf.tasks.get(Number(parent.task_id)).task_description;
     assert.match(updatedDescription, /Nội dung nhập tay trên Getfly/);
@@ -174,8 +174,7 @@ test('Getfly: cha riêng theo nhóm, bỏ qua mục chưa gắn, giữ liên k�
     assert.equal((updatedDescription.match(/subtasks:start/g) ?? []).length, 1);
     assert.ok(!updatedDescription.includes('Kiểm tra'));
 
-    assert.ok(s3.warnings.some((w: string) => /đánh dấu tay/.test(w)));
-    assert.ok(s3.warnings.some((w: string) => w.includes('Màn hình giao hàng (bản 2)')));
+    assert.ok(!s3.warnings.some((w: string) => /hoàn thành|đánh dấu tay/.test(w)));
     assert.notEqual(gf.tasks.get(Number(parent.task_id)).task_status, '6');
     assert.ok(![...gf.tasks.values()].some((t) => t.task_name === 'Việc không có ngày'));
     assert.ok((await R('GET', `/projects/${p.id}`)).body.getflySyncedAt);

@@ -5,8 +5,9 @@
 //          project_id, task_parent (id việc cha), task_type, task_weight, task_creator (bắt buộc), task_receiver } } -> { task_id }.
 //   - Sửa: PUT /api/v3/tasks { task_code, task_info: {...} }. Xoá: DELETE /api/v3/tasks { task_code }.
 //   - Người liên quan: people_involved: [id người dùng] nằm ngoài task_info, nhận cả khi tạo lẫn khi sửa.
-//   - KHÔNG có cách đánh dấu hoàn thành qua API (task_progress / task_status đều bị từ chối): việc 100% chỉ được
-//     báo để người dùng đánh dấu tay. Mô tả chỉ bổ sung danh sách task con, không gửi ghi chú nội bộ.
+//   - Không đồng bộ tiến độ / trạng thái hoàn thành: API v3 từ chối task_progress / task_status, không có lệnh
+//     hoàn thành, còn /task/process của web chỉ nhận token đăng nhập (đã thử 13/11/2026). Đã bỏ hẳn phần này.
+//     Mô tả chỉ bổ sung danh sách task con, không gửi ghi chú nội bộ.
 // Mỗi nhóm gắn một việc cha có sẵn trên Getfly -> việc chính; không đồng bộ task con.
 // Chỉ đồng bộ nhóm đã gắn cha; giữ nguyên các liên kết của mục bị bỏ qua.
 // Liên kết lưu ở getfly_links (id + mã Getfly + băm nội dung đã gửi) để không tạo trùng / gửi thừa.
@@ -115,7 +116,7 @@ export async function getflyUsers() {
   return rows;
 }
 
-type Link = { localId: string; parentLocal: string | null; getflyCode: string; getflyId: number | null; hash: string; completed: boolean };
+type Link = { localId: string; parentLocal: string | null; getflyCode: string; getflyId: number | null; hash: string };
 export type GetflyScope = { groupId?: string; taskId?: string };
 /** parentLocal "g:<groupId>" hoặc "g:<phaseId>:<groupId>" (việc cha gắn riêng theo phase) có thuộc nhóm này không. */
 const inGroup = (parentLocal: string | null, groupId: string) => !!parentLocal && (parentLocal === `g:${groupId}` || parentLocal.endsWith(`:${groupId}`));
@@ -151,8 +152,8 @@ async function resolveLinkCodes(projectId: string, links: Link[]) {
   for (const l of resolved) await sql`update getfly_links set getfly_code = ${l.getflyCode} where project_id = ${projectId} and local_id = ${l.localId} and getfly_id = ${l.getflyId}`;
 }
 
-type Item = { localId: string; parentLocal: string | null; info: Json; done: boolean; label: string; people: string[] };
-export type GetflyResult = { created: number; updated: number; completed: number; deleted: number; unchanged: number; errors: string[]; warnings: string[]; syncedAt: string };
+type Item = { localId: string; parentLocal: string | null; info: Json; label: string; people: string[] };
+export type GetflyResult = { created: number; updated: number; deleted: number; unchanged: number; errors: string[]; warnings: string[]; syncedAt: string };
 
 const when = (d: string | null, time: string) => (d ? `${d} ${time}` : undefined);
 const hashOf = (o: unknown) => createHash('sha1').update(JSON.stringify(o)).digest('hex');
@@ -274,9 +275,8 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
       // ("Thời gian bắt đầu công việc…"). Báo thẳng cách sửa; liên kết cũ vẫn giữ.
       if (!t.startDate && !t.endDate) { warnings.push(`Bỏ qua việc ${t.name}: chưa có ngày bắt đầu/kết thúc (Getfly bắt buộc). Nhập ngày rồi đồng bộ lại.`); continue; }
       const projectInfo = { project_id: parent.projectId || undefined };
-      const done = t.progress >= 100;
       items.push({
-        localId: t.id, parentLocal: gKey(key), done, label: t.name,
+        localId: t.id, parentLocal: gKey(key), label: t.name,
         people: peopleOf(t.assignee, t.support),
         info: {
           ...common,
@@ -292,17 +292,17 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
         },
       });
     }
-    const links = new Map((await sql<Link[]>`select local_id, parent_local, getfly_code, getfly_id, hash, completed from getfly_links where project_id = ${projectId}`).map((l) => [l.localId, { ...l, getflyId: l.getflyId == null ? null : Number(l.getflyId) }]));
+    const links = new Map((await sql<Link[]>`select local_id, parent_local, getfly_code, getfly_id, hash from getfly_links where project_id = ${projectId}`).map((l) => [l.localId, { ...l, getflyId: l.getflyId == null ? null : Number(l.getflyId) }]));
     const isProtected = await protectedTasks([...links.values()]);
     await resolveLinkCodes(projectId, [...links.values()].filter((l) => selected.some((t) => t.id === l.localId)));
-    const r: GetflyResult = { created: 0, updated: 0, completed: 0, deleted: 0, unchanged: 0, errors: [], warnings, syncedAt: '' };
+    const r: GetflyResult = { created: 0, updated: 0, deleted: 0, unchanged: 0, errors: [], warnings, syncedAt: '' };
     const save = async (l: Link) => {
       links.set(l.localId, l);
       await sql`
-        insert into getfly_links (project_id, local_id, parent_local, getfly_code, getfly_id, hash, completed, synced_at)
-        values (${projectId}, ${l.localId}, ${l.parentLocal}, ${l.getflyCode}, ${l.getflyId}, ${l.hash}, ${l.completed}, now())
+        insert into getfly_links (project_id, local_id, parent_local, getfly_code, getfly_id, hash, synced_at)
+        values (${projectId}, ${l.localId}, ${l.parentLocal}, ${l.getflyCode}, ${l.getflyId}, ${l.hash}, now())
         on conflict (project_id, local_id) do update set parent_local = excluded.parent_local, getfly_code = excluded.getfly_code, getfly_id = excluded.getfly_id,
-          hash = excluded.hash, completed = excluded.completed, synced_at = now()`;
+          hash = excluded.hash, synced_at = now()`;
     };
 
     // 1) Chỉ xoá các việc chính đã xoá bên VNLab, thuộc nhóm đang được đồng bộ.
@@ -378,7 +378,7 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
           const res = await gf<{ task_id?: number | string }>('POST', '/tasks', { ...people, task_info: { ...info, task_creator: p.getflyCreatorId } });
           const id = Number(res.task_id);
           if (!id) throw new GetflyError(502, { message: 'Getfly không trả id việc' });
-          link = { localId: it.localId, parentLocal: it.parentLocal, getflyCode: '', getflyId: id, hash, completed: false };
+          link = { localId: it.localId, parentLocal: it.parentLocal, getflyCode: '', getflyId: id, hash };
           pendingCode.set(id, link);
           r.created++;
         } else if (cur.hash !== hash) {
@@ -391,8 +391,6 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
           link = { ...cur, parentLocal: it.parentLocal, hash };
           r.updated++;
         } else { link = cur; r.unchanged++; }
-        // API v3 chưa cập nhật được trạng thái: không ghi nhận thành công giả.
-        if (link.completed) link = { ...link, completed: false };
         await save(link);
       } catch (err) {
         r.errors.push(`${it.label}: ${(err as Error).message}`);
@@ -408,8 +406,6 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
       for (const l of links.values()) if (l.getflyCode && l.getflyId) await save(l);
       if (pendingCode.size) r.warnings.push(`${pendingCode.size} việc vừa tạo chưa tra được mã trên Getfly — lần đồng bộ sau sẽ thử lại`);
     }
-    const pendingCompletion = items.filter((it) => it.done);
-    if (pendingCompletion.length) r.warnings.push(`Chưa cập nhật trạng thái hoàn thành trên Getfly cho ${pendingCompletion.length} việc: ${pendingCompletion.map((it) => it.label).join('; ')}. API hiện tại chưa hỗ trợ — cần đánh dấu tay trên Getfly.`);
     const [row] = await sql<{ getflySyncedAt: Date }[]>`
       update projects set getfly_synced_at = now(), getfly_error = ${r.errors.length ? r.errors.slice(0, 5).join('\n') : null}
       where id = ${projectId} returning getfly_synced_at`;
@@ -432,7 +428,7 @@ export async function unsyncGetfly(projectId: string, onProgress: Progress = () 
   if (running.has(projectId)) throw new GetflyError(409, { message: 'Đang đồng bộ Getfly cho dự án này, đợi chút' });
   running.add(projectId);
   try {
-    const allLinks = (await sql<Link[]>`select local_id, parent_local, getfly_code, getfly_id, hash, completed from getfly_links where project_id = ${projectId}`)
+    const allLinks = (await sql<Link[]>`select local_id, parent_local, getfly_code, getfly_id, hash from getfly_links where project_id = ${projectId}`)
       .map((l) => ({ ...l, getflyId: l.getflyId == null ? null : Number(l.getflyId) }));
     const bundle = await D.projectBundle(projectId);
     const selectedIds = new Set(bundle.tasks.filter((t) => inScope(t, scope)).map((t) => t.id));

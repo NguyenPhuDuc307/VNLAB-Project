@@ -4,12 +4,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { api, useAction, type ProjectDetail } from '../lib/api';
 import { Button, Field, Input, Sheet, useFeedback, cx } from './ui';
 
-export type GetflyResult = { created: number; updated: number; completed: number; deleted: number; unchanged: number; errors: string[]; warnings: string[]; syncedAt: string };
+export type GetflyResult = { created: number; updated: number; deleted: number; unchanged: number; errors: string[]; warnings: string[]; syncedAt: string };
 export const useGetflyStatus = () => useQuery({ queryKey: ['getfly-status'], queryFn: () => api<{ configured: boolean; host: string | null }>('/getfly/status'), staleTime: 300_000 });
 
 /** Tóm tắt kết quả đồng bộ thành một câu cho toast. */
 export function getflySummary(r: GetflyResult) {
-  const parts = [r.created && `tạo ${r.created}`, r.updated && `sửa ${r.updated}`, r.completed && `hoàn thành ${r.completed}`, r.deleted && `xoá ${r.deleted}`].filter(Boolean);
+  const parts = [r.created && `tạo ${r.created}`, r.updated && `sửa ${r.updated}`, r.deleted && `xoá ${r.deleted}`].filter(Boolean);
   return parts.length ? `Getfly: ${parts.join(', ')} việc` : r.warnings.length ? `Getfly: ${r.warnings.length} lưu ý khi đồng bộ` : 'Getfly đã khớp, không có gì thay đổi';
 }
 
@@ -156,7 +156,7 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
         <p className="text-[13px] font-bold">Getfly CRM</p>
         {status.data?.configured && ready && <Button size="sm" variant="secondary" onClick={gj.sync} disabled={gj.running || !canEdit}><CloudArrowUp size={15} className={gj.running ? 'animate-pulse' : undefined} /> {gj.running ? `${gj.job?.kind === 'unsync' ? 'Đang xoá' : 'Đang đồng bộ'}${gj.progress ? ` ${gj.progress}` : '…'}` : 'Đồng bộ ngay'}</Button>}
       </div>
-      <p className="mb-3 mt-0.5 text-[12px] text-muted">Bấm đồng bộ để tạo việc mới, sửa việc đã đổi và xoá việc đã xoá trên Getfly. Mỗi nhóm gắn một việc cha riêng trên Getfly → việc chính. Chỉ đồng bộ nhóm đã gắn cha; task con được ghi vào mô tả của việc chính, không tạo việc riêng. Không gửi ghi chú. Việc xong 100% thì anh đánh dấu hoàn thành tay trên Getfly (API không cho).</p>
+      <p className="mb-3 mt-0.5 text-[12px] text-muted">Bấm đồng bộ để tạo việc mới, sửa việc đã đổi và xoá việc đã xoá trên Getfly. Mỗi nhóm gắn một việc cha riêng trên Getfly → việc chính. Chỉ đồng bộ nhóm đã gắn cha; task con được ghi vào mô tả của việc chính, không tạo việc riêng. Không gửi ghi chú, tiến độ hay trạng thái hoàn thành — cập nhật các mục đó trên Getfly.</p>
       {!status.data?.configured ? (
         <p className="rounded-xl bg-fill px-3 py-2 text-[12px] text-muted">Máy chủ chưa có thông tin Getfly. Chạy <code>./scripts/getfly-setup.sh</code> để lưu API key lên VPS.</p>
       ) : (
