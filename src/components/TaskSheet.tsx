@@ -153,7 +153,9 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, phaseI
             </Field>
           </div>
           <Field label="Ghi chú">
-            <Textarea value={f.note ?? ''} onChange={(e) => setF({ ...f, note: e.target.value })} maxLength={4000} rows={3} />
+            {/* Ghi chú việc thường dài nhiều đoạn: giãn theo nội dung (6–30 dòng), quá thì cuộn. */}
+            <Textarea value={f.note ?? ''} onChange={(e) => setF({ ...f, note: e.target.value })} maxLength={4000} className="leading-relaxed"
+              rows={Math.min(30, Math.max(6, (f.note ?? '').split('\n').reduce((n, line) => n + Math.max(1, Math.ceil(line.length / 90)), 0) + 1))} />
           </Field>
           {task && (
             <div className="mb-3 rounded-2xl border border-line bg-card p-3 text-[13px]">
