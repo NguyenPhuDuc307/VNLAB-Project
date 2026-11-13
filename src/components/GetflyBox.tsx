@@ -2,7 +2,7 @@ import { CloudArrowUp, Trash } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { api, useAction, type ProjectDetail } from '../lib/api';
-import { Button, Field, Input, useFeedback, cx } from './ui';
+import { Button, Field, Input, Sheet, useFeedback, cx } from './ui';
 
 export type GetflyResult = { created: number; updated: number; completed: number; deleted: number; unchanged: number; errors: string[]; warnings: string[]; syncedAt: string };
 export const useGetflyStatus = () => useQuery({ queryKey: ['getfly-status'], queryFn: () => api<{ configured: boolean; host: string | null }>('/getfly/status'), staleTime: 300_000 });
@@ -14,6 +14,44 @@ export function getflySummary(r: GetflyResult) {
 }
 
 export type GetflyScope = { groupId?: string; taskId?: string };
+
+// Toast chỉ chứa được một dòng; danh sách đủ lỗi/lưu ý mở trong GetflyReport.
+const REPORT_EVENT = 'getfly-report';
+type ReportDetail = { projectId: string; result: GetflyResult };
+const openGetflyReport = (projectId: string, result: GetflyResult) =>
+  window.dispatchEvent(new CustomEvent<ReportDetail>(REPORT_EVENT, { detail: { projectId, result } }));
+
+/** Bảng kết quả đồng bộ Getfly gần nhất: mọi lỗi và lưu ý, đọc đủ để sửa. */
+export function GetflyReport({ projectId }: { projectId: string }) {
+  const [result, setResult] = useState<GetflyResult | null>(null);
+  useEffect(() => {
+    const on = (e: Event) => { const d = (e as CustomEvent<ReportDetail>).detail; if (d.projectId === projectId) setResult(d.result); };
+    window.addEventListener(REPORT_EVENT, on);
+    return () => window.removeEventListener(REPORT_EVENT, on);
+  }, [projectId]);
+  const r = result;
+  return (
+    <Sheet open={!!r} onClose={() => setResult(null)} title="Kết quả đồng bộ Getfly" footer={<Button variant="secondary" block onClick={() => setResult(null)}>Đóng</Button>}>
+      {r && (
+        <div className="space-y-4 pb-2 text-[14px]">
+          <p className="text-ink-2">{getflySummary(r)}{r.syncedAt ? ` · ${new Date(r.syncedAt).toLocaleString('vi-VN')}` : ''}</p>
+          {r.errors.length > 0 && (
+            <section>
+              <h3 className="mb-1.5 text-[12px] font-bold uppercase tracking-wide text-danger">{r.errors.length} lỗi</h3>
+              <ul className="space-y-1.5">{r.errors.map((e, i) => <li key={i} className="select-text break-words rounded-xl bg-danger-soft px-3 py-2">{e}</li>)}</ul>
+            </section>
+          )}
+          {r.warnings.length > 0 && (
+            <section>
+              <h3 className="mb-1.5 text-[12px] font-bold uppercase tracking-wide text-muted">{r.warnings.length} lưu ý</h3>
+              <ul className="space-y-1.5">{r.warnings.map((w, i) => <li key={i} className="select-text break-words rounded-xl bg-fill px-3 py-2">{w}</li>)}</ul>
+            </section>
+          )}
+        </div>
+      )}
+    </Sheet>
+  );
+}
 
 export type GetflyJob = {
   id: string; kind: 'sync' | 'unsync'; scope?: GetflyScope; status: 'running' | 'done' | 'error'; done: number; total: number;
@@ -50,7 +88,10 @@ export function useGetflyJob(projectId: string) {
       toast(r.errors.length ? `Đã xoá ${r.deleted} việc, ${r.errors.length} lỗi` : `Đã xoá ${r.deleted} việc khỏi Getfly`, r.errors.length ? 'error' : 'ok', r.errors.length ? { meta: r.errors[0] } : undefined);
     } else {
       const r = j.result as GetflyResult;
-      toast(getflySummary(r), r.errors.length ? 'error' : 'ok', r.errors.length || r.warnings.length ? { title: r.errors.length ? `${r.errors.length} việc lỗi` : 'Lưu ý', meta: (r.errors[0] ?? r.warnings[0]).slice(0, 160) } : undefined);
+      toast(getflySummary(r), r.errors.length ? 'error' : 'ok', r.errors.length || r.warnings.length ? {
+        title: r.errors.length ? `${r.errors.length} việc lỗi` : 'Lưu ý', meta: (r.errors[0] ?? r.warnings[0]).slice(0, 160),
+        action: { label: 'Xem chi tiết', onClick: () => openGetflyReport(projectId, r) },
+      } : undefined);
     }
     void qc.invalidateQueries({ queryKey: ['project', projectId] });
   }, [job.data, projectId, qc, toast]);

@@ -102,14 +102,14 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, phaseI
         )
       }
     >
-      <form id="task-form" onSubmit={submit} className="pt-1">
+      <form id="task-form" onSubmit={submit} className="form-dense pt-1">
         <fieldset disabled={readOnly} className="min-w-0 border-0 p-0">
           <Field label="Tên việc">
             <Textarea rows={2} value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required maxLength={300} autoFocus={!task} placeholder="VD: Thiết kế màn hình đăng nhập" />
           </Field>
           {!readOnly && f.name.includes('\n') && <Button className="mb-3" type="button" size="sm" variant="ghost" onClick={splitName}>Tách các dòng thành task con</Button>}
           <SubtasksEditor items={children} onChange={setChildren} readOnly={readOnly} />
-          <div className="grid gap-x-3 sm:grid-cols-2">
+          <div className="grid gap-x-3 sm:grid-cols-2 md:grid-cols-3">
             {(project.phases?.length ?? 0) > 0 && (
               <Field label="Phase">
                 <Select value={f.phaseId ?? ''} onChange={(e) => setF({ ...f, phaseId: e.target.value || null })}>
@@ -131,9 +131,9 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, phaseI
               </Select>
             </Field>
             <Field label="Tiến độ" hint={<span className="num">{progress}%{children.length ? " · Tự tổng hợp" : ""}</span>}>
-              <div className="flex h-11 items-center gap-3">
+              <div className="flex h-11 items-center gap-2">
                 <input type="range" min={0} max={100} step={5} disabled={children.length > 0} value={progress} onChange={(e) => setF({ ...f, progress: Number(e.target.value) })} className="w-full accent-[var(--primary)]" aria-label="Tiến độ" />
-                <Input type="number" min={0} max={100} disabled={children.length > 0} value={progress} onChange={(e) => setF({ ...f, progress: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })} className="num w-20 text-center" />
+                <Input type="number" min={0} max={100} disabled={children.length > 0} value={progress} onChange={(e) => setF({ ...f, progress: Math.max(0, Math.min(100, Number(e.target.value) || 0)) })} className="num w-16 shrink-0 text-center" />
               </div>
             </Field>
             <Field label="Phụ trách">

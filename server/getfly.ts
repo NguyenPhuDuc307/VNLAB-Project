@@ -270,6 +270,9 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
       const key = keyOf(t)!;
       const parent = mapped[key];
       if (!parent?.id || unavailable.has(key)) continue;
+      // Getfly bắt buộc thời gian bắt đầu/kết thúc: gửi đi chỉ để nhận lỗi khó hiểu
+      // ("Thời gian bắt đầu công việc…"). Báo thẳng cách sửa; liên kết cũ vẫn giữ.
+      if (!t.startDate && !t.endDate) { warnings.push(`Bỏ qua việc ${t.name}: chưa có ngày bắt đầu/kết thúc (Getfly bắt buộc). Nhập ngày rồi đồng bộ lại.`); continue; }
       const projectInfo = { project_id: parent.projectId || undefined };
       const done = t.progress >= 100;
       items.push({

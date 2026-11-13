@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Gantt, spanOf, UNGROUPED, type GanttView, type MenuTarget } from '../components/Gantt';
 import type { MenuItem } from '../components/ContextMenu';
-import { GetflyBox, useGetflyJob, useGetflyStatus, type GetflyScope } from '../components/GetflyBox';
+import { GetflyBox, GetflyReport, useGetflyJob, useGetflyStatus, type GetflyScope } from '../components/GetflyBox';
 import { PhaseBar } from '../components/PhaseBar';
 import { ImportSheet } from '../components/ImportSheet';
 import { MembersSheet, ProjectSheet } from '../components/ProjectSheet';
@@ -484,6 +484,7 @@ export function ProjectPage() {
       <Sheet wide open={getflyOpen} onClose={() => setGetflyOpen(false)} title="Đồng bộ Getfly CRM">
         <GetflyBox project={p} canEdit={editor && can('project.project.write')} />
       </Sheet>
+      <GetflyReport projectId={p.id} />
       <ProjectSheet open={settings} onClose={() => setSettings(false)} project={p} onImport={canTask && can('project.data.import') ? () => { setSettings(false); setImportOpen(true); } : undefined} />
       <MembersSheet open={members} onClose={() => setMembers(false)} project={p} />
       <ImportSheet open={importOpen} onClose={() => setImportOpen(false)} project={p} />

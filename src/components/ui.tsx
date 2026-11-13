@@ -284,7 +284,7 @@ export function Chip({ children, tone = 'neutral', className }: { children: Reac
 
 // ------------------------------------------------------------------ Toast & confirm
 
-type ToastOpts = { title?: string; meta?: string; icon?: ReactNode; duration?: number };
+type ToastOpts = { title?: string; meta?: string; icon?: ReactNode; duration?: number; action?: { label: string; onClick: () => void } };
 type ToastT = { id: number; text: string; tone: 'ok' | 'error'; leaving?: boolean; duration: number } & ToastOpts;
 type ConfirmReq = { title: string; desc?: ReactNode; ok?: string; danger?: boolean; resolve: (v: boolean) => void };
 const FeedbackCtx = createContext<{ toast: (text: string, tone?: 'ok' | 'error', opts?: ToastOpts) => void; confirm: (o: Omit<ConfirmReq, 'resolve'>) => Promise<boolean> }>(null!);
@@ -298,7 +298,8 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
   }, []);
   const toast = useCallback((text: string, tone: 'ok' | 'error' = 'ok', opts: ToastOpts = {}) => {
     const id = Date.now() + Math.random();
-    const duration = opts.duration ?? (tone === 'error' ? 5000 : opts.title ? 5000 : 3000);
+    // Có nút hành động thì để lâu hơn cho kịp bấm.
+    const duration = opts.duration ?? (opts.action ? 10000 : tone === 'error' ? 5000 : opts.title ? 5000 : 3000);
     setToasts((t) => [...t.slice(-3), { id, text, tone, duration, ...opts }]);
     setTimeout(() => dismiss(id), duration);
   }, [dismiss]);
@@ -319,6 +320,7 @@ export function FeedbackProvider({ children }: { children: ReactNode }) {
               {t.title && <p className="truncate text-[12px] font-bold uppercase tracking-wide text-[var(--toast-accent)]">{t.title}</p>}
               <p className="text-[13.5px] font-semibold leading-snug text-ink">{t.text}</p>
               {t.meta && <p className="mt-0.5 truncate text-[12px] text-muted">{t.meta}</p>}
+              {t.action && <button type="button" className="mt-1 text-[12.5px] font-bold text-primary hover:underline" onClick={() => { dismiss(t.id); t.action!.onClick(); }}>{t.action.label}</button>}
             </div>
             <button type="button" className="-mr-1 -mt-1 flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted hover:bg-fill hover:text-ink" aria-label="Đóng thông báo" onClick={() => dismiss(t.id)}><X size={13} weight="bold" /></button>
             <span className="toast-bar" aria-hidden="true" />

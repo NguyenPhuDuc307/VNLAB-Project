@@ -104,7 +104,7 @@ test('Getfly: cha riêng theo nhóm, bỏ qua mục chưa gắn, giữ liên k�
     const grp2 = (await R('POST', `/projects/${p.id}/groups`, { name: 'Kho' })).body;
     // Nhóm "Kho" gắn với việc có sẵn trên Getfly (id 9001) -> không tạo việc cho nhóm này.
     assert.equal((await R('PATCH', `/projects/${p.id}/getfly`, { groups: { [grp2.id]: '9001' } })).body.getflyGroups[grp2.id].code, 'CVI/X/1');
-    const warehouse = (await R('POST', `/projects/${p.id}/tasks`, { groupId: grp2.id, name: 'Nhập kho', note: 'Ghi chú kho' })).body;
+    const warehouse = (await R('POST', `/projects/${p.id}/tasks`, { groupId: grp2.id, name: 'Nhập kho', note: 'Ghi chú kho', startDate: '2026-11-10', endDate: '2026-11-12' })).body;
     const unlinked = (await R('POST', `/projects/${p.id}/groups`, { name: 'Chưa gắn cha' })).body;
     await R('POST', `/projects/${p.id}/tasks`, { groupId: unlinked.id, name: 'Chưa được đẩy', subtasks: [{ name: 'Con chưa được đẩy' }] });
     const t1 = (await R('POST', `/projects/${p.id}/tasks`, { groupId: grp.id, name: 'Màn hình giao hàng', assignee: 'Đức', support: 'Quyết, Người lạ', startDate: '2026-11-10', endDate: '2026-11-12', note: 'Ghi chú nội bộ không gửi', subtasks: [{ name: 'Danh sách chuyến', assignee: 'Quyết', progress: 0 }, { name: 'Kiểm tra <script> & dữ liệu', progress: 50 }] })).body;
@@ -222,9 +222,9 @@ test('Getfly theo phạm vi: menu nhóm / việc không ghi ngoài lựa chọn 
     await R('PATCH', `/projects/${p.id}/getfly`, { creatorId: '25' });
     const a = (await R('POST', `/projects/${p.id}/groups`, { name: 'Nhóm A', getflyParent: '8689' })).body;
     const b = (await R('POST', `/projects/${p.id}/groups`, { name: 'Nhóm B', getflyParent: '9001' })).body;
-    const a1 = (await R('POST', `/projects/${p.id}/tasks`, { groupId: a.id, name: 'A1' })).body;
-    const a2 = (await R('POST', `/projects/${p.id}/tasks`, { groupId: a.id, name: 'A2' })).body;
-    const b1 = (await R('POST', `/projects/${p.id}/tasks`, { groupId: b.id, name: 'B1' })).body;
+    const a1 = (await R('POST', `/projects/${p.id}/tasks`, { groupId: a.id, name: 'A1', startDate: '2026-11-10', endDate: '2026-11-12' })).body;
+    const a2 = (await R('POST', `/projects/${p.id}/tasks`, { groupId: a.id, name: 'A2', startDate: '2026-11-10', endDate: '2026-11-12' })).body;
+    const b1 = (await R('POST', `/projects/${p.id}/tasks`, { groupId: b.id, name: 'B1', startDate: '2026-11-10', endDate: '2026-11-12' })).body;
     assert.equal((await R('POST', `/projects/${p.id}/getfly/unsync`, { groupId: a.id, taskId: a1.id })).status, 400);
     assert.equal((await R('POST', `/projects/${p.id}/getfly/unsync`, { task: a1.id })).status, 400);
     assert.equal((await R('POST', `/projects/${p.id}/getfly/sync`, { taskId: crypto.randomUUID() })).status, 404);
@@ -286,8 +286,8 @@ test('Getfly theo phase: việc cha riêng cho "phase:nhóm" ưu tiên, không c
     const g = (await R('POST', `/projects/${p.id}/groups`, { name: 'Giao hàng' })).body;
     const t10 = (await R('POST', `/projects/${p.id}/phases`, { name: 'Tháng 10' })).body;
     const t11 = (await R('POST', `/projects/${p.id}/phases`, { name: 'Tháng 11' })).body;
-    await R('POST', `/projects/${p.id}/tasks`, { groupId: g.id, phaseId: t10.id, name: 'Việc T10' });
-    const v11 = (await R('POST', `/projects/${p.id}/tasks`, { groupId: g.id, phaseId: t11.id, name: 'Việc T11' })).body;
+    await R('POST', `/projects/${p.id}/tasks`, { groupId: g.id, phaseId: t10.id, name: 'Việc T10', startDate: '2026-11-10', endDate: '2026-11-12' });
+    const v11 = (await R('POST', `/projects/${p.id}/tasks`, { groupId: g.id, phaseId: t11.id, name: 'Việc T11', startDate: '2026-11-10', endDate: '2026-11-12' })).body;
     // Cha chung của nhóm = 9001; riêng tháng 11 = 8689.
     const cfg = await R('PATCH', `/projects/${p.id}/getfly`, { groups: { [g.id]: '9001', [`${t11.id}:${g.id}`]: '8689' } });
     assert.equal(cfg.status, 200, JSON.stringify(cfg.body));
