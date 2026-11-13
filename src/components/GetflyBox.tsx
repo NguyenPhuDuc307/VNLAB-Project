@@ -55,7 +55,12 @@ export function useGetflyJob(projectId: string) {
     void qc.invalidateQueries({ queryKey: ['project', projectId] });
   }, [job.data, projectId, qc, toast]);
   const start = useAction(({ kind, scope }: { kind: 'sync' | 'unsync'; scope?: GetflyScope }) => api<GetflyJob>(`/projects/${projectId}/getfly/${kind}`, { method: 'POST', body: scope ?? {} }), {
-    onSuccess: (j) => { watchingJobs.add(j.id); qc.setQueryData(key, j); },
+    // Báo ngay khi bấm: đồng bộ chạy nền vài chục giây, không báo gì là người dùng
+    // tưởng nút không ăn và bấm lại.
+    onSuccess: (j, v) => {
+      watchingJobs.add(j.id); qc.setQueryData(key, j);
+      if (j.status === 'running') toast(v.kind === 'unsync' ? 'Đang xoá khỏi Getfly…' : 'Đang đồng bộ lên Getfly…', 'ok', { meta: 'Xong sẽ báo kết quả ở đây. Tiến độ hiện cạnh nút đám mây.' });
+    },
   });
   const running = job.data?.status === 'running' || start.isPending;
   const progress = job.data?.status === 'running' && job.data.total ? `${job.data.done}/${job.data.total}` : '';

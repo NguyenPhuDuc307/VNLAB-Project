@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowSquareOut, ArrowUp, ArrowsClockwise, ArrowsDownUp, ArrowsInLineVertical, ArrowsOutLineVertical, CalendarBlank, CaretLeft, CheckCircle, ClockCounterClockwise, CloudArrowUp, Copy, CornersIn, CornersOut, CrosshairSimple, DownloadSimple, Flag, FolderPlus, FolderSimple, GearSix, ListPlus, Minus, PencilSimple, Percent, Plus, SortAscending, TableIcon, Tag, Trash, Users } from '@phosphor-icons/react';
+import { ArrowDown, ArrowSquareOut, ArrowUp, ArrowsClockwise, ArrowsDownUp, ArrowsInLineVertical, ArrowsOutLineVertical, CalendarBlank, CaretLeft, CheckCircle, CircleNotch, ClockCounterClockwise, CloudArrowUp, Copy, CornersIn, CornersOut, CrosshairSimple, DownloadSimple, Flag, FolderPlus, FolderSimple, GearSix, ListPlus, Minus, PencilSimple, Percent, Plus, SortAscending, TableIcon, Tag, Trash, Users } from '@phosphor-icons/react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Gantt, spanOf, UNGROUPED, type GanttView, type MenuTarget } from '../components/Gantt';
@@ -211,6 +211,11 @@ export function ProjectPage() {
             >
               <CloudArrowUp size={18} className={getflyJob.running ? 'animate-pulse text-primary' : undefined} />
             </IconButton>
+          )}
+          {getflyJob.running && (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[12px] font-semibold tabular-nums text-primary" role="status" aria-live="polite">
+              <CircleNotch size={13} className="animate-spin" /> Getfly {getflyJob.progress || '…'}
+            </span>
           )}
           {p.sheetUrl && editor && can('project.project.write') && (
             <IconButton className={tb} label="Đồng bộ Sheets" onClick={() => syncSheet.mutate()} disabled={syncSheet.isPending} title={p.sheetSyncedAt ? `Đồng bộ Sheets · lần cuối ${new Date(p.sheetSyncedAt).toLocaleString('vi-VN')}` : 'Đồng bộ Sheets'}>
