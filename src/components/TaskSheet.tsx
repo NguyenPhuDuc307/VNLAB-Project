@@ -85,7 +85,7 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, phaseI
       open={open}
       onClose={onClose}
       title={task ? (readOnly ? 'Chi tiết việc' : 'Sửa việc') : 'Thêm việc'}
-      wide
+      side
       footer={
         readOnly ? <Button variant="secondary" block onClick={onClose}>Đóng</Button> : (
           <div className="flex items-center gap-2">

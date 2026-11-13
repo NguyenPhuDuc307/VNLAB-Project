@@ -37,7 +37,7 @@ export function SubtasksEditor({ items, onChange, readOnly }: { items: Subtask[]
       </div>
       <p className="mb-3 text-xs text-muted">Lịch và ngày công theo task cha; tiến độ cha = trung bình các task con.</p>
       {items.length > 0 && (
-        <div ref={box} className="grid grid-cols-[22px_minmax(0,1fr)_minmax(84px,28%)_56px_28px] items-center gap-x-1.5 gap-y-1">
+        <div ref={box} className="grid grid-cols-[22px_minmax(0,1fr)_minmax(84px,28%)_68px_28px] items-center gap-x-1.5 gap-y-1">
           <span className={`${head} text-right`}>#</span>
           <span className={head}>Tên</span>
           <span className={head}>Phụ trách</span>

@@ -65,8 +65,12 @@ function useVisualViewport(active: boolean) {
 }
 
 /** Bảng trượt từ đáy (điện thoại) / hộp thoại giữa màn (máy tính). */
-export function Sheet({ open, onClose, title, children, footer, wide }: {
-  open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; footer?: ReactNode; wide?: boolean;
+/**
+ * `side`: từ md trở lên là ngăn trượt từ cạnh phải, cao hết màn hình (form dài
+ * như Sửa việc); điện thoại vẫn là bottom sheet như mọi Sheet khác.
+ */
+export function Sheet({ open, onClose, title, children, footer, wide, side }: {
+  open: boolean; onClose: () => void; title: ReactNode; children: ReactNode; footer?: ReactNode; wide?: boolean; side?: boolean;
 }) {
   const panel = useRef<HTMLDivElement>(null);
   const vp = useVisualViewport(open);
@@ -88,7 +92,7 @@ export function Sheet({ open, onClose, title, children, footer, wide }: {
   }, [open, onClose]);
   if (!open) return null;
   return createPortal(
-    <div className="fixed inset-x-0 top-0 z-50 flex h-dvh items-end justify-center md:items-center md:p-6" style={vp ? { top: vp.top, height: vp.height } : undefined}>
+    <div className={cx('fixed inset-x-0 top-0 z-50 flex h-dvh items-end justify-center', side ? 'md:items-stretch md:justify-end' : 'md:items-center md:p-6')} style={vp ? { top: vp.top, height: vp.height } : undefined}>
       <div className="anim-fade absolute inset-0 bg-[#0b1521]/45 backdrop-blur-[2px]" onClick={onClose} />
       <div
         ref={panel}
@@ -96,9 +100,10 @@ export function Sheet({ open, onClose, title, children, footer, wide }: {
         aria-modal="true"
         tabIndex={-1}
         className={cx(
-          'anim-sheet relative flex max-h-[92%] w-full flex-col rounded-t-[28px] border border-line bg-surface shadow-[var(--shadow-lg)] outline-none focus-visible:outline-none md:rounded-[28px]',
+          'relative flex max-h-[92%] w-full flex-col rounded-t-[28px] border border-line bg-surface shadow-[var(--shadow-lg)] outline-none focus-visible:outline-none',
+          side ? 'anim-drawer md:h-full md:max-h-full md:max-w-[760px] md:rounded-none md:rounded-l-[24px] md:border-y-0 md:border-r-0' : 'anim-sheet md:rounded-[28px]',
           vp?.keyboard && 'max-h-full rounded-t-none',
-          wide ? 'md:max-w-2xl' : 'md:max-w-lg',
+          !side && (wide ? 'md:max-w-2xl' : 'md:max-w-lg'),
         )}
       >
         <div className="mx-auto mt-2 h-1.5 w-10 rounded-full bg-fill-2 md:hidden" />
