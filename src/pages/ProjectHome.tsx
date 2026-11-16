@@ -33,7 +33,7 @@ export function ProjectHome() {
       <Link to="/du-an" className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold text-ink-2 hover:text-ink"><CaretLeft size={14} weight="bold" /> Dự án</Link>
       <PageHeader
         eyebrow={`VNLab / Project${p.code ? ` / ${p.code}` : ''}`}
-        title={<span className="flex items-center gap-2.5"><span className="h-3.5 w-3.5 shrink-0 rounded-full" style={{ background: p.color }} />{p.name}</span>}
+        title={p.name}
         sub={<span className="flex flex-wrap items-center gap-1.5"><Chip>PM: {p.owner.name || p.owner.email}</Chip><Chip tone="primary">{p.phases.length} phase · {p.tasks.length} việc</Chip></span>}
         action={<Link to={`/du-an/${p.id}/phase/all`} className="inline-flex h-9 items-center gap-1.5 rounded-xl border border-line bg-card px-3 text-[13px] font-semibold hover:bg-fill"><SquaresFour size={15} /> Xem tất cả</Link>}
       />

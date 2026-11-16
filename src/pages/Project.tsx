@@ -401,7 +401,7 @@ export function ProjectPage() {
         : <Link to="/du-an" className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold text-ink-2 hover:text-ink"><CaretLeft size={14} weight="bold" /> Dự án</Link>}
       <PageHeader
         eyebrow={`VNLab / Project${p.code ? ` / ${p.code}` : ''}`}
-        title={<span className="flex items-center gap-2.5"><span className="h-3.5 w-3.5 shrink-0 rounded-full" style={{ background: p.color }} />{p.name}</span>}
+        title={p.name}
         sub={
           <span className="flex flex-wrap items-center gap-1.5">
             {p.customer && <Chip>KH: {p.customer}</Chip>}

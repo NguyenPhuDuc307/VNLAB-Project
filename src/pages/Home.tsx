@@ -54,9 +54,12 @@ export function Home() {
 export function ProjectCard({ p, today }: { p: ProjectSummary; today: string }) {
   const s = p.stats;
   return (
-    <Link to={`/du-an/${p.id}`} className="card block p-4 transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-lg)]">
+    <Link
+      to={`/du-an/${p.id}`}
+      className="card block p-4 transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-lg)]"
+      style={{ background: `color-mix(in srgb, ${p.color} 14%, var(--surface))`, borderColor: `color-mix(in srgb, ${p.color} 35%, transparent)` }}
+    >
       <div className="flex items-start gap-3">
-        <span className="mt-1 h-3 w-3 shrink-0 rounded-full" style={{ background: p.color }} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-[15px] font-extrabold tracking-tight">{p.name}</p>
           <p className="truncate text-[12.5px] text-muted">{[p.code, p.customer, p.owner.name || p.owner.email].filter(Boolean).join(' · ')}</p>
