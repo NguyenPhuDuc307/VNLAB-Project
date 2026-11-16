@@ -8,6 +8,8 @@ import * as D from './data.ts';
 import { parseDate, today } from './dates.ts';
 import { effectivePermissions, rolesOf } from './rbac.ts';
 import { parseSheetId, syncProject } from './sheets.ts';
+import { clearCalendar, parseCalendarId, syncCalendar } from './gcal.ts';
+import { sql } from './db.ts';
 import { findGetflyTask, getflyJob, getflyUsers, startGetflyJob, waitGetflyJob, withGetflyProjectsLocked } from './getfly.ts';
 import { ALL_COLUMNS, normalizeColumns } from './plan-layout.ts';
 import type { PermissionKey } from './permissions.ts';
@@ -739,6 +741,43 @@ TOOLS.set_google_sheet = {
   },
 };
 
+TOOLS.set_google_calendar = {
+  title: 'Liên kết Google Calendar',
+  description: 'Liên kết dự án với một Google Calendar (Mã lịch dạng …@group.calendar.google.com / email, hoặc link có src= / cid=). Lịch phải chia sẻ quyền "Thay đổi sự kiện" cho email service account (Cài đặt). Mỗi việc có ngày thành một sự kiện cả ngày, tự đồng bộ sau mỗi thay đổi. calendar: null = bỏ liên kết (xoá các sự kiện app đã tạo). Chỉ chủ dự án.',
+  input: z.object({ ...projectRef, calendar: z.string().trim().max(600).nullable() }),
+  write: true, destructive: false, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string; calendar: string | null }) => {
+    const p = await resolveProject(user, a);
+    D.owned(p);
+    let patch: Record<string, unknown>;
+    if (!a.calendar) {
+      if (p.gcalId) await clearCalendar(p.id, p.gcalId).catch(() => undefined);
+      patch = { gcalId: null, gcalSyncedAt: null, gcalError: null };
+    } else {
+      const id = parseCalendarId(a.calendar);
+      if (!id) throw new ToolError('Không nhận ra lịch — cần Mã lịch (…@group.calendar.google.com hoặc email) trong Cài đặt lịch của Google Calendar');
+      if (p.gcalId && p.gcalId !== id) await clearCalendar(p.id, p.gcalId).catch(() => undefined);
+      patch = { gcalId: id, gcalError: null, ...(p.gcalId !== id ? { gcalSyncedAt: null } : {}) };
+    }
+    const [row] = await sql<D.ProjectRow[]>`update projects set ${sql(patch)} where id = ${p.id} returning *`;
+    const v = D.projectView(row);
+    return { project: p.name, calendarId: v.gcalId, calendarUrl: v.gcalUrl, note: v.gcalId ? 'Gọi sync_google_calendar để ghi ngay lần đầu' : 'Đã gỡ liên kết và xoá sự kiện app đã tạo' };
+  },
+};
+
+TOOLS.sync_google_calendar = {
+  title: 'Đồng bộ Google Calendar',
+  description: 'Ghi ngay các việc có ngày của dự án thành sự kiện cả ngày trên Google Calendar đã liên kết (tạo / sửa / xoá cho khớp). Trả về số sự kiện tạo, sửa, xoá.',
+  input: z.object({ ...projectRef }),
+  write: true, destructive: false, perm: 'project.project.write',
+  run: async (user, a: { projectId?: string; project?: string }) => {
+    const p = await editableProject(user, a);
+    if (!p.gcalId) throw new ToolError(`Dự án "${p.name}" chưa liên kết Google Calendar — chủ dự án liên kết trong Cài đặt dự án (hoặc set_google_calendar) trước`);
+    const r = await syncCalendar(p.id);
+    return { project: p.name, calendarId: p.gcalId, ...r };
+  },
+};
+
 TOOLS.get_export_link = {
   title: 'Link xuất Excel / CSV',
   description: 'Trả link tải file kế hoạch (Excel theo mẫu Gantt, CSV hoặc JSON) để người dùng mở trên trình duyệt đã đăng nhập.',
@@ -898,6 +937,8 @@ function describeTool(name: string, a: Record<string, unknown> | null): string {
     case 'set_google_sheet': return 'Liên kết Google Sheet';
     case 'sort_tasks': return 'Sắp xếp việc theo ngày';
     case 'sync_google_sheet': return 'Đồng bộ Google Sheet';
+    case 'set_google_calendar': return 'Liên kết Google Calendar';
+    case 'sync_google_calendar': return 'Đồng bộ Google Calendar';
     default: return TOOLS[name]?.title ?? name;
   }
 }

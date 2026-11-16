@@ -451,6 +451,7 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
             <div className="c-start flex h-full items-end px-2 pb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted">Bắt đầu</div>
             <div className="c-end flex h-full items-end px-2 pb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted">Kết thúc</div>
             <div className="c-days flex h-full items-end px-2 pb-1.5 text-right text-[10.5px] font-bold uppercase tracking-wider text-muted">Ngày</div>
+            <div className="c-note flex h-full items-end px-2 pb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted">Ghi chú</div>
           </div>
           {!list && (
             <div className="gantt-days flex-col" style={{ backgroundImage: 'none' }}>
@@ -593,6 +594,10 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
               </div>
               <div className={cx('c-days num px-2 text-right text-[12px]', t.days == null ? 'text-muted' : 'font-semibold text-ink-2', canEdit && 'cursor-text')} title={t.days == null ? 'Tự tính từ ngày bắt đầu/kết thúc — gõ số để nhập tay, xoá trống để tự tính' : 'Ngày công nhập tay'} data-field="days" onDoubleClick={startEdit(t, 'days')}>
                 {editable(t, 'days') ? inputFor(t, 'days', 'text', t.days == null ? '' : String(t.days).replace('.', ','), { placeholder: effort ? fmtNum(effort) : '' }) : (effort ? fmtNum(effort) : '')}
+              </div>
+              {/* Ghi chú nhiều dòng: chỉ hiện ở chế độ Danh sách; bấm để mở chi tiết và sửa. */}
+              <div className="c-note min-w-0 cursor-pointer px-2 text-[12px] leading-snug text-ink-2" title={t.note || undefined} onClick={(e) => { e.stopPropagation(); onEditTask(t); }}>
+                {t.note.trim() ? <span className="line-clamp-2 whitespace-pre-line break-words [overflow-wrap:anywhere]">{t.note.trim()}</span> : (canEdit ? <span className="text-muted/60">—</span> : '')}
               </div>
             </div>
             {!list && (

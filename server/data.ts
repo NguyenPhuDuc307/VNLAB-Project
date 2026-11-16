@@ -19,6 +19,7 @@ export type ProjectRow = {
   id: string; ownerId: string; name: string; code: string; customer: string; description: string; startDate: string | null;
   color: string; satWeight: number; sunWeight: number; archived: boolean; createdAt: Date; updatedAt: Date;
   sheetId: string | null; sheetAuto: boolean; sheetCollapseSubtasks: boolean; sheetSyncedAt: Date | null; sheetError: string | null;
+  gcalId: string | null; gcalSyncedAt: Date | null; gcalError: string | null;
   exportColumns: string[] | null;
   aiContext: string;
   getflyParentCode: string; getflyParentName: string; getflyProjectName: string; getflyUsers: Record<string, string>;
@@ -100,6 +101,8 @@ export const projectView = (p: ProjectRow) => ({
   createdAt: new Date(p.createdAt).toISOString(), updatedAt: new Date(p.updatedAt).toISOString(),
   sheetId: p.sheetId ?? null, sheetUrl: p.sheetId ? `https://docs.google.com/spreadsheets/d/${p.sheetId}/edit` : null,
   sheetAuto: !!p.sheetAuto, sheetCollapseSubtasks: p.sheetCollapseSubtasks ?? true, sheetSyncedAt: p.sheetSyncedAt ? new Date(p.sheetSyncedAt).toISOString() : null, sheetError: p.sheetError ?? null,
+  gcalId: p.gcalId ?? null, gcalUrl: p.gcalId ? `https://calendar.google.com/calendar/u/0/r?cid=${encodeURIComponent(p.gcalId)}` : null,
+  gcalSyncedAt: p.gcalSyncedAt ? new Date(p.gcalSyncedAt).toISOString() : null, gcalError: p.gcalError ?? null,
   exportColumns: p.exportColumns ?? null,
   aiContext: p.aiContext ?? '',
   getflyParentCode: p.getflyParentCode ?? '', getflyParentName: p.getflyParentName ?? '', getflyProjectName: p.getflyProjectName ?? '',
@@ -207,6 +210,23 @@ export async function overview(u: Pick<UserRow, 'id' | 'email'>) {
     projects,
     overdue: lists.filter((r) => (r.endDate as string) < t).map(view),
     upcoming: lists.filter((r) => (r.endDate as string) >= t).map(view),
+  };
+}
+
+/** Lịch chung: mọi việc có ngày ở các dự án đang chạy mà tôi thấy được, kèm màu / mã / quyền của dự án. */
+export async function calendar(u: Pick<UserRow, 'id' | 'email'>) {
+  const projects = (await myProjects(u)).filter((p) => !p.archived);
+  const ids = projects.map((p) => p.id);
+  const rows = ids.length ? await sql`
+    select t.* from tasks t left join task_groups g on g.id = t.group_id
+    where t.project_id in ${sql(ids)} and (t.start_date is not null or t.end_date is not null)
+    order by (t.group_id is null), g.sort, t.sort, t.created_at` : [];
+  const groups = ids.length ? await sql<{ id: string; name: string }[]>`select id, name from task_groups where project_id in ${sql(ids)}` : [];
+  return {
+    today: today(),
+    projects: projects.map((p) => ({ id: p.id, name: p.name, code: p.code, color: p.color, myRole: p.myRole })),
+    groups: Object.fromEntries(groups.map((g) => [g.id, g.name])) as Record<string, string>,
+    tasks: rows.map(taskView),
   };
 }
 

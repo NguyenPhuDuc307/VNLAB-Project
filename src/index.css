@@ -608,18 +608,22 @@ body::before {
 /* Danh sách không có hai hàng lịch nên tiêu đề bảng cần chiều cao riêng, chữ căn giữa dọc. */
 .gantt.list .gantt-head .gantt-left { min-height: 44px; }
 .gantt.list .gantt-head .gantt-left > * { align-items: center !important; padding-bottom: 0 !important; }
-.gantt.list { --cols: 32px minmax(0, 1fr) var(--col-asg) var(--col-sup) var(--col-progress) var(--col-start) var(--col-end) var(--col-days); }
+/* Cột Ghi chú chỉ có ở chế độ Danh sách (Gantt cần chỗ cho lưới ngày). */
+.gantt:not(.list) .c-note { display: none !important; }
+.gantt.list .c-note { display: flex; align-items: center; }
+.gantt.list { --cols: 32px minmax(0, 1.3fr) var(--col-asg) var(--col-sup) var(--col-progress) var(--col-start) var(--col-end) var(--col-days) minmax(0, 1fr); }
 @media (max-width: 1279px) {
   .gantt.list .c-sup, .gantt.list .c-days { display: none !important; }
-  .gantt.list { --cols: 32px minmax(0, 1fr) var(--col-asg) var(--col-progress) var(--col-start) var(--col-end); }
+  .gantt.list { --cols: 32px minmax(0, 1.3fr) var(--col-asg) var(--col-progress) var(--col-start) var(--col-end) minmax(0, 1fr); }
 }
 @media (max-width: 1023px) {
   .gantt.list { --cols: 32px minmax(0, 1fr) var(--col-asg) var(--col-progress) var(--col-start) var(--col-end); }
   .gantt.list .c-asg, .gantt.list .c-start, .gantt.list .c-end { display: flex !important; }
-  .gantt.list .c-sup, .gantt.list .c-days { display: none !important; }
+  .gantt.list .c-sup, .gantt.list .c-days, .gantt.list .c-note { display: none !important; }
 }
 @media (max-width: 639px) {
   .gantt.list { --cols: minmax(0, 1fr) 96px 72px; }
+  .gantt.list .c-note { display: none !important; }
   .gantt.list .c-asg, .gantt.list .c-start, .gantt.list .c-no { display: none !important; }
   .gantt.list .c-end { display: flex !important; }
 }
@@ -749,3 +753,6 @@ body::before {
   .form-dense label > span + span { font-size: 12px; }
   .form-dense .h-11 { height: 2.25rem; }
 }
+
+/* Lịch: hôm nay nổi bật — nền xanh nhạt + vạch xanh trên đầu ô / cột (thắng nền cuối tuần, ngoài tháng). */
+.cal-today { background: color-mix(in srgb, var(--primary) 9%, var(--surface)) !important; box-shadow: inset 0 3px 0 var(--primary); }

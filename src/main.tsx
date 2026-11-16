@@ -12,6 +12,7 @@ import { ProjectPage } from './pages/Project';
 import { ProjectHome } from './pages/ProjectHome';
 import { Projects } from './pages/Projects';
 import { Settings } from './pages/Settings';
+import { CalendarPage } from './pages/Calendar';
 
 // Phiên hết hạn ở bất kỳ request nào -> hỏi lại /me, nó 401 thì hiện màn đăng nhập
 // (màn đó tự đi SSO im lặng để kiểm role lại khi server đòi `reauth`).
@@ -37,6 +38,7 @@ function App() {
         <Route path="du-an" element={<Projects />} />
         <Route path="du-an/:id" element={<ProjectHome />} />
         <Route path="du-an/:id/phase/:phase" element={<ProjectPage />} />
+        <Route path="lich" element={<CalendarPage />} />
         <Route path="cai-dat" element={<Settings />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>

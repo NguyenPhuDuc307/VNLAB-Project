@@ -3,6 +3,9 @@ import { ArrowDown, ArrowSquareOut, ArrowUp, ArrowsClockwise, ArrowsDownUp, Arro
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Gantt, spanOf, UNGROUPED, type GanttView, type MenuTarget } from '../components/Gantt';
+import { CalendarView } from '../components/CalendarView';
+
+type PageView = GanttView | 'calendar';
 import type { MenuItem } from '../components/ContextMenu';
 import { GetflyBox, GetflyReport, useGetflyJob, useGetflyStatus, type GetflyScope } from '../components/GetflyBox';
 import { PhaseBar } from '../components/PhaseBar';
@@ -37,7 +40,7 @@ export function ProjectPage() {
   const { toast, confirm } = useFeedback();
   // Cập nhật thời gian thực + báo MCP: do useLiveEvents ở khung trang (Layout) lo cho mọi trang.
   const today = todayStr();
-  const [view, setView] = useState<GanttView>(() => pref('project:view', 'gantt', (v): v is GanttView => v === 'gantt' || v === 'list'));
+  const [view, setView] = useState<PageView>(() => pref('project:view', 'gantt', (v): v is PageView => v === 'gantt' || v === 'list' || v === 'calendar'));
   const [dayWidth, setDayWidth] = useState(() => pref('project:day', 30, (v): v is number => typeof v === 'number' && v >= 18 && v <= 60));
   const [focus, setFocus] = useState({ date: today, tick: 0 });
   const [showBaseline, setShowBaseline] = useState(() => pref('project:baseline', true, (v): v is boolean => typeof v === 'boolean'));
@@ -430,7 +433,7 @@ export function ProjectPage() {
       <div className={cx(full && 'gantt-full fixed inset-0 z-[45] flex flex-col overflow-hidden p-3 md:p-4')} style={full ? { background: 'var(--bg-grad, var(--bg))' } : undefined}>
       <PhaseBar project={p} value={activePhase} onChange={setPhaseFilter} canEdit={editor && can('project.project.write')} />
       <div className="mb-3 flex flex-wrap items-center gap-2">
-        <Segmented size="sm" value={view} onChange={setView} options={[{ value: 'gantt', label: 'Gantt' }, { value: 'list', label: 'Danh sách' }]} className="w-44" />
+        <Segmented size="sm" value={view} onChange={setView} options={[{ value: 'gantt', label: 'Gantt' }, { value: 'list', label: 'Danh sách' }, { value: 'calendar', label: 'Lịch' }]} className="w-60" />
         {!p.groups.length && !p.tasks.length && <span className="ml-auto flex flex-wrap items-center gap-1">{scopeTools}{actionTools}</span>}
       </div>
 
@@ -448,6 +451,18 @@ export function ProjectPage() {
             )}
           />
         </div>
+      ) : view === 'calendar' ? (
+      <CalendarView
+        tasks={shown.tasks}
+        today={today}
+        canEdit={() => canTask}
+        colorOf={(t) => (t.progress >= 100 ? 'var(--ok)' : p.scopes?.find((x) => x.id === t.scopeId)?.color ?? p.color)}
+        subtitle={(t) => p.groups.find((g) => g.id === t.groupId)?.name}
+        onEditTask={(t) => setTaskSheet({ open: true, task: t })}
+        onChangeDates={(task, startDate, endDate) => patchTask.mutate({ task, patch: { startDate, endDate } })}
+        menuFor={menuFor}
+        tools={<>{scopeTools}{actionTools}</>}
+      />
       ) : (
       <Gantt
         project={shown}

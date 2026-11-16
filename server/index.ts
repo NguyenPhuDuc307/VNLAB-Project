@@ -18,6 +18,7 @@ import { authorizeUrl, endSessionUrl, exchangeCode, hasProjectRole, LOGTO_APP_ID
 import { toolList } from './tools.ts';
 import { ALL_COLUMNS, buildPlanLayout, isColKey, normalizeColumns } from './plan-layout.ts';
 import { parseSheetId, sheetStatus, startAutoSync, syncProject } from './sheets.ts';
+import { clearCalendar, parseCalendarId, startCalendarAutoSync, syncCalendar } from './gcal.ts';
 import { GoogleError } from './google.ts';
 import { findGetflyTask, getflyJob, getflyLinkCount, getflyStatus, getflyUsers, startGetflyJob } from './getfly.ts';
 import { renderXlsx } from './xlsx.ts';
@@ -309,6 +310,7 @@ auth.delete('/tokens/:id', requirePermission('project.tokens.manage'), async (c)
 
 auth.get('/projects', async (c) => c.json(await D.myProjects(c.get('user'))));
 auth.get('/overview', async (c) => c.json(await D.overview(c.get('user'))));
+auth.get('/calendar', async (c) => c.json(await D.calendar(c.get('user'))));
 
 auth.post('/projects', requirePermission('project.project.create'), async (c) => {
   const b = await body(c, D.projectSchema);
@@ -505,6 +507,33 @@ auth.post('/projects/:id/sheet/sync', requirePermission('project.project.write')
   D.editable(p);
   const r = await syncProject(p.id);
   return c.json({ sheetUrl: r.url, sheetSyncedAt: r.syncedAt });
+});
+
+/** Liên kết Google Calendar (id lịch hoặc link) / bỏ liên kết. Chủ dự án mới được đổi. Liên kết là tự đồng bộ luôn. */
+auth.patch('/projects/:id/gcal', requirePermission('project.project.write'), async (c) => {
+  const p = await D.projectOf(c.get('user'), param(c));
+  D.owned(p);
+  const b = await body(c, z.object({ calendar: z.string().trim().max(600).nullable() }));
+  let patch: Record<string, unknown>;
+  if (!b.calendar) {
+    // Gỡ sự kiện app đã tạo trên lịch cũ (không chặn nếu lịch đã mất quyền).
+    if (p.gcalId) await clearCalendar(p.id, p.gcalId).catch((err) => console.warn('[gcal] gỡ sự kiện lịch cũ lỗi:', (err as Error).message));
+    patch = { gcalId: null, gcalSyncedAt: null, gcalError: null };
+  } else {
+    const id = parseCalendarId(b.calendar);
+    if (!id) throw new HTTPException(400, { message: 'Không nhận ra lịch — dán Mã lịch (dạng …@group.calendar.google.com hoặc email) trong Cài đặt lịch của Google Calendar' });
+    if (p.gcalId && p.gcalId !== id) await clearCalendar(p.id, p.gcalId).catch((err) => console.warn('[gcal] gỡ sự kiện lịch cũ lỗi:', (err as Error).message));
+    patch = { gcalId: id, gcalError: null, ...(p.gcalId !== id ? { gcalSyncedAt: null } : {}) };
+  }
+  const [row] = await sql<D.ProjectRow[]>`update projects set ${sql(patch)} where id = ${p.id} returning *`;
+  return c.json({ ...D.projectView(row), myRole: p.myRole });
+});
+
+/** Đồng bộ lịch ngay (ai được sửa dự án đều bấm được). */
+auth.post('/projects/:id/gcal/sync', requirePermission('project.project.write'), async (c) => {
+  const p = await D.projectOf(c.get('user'), param(c));
+  D.editable(p);
+  return c.json(await syncCalendar(p.id));
 });
 
 // ---- thành viên
@@ -783,4 +812,5 @@ app.get('*', (c) => {
 
 await migrate();
 startAutoSync();
+startCalendarAutoSync();
 serve({ fetch: app.fetch, port: PORT, hostname: '0.0.0.0' }, () => console.log(`[project] chạy ở :${PORT}`));

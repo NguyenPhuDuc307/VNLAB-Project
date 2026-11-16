@@ -273,6 +273,13 @@ const MIGRATIONS: string[] = [
   `,
   // 17: bỏ hẳn đồng bộ trạng thái hoàn thành sang Getfly (API không cho) — cột không còn dùng.
   `alter table getfly_links drop column if exists completed;`,
+  // 18: liên kết Google Calendar (đồng bộ một chiều app -> lịch, server/gcal.ts): mỗi việc có ngày là một sự kiện cả ngày.
+  `
+  alter table projects
+    add column gcal_id text,
+    add column gcal_synced_at timestamptz,
+    add column gcal_error text;
+  `,
 ];
 
 export async function migrate() {

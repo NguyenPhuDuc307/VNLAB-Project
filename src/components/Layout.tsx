@@ -1,4 +1,4 @@
-import { CaretDoubleLeft, CaretDoubleRight, FolderSimple, GearSix, Robot, SquaresFour, type Icon } from '@phosphor-icons/react';
+import { CalendarDots, CaretDoubleLeft, CaretDoubleRight, FolderSimple, GearSix, Robot, SquaresFour, type Icon } from '@phosphor-icons/react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useLiveEvents, useMe } from '../lib/api';
@@ -7,6 +7,7 @@ import { Avatar, BrandLogo, cx, IconButton, useFeedback } from './ui';
 const NAV: { to: string; label: string; icon: Icon; match?: (p: string) => boolean }[] = [
   { to: '/', label: 'Tổng quan', icon: SquaresFour },
   { to: '/du-an', label: 'Dự án', icon: FolderSimple, match: (p) => p.startsWith('/du-an') },
+  { to: '/lich', label: 'Lịch', icon: CalendarDots },
   { to: '/cai-dat', label: 'Cài đặt', icon: GearSix },
 ];
 

@@ -128,6 +128,7 @@ export function ProjectSheet({ open, onClose, project, onImport }: { open: boole
       {project && <div role="tabpanel" id={`${tabId}-panel-sync`} aria-labelledby={`${tabId}-tab-sync`} hidden={tab !== 'sync'}>
         <GetflyBox project={project} canEdit={project.myRole !== 'viewer' && can('project.project.write')} />
         {owner && <GoogleSheetBox project={project} />}
+        {(owner || project.gcalId) && <GoogleCalendarBox project={project} owner={owner} />}
       </div>}
     </Sheet>
   );
@@ -256,6 +257,65 @@ function GoogleSheetBox({ project }: { project: ProjectDetail }) {
           </form>
         </>
       )}
+      {err && <p className="mt-2 text-[12.5px] text-danger">{err.message}</p>}
+    </div>
+  );
+}
+
+/** Liên kết Google Calendar: người dùng chia sẻ lịch cho service account (quyền "Thay đổi sự kiện"), dán Mã lịch; app tự đồng bộ sau mỗi thay đổi. */
+function GoogleCalendarBox({ project, owner }: { project: ProjectDetail; owner: boolean }) {
+  const { toast, confirm } = useFeedback();
+  const can = useCan();
+  const status = useQuery({ queryKey: ['google-status'], queryFn: () => api<GoogleStatus>('/google/status'), staleTime: Infinity });
+  const [cal, setCal] = useState('');
+  type SyncR = { created: number; updated: number; deleted: number; unchanged: number };
+  const sync = useAction(() => api<SyncR>(`/projects/${project.id}/gcal/sync`, { method: 'POST', body: {} }), {
+    onSuccess: (r) => toast(r.created || r.updated || r.deleted ? `Đã đồng bộ lịch: thêm ${r.created}, sửa ${r.updated}, xoá ${r.deleted} sự kiện` : 'Lịch đã khớp, không có gì đổi'),
+  });
+  const link = useAction((calendar: string | null) => api<Project>(`/projects/${project.id}/gcal`, { method: 'PATCH', body: { calendar } }), {
+    // Liên kết xong ghi luôn lần đầu để biết ngay lịch đã chia sẻ đúng chưa.
+    onSuccess: (_r, calendar) => { if (calendar) { setCal(''); sync.mutate(undefined); } else toast('Đã bỏ liên kết lịch và xoá các sự kiện app đã tạo'); },
+  });
+  const unlink = async () => {
+    if (await confirm({ title: 'Bỏ liên kết Google Calendar?', desc: <p>Các sự kiện app đã tạo trên lịch sẽ bị xoá; sự kiện khác trên lịch giữ nguyên.</p>, ok: 'Bỏ liên kết', danger: true })) link.mutate(null);
+  };
+  const email = status.data?.email;
+  const copyEmail = async () => { try { await navigator.clipboard.writeText(email ?? ''); toast('Đã chép email service account'); } catch { toast('Không chép được — chọn và sao chép tay', 'error'); } };
+  const busy = link.isPending || sync.isPending;
+  const err = (link.error ?? sync.error) as Error | null;
+  const emailEl = email ? <><code className="break-all rounded bg-fill px-1 py-0.5">{email}</code> <button type="button" onClick={copyEmail} className="font-semibold text-primary hover:underline">Chép</button></> : 'service account';
+  return (
+    <div className="mt-2 rounded-2xl border border-line bg-card p-3">
+      <p className="text-[13px] font-semibold text-ink-2">Google Calendar</p>
+      {status.data && !status.data.configured && <p className="mt-1 text-[12.5px] text-muted">Server chưa cấu hình Google service account — xem README (GOOGLE_SERVICE_ACCOUNT_FILE).</p>}
+      {project.gcalId ? (
+        <>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            {project.gcalUrl && <a href={project.gcalUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[13.5px] font-semibold text-primary hover:underline"><ArrowSquareOut size={15} /> Mở Google Calendar</a>}
+            <span className="text-[12px] text-muted">{project.gcalSyncedAt ? `đồng bộ lần cuối ${new Date(project.gcalSyncedAt).toLocaleString('vi-VN')}` : 'chưa đồng bộ lần nào'}</span>
+          </div>
+          <p className="mt-1 break-all text-[12px] text-muted">Lịch: {project.gcalId}</p>
+          {project.gcalError && <p className="mt-1 text-[12.5px] text-danger">{project.gcalError}</p>}
+          <div className="mt-2 flex flex-wrap gap-2">
+            {can('project.project.write') && <Button size="sm" onClick={() => sync.mutate(undefined)} disabled={busy || !status.data?.configured}><ArrowsClockwise size={14} className={sync.isPending ? 'animate-spin' : undefined} /> Đồng bộ ngay</Button>}
+            {owner && <Button size="sm" variant="ghost" onClick={unlink} disabled={busy} className="text-danger">Bỏ liên kết</Button>}
+          </div>
+          <p className="mt-2 text-[12px] leading-relaxed text-muted">Mỗi việc có ngày là một sự kiện cả ngày (bắt đầu → kết thúc), việc xong có dấu ✓. Tự đồng bộ sau mỗi thay đổi (gộp trong 30 giây), kể cả thay đổi qua AI (MCP). Một chiều: sửa trên Google Calendar sẽ bị ghi đè.</p>
+        </>
+      ) : owner ? (
+        <>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-muted">Đưa các việc có ngày lên Google Calendar thành sự kiện cả ngày, một chiều từ app, tự cập nhật khi kế hoạch đổi. Nên dùng một lịch riêng cho dự án.</p>
+          <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-[12.5px] leading-relaxed text-ink-2">
+            <li>Trong <a href="https://calendar.google.com/calendar/u/0/r/settings/createcalendar" target="_blank" rel="noopener noreferrer" className="font-semibold text-primary hover:underline">Google Calendar</a> tạo lịch mới (VD “{project.name}”) hoặc dùng lịch có sẵn.</li>
+            <li>Vào <b>Cài đặt lịch</b> → <b>Chia sẻ với những người cụ thể</b> → thêm {emailEl}, quyền <b>Thay đổi sự kiện</b>.</li>
+            <li>Kéo xuống <b>Tích hợp lịch</b>, chép <b>Mã lịch</b> (dạng …@group.calendar.google.com) dán vào ô dưới.</li>
+          </ol>
+          <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={(e) => { e.preventDefault(); if (cal.trim()) link.mutate(cal.trim()); }}>
+            <Input value={cal} onChange={(e) => setCal(e.target.value)} placeholder="abc123…@group.calendar.google.com" className="h-10" autoCapitalize="none" spellCheck={false} />
+            <Button type="submit" disabled={busy || !cal.trim() || !status.data?.configured} className="h-10 shrink-0">Liên kết</Button>
+          </form>
+        </>
+      ) : null}
       {err && <p className="mt-2 text-[12.5px] text-danger">{err.message}</p>}
     </div>
   );

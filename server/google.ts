@@ -39,7 +39,8 @@ export const serviceAccountEmail = () => loadSa()?.client_email ?? null;
 const TOKEN_URL = () => process.env.GOOGLE_TOKEN_URL ?? 'https://oauth2.googleapis.com/token';
 export const SHEETS_API = () => (process.env.GOOGLE_SHEETS_API ?? 'https://sheets.googleapis.com/v4').replace(/\/$/, '');
 export const DRIVE_API = () => (process.env.GOOGLE_DRIVE_API ?? 'https://www.googleapis.com/drive/v3').replace(/\/$/, '');
-const SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive'];
+export const CALENDAR_API = () => (process.env.GOOGLE_CALENDAR_API ?? 'https://www.googleapis.com/calendar/v3').replace(/\/$/, '');
+const SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive', 'https://www.googleapis.com/auth/calendar.events'];
 
 let token: { value: string; exp: number } | null = null;
 
@@ -65,13 +66,23 @@ export async function googleToken(): Promise<string> {
 }
 
 /** Gọi Google API: thêm Bearer, đọc JSON, đổi lỗi Google thành thông báo tiếng Việt dễ hiểu. */
-export async function gfetch<T>(url: string, init: RequestInit & { timeoutMs?: number } = {}): Promise<T> {
+export type GfetchInit = RequestInit & {
+  timeoutMs?: number;
+  /** Mã HTTP coi là bình thường: trả null thay vì ném lỗi (VD 409 khi tạo sự kiện đã có id). */
+  allow?: number[];
+  /** Thông báo riêng khi 403 / 404 (mặc định nói về Google Sheet). */
+  forbidden?: string;
+  notFound?: string;
+};
+
+export async function gfetch<T>(url: string, init: GfetchInit = {}): Promise<T> {
   const t = await googleToken();
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), init.timeoutMs ?? 30_000);
   let res: Response;
   try {
-    res = await fetch(url, { ...init, signal: ctl.signal, headers: { authorization: `Bearer ${t}`, ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers ?? {}) } });
+    const { timeoutMs: _t, allow: _a, forbidden: _f, notFound: _n, ...req } = init;
+    res = await fetch(url, { ...req, signal: ctl.signal, headers: { authorization: `Bearer ${t}`, ...(init.body ? { 'content-type': 'application/json' } : {}), ...(init.headers ?? {}) } });
   } catch (err) {
     throw new GoogleError(504, `Không kết nối được Google: ${(err as Error).message}`);
   } finally {
@@ -80,8 +91,12 @@ export async function gfetch<T>(url: string, init: RequestInit & { timeoutMs?: n
   const text = await res.text();
   let data: unknown = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = text; }
+  if (!res.ok && init.allow?.includes(res.status)) return null as T;
   if (!res.ok) {
     const msg = (data as { error?: { message?: string } } | null)?.error?.message ?? `Google trả ${res.status}`;
+    if ((res.status === 403 || res.status === 429) && /rate ?limit|quota|usage limit/i.test(msg)) throw new GoogleError(429, `Google đang giới hạn tốc độ (${msg}) — thử lại sau ít phút`);
+    if (res.status === 403 && init.forbidden) throw new GoogleError(403, `${init.forbidden} (${msg})`);
+    if (res.status === 404 && init.notFound) throw new GoogleError(404, init.notFound);
     if (/not supported for this document|Office|\.xlsx/i.test(msg)) throw new GoogleError(400, 'File này là Excel (.xlsx) mở trong Google Sheets, không phải Google Sheet gốc. Trong Google Sheets chọn Tệp → Lưu dưới dạng Google Trang tính, rồi dán link bản mới.');
     if (res.status === 403) throw new GoogleError(403, `Google từ chối (${msg}). Sheet đã Share quyền Người chỉnh sửa cho ${serviceAccountEmail() ?? 'service account'} chưa? (Service account không tự tạo file được — sheet phải do bạn tạo.)`);
     if (res.status === 404) throw new GoogleError(404, 'Không tìm thấy Google Sheet — kiểm tra lại đường dẫn, hoặc sheet chưa Share cho service account');

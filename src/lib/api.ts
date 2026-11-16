@@ -16,6 +16,8 @@ export type Project = {
   color: string; satWeight: number; sunWeight: number; archived: boolean; createdAt: string; updatedAt: string;
   /** Google Sheet liên kết (đồng bộ một chiều app -> sheet). */
   sheetId: string | null; sheetUrl: string | null; sheetAuto: boolean; sheetCollapseSubtasks: boolean; sheetSyncedAt: string | null; sheetError: string | null;
+  /** Google Calendar liên kết (đồng bộ một chiều app -> lịch, tự chạy sau mỗi thay đổi). */
+  gcalId: string | null; gcalUrl: string | null; gcalSyncedAt: string | null; gcalError: string | null;
   /** Cột xuất Excel / đồng bộ Sheets (null = tất cả). */
   exportColumns: string[] | null;
   /** Hướng dẫn / ngữ cảnh cho AI (MCP) của dự án. */
@@ -110,6 +112,8 @@ export const useProjects = () => useQuery({ queryKey: ['projects'], queryFn: () 
 export const useProject = (id: string | undefined) =>
   useQuery({ queryKey: ['project', id], queryFn: () => api<ProjectDetail>(`/projects/${id}`), enabled: !!id, placeholderData: (p) => p });
 export const useOverview = () => useQuery({ queryKey: ['overview'], queryFn: () => api<Overview>('/overview') });
+export type CalendarData = { today: string; projects: { id: string; name: string; code: string; color: string; myRole: MemberRole }[]; groups: Record<string, string>; tasks: Task[] };
+export const useCalendar = () => useQuery({ queryKey: ['calendar'], queryFn: () => api<CalendarData>('/calendar'), placeholderData: (p) => p });
 
 /**
  * Theo dõi dự án theo thời gian thực: nghe luồng SSE /projects/:id/events, mỗi khi server báo `changed`
@@ -138,6 +142,7 @@ export function useLiveEvents(onChange?: (ev: LiveChange) => void) {
       pending.clear();
       void qc.invalidateQueries({ queryKey: ['projects'] });
       void qc.invalidateQueries({ queryKey: ['overview'] });
+      void qc.invalidateQueries({ queryKey: ['calendar'] });
     };
     const refresh = (pid?: string) => { if (pid) pending.add(pid); window.clearTimeout(timer); timer = window.setTimeout(flush, 300); };
     const es = new EventSource(`${BASE}/events`);
@@ -172,6 +177,7 @@ export function useProjectLive(id: string | undefined, onChange?: (ev: LiveChang
         void qc.invalidateQueries({ queryKey: ['project', id] });
         void qc.invalidateQueries({ queryKey: ['projects'] });
         void qc.invalidateQueries({ queryKey: ['overview'] });
+      void qc.invalidateQueries({ queryKey: ['calendar'] });
       }, 300);
     };
     const es = new EventSource(`${BASE}/projects/${id}/events`);
