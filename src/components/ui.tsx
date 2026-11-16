@@ -158,7 +158,9 @@ export function DateInput({ value, onChange, optional, placeholder = 'Chọn ng�
 }
 
 export function Textarea(props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return <textarea rows={2} {...props} className={cx(inputCls, 'h-auto resize-none py-3', props.className)} />;
+  // Bỏ h-11 của ô một dòng: để chung với h-auto thì Tailwind v4 cho h-11 thắng,
+  // ô nào cũng bẹp 44px và `rows` bị bỏ qua.
+  return <textarea rows={2} {...props} className={cx(inputCls.replace('h-11 ', ''), 'resize-none py-3', props.className)} />;
 }
 
 export function Select({ className, ...props }: React.SelectHTMLAttributes<HTMLSelectElement>) {
