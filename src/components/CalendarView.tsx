@@ -128,8 +128,8 @@ export function CalendarView(props: Props) {
   const shared = { ...props, dated, on, openDay, setList };
 
   return (
-    <div className="card overflow-hidden">
-      <div className="flex flex-wrap items-center gap-2 border-b border-line px-3 py-2">
+    <div className="cal-shell card overflow-hidden">
+      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-2">
         <Button size="sm" variant="secondary" className="!h-7" onClick={() => setCursor(today)} disabled={atToday} title="Về hôm nay (T)">Hôm nay</Button>
         <span className="inline-flex items-center gap-0.5">
           <IconButton label="Trước (K)" className="!h-7 !w-7 !rounded-lg" onClick={() => step(-1)}><CaretLeft size={16} weight="bold" /></IconButton>
@@ -147,11 +147,14 @@ export function CalendarView(props: Props) {
         </span>
       </div>
 
-      {mode === 'month' && <MonthView {...shared} cursor={cursor} />}
-      {mode === 'week' && <WeekView {...shared} cursor={cursor} />}
-      {mode === 'day' && <DayView {...shared} cursor={cursor} />}
-      {mode === 'year' && <YearView {...shared} cursor={cursor} />}
-      {mode === 'agenda' && <AgendaView {...shared} cursor={cursor} />}
+      {/* Toàn màn hình: thanh công cụ đứng yên, phần lịch tự cuộn (index.css .gantt-full .cal-body). */}
+      <div className="cal-body">
+        {mode === 'month' && <MonthView {...shared} cursor={cursor} />}
+        {mode === 'week' && <WeekView {...shared} cursor={cursor} />}
+        {mode === 'day' && <DayView {...shared} cursor={cursor} />}
+        {mode === 'year' && <YearView {...shared} cursor={cursor} />}
+        {mode === 'agenda' && <AgendaView {...shared} cursor={cursor} />}
+      </div>
 
       <Sheet open={!!list} onClose={() => setList(null)} title={list?.title ?? ''}>
         <ul className="divide-y divide-line">

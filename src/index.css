@@ -548,6 +548,8 @@ body::before {
 /* Toàn màn hình: khung bảng kéo dài hết phần còn lại của màn hình thay vì giới hạn theo 100dvh - 240px. */
 .gantt-full .gantt-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
 .gantt-full .gantt { flex: 1; min-height: 0; max-height: none; }
+.gantt-full .cal-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.gantt-full .cal-body { flex: 1; min-height: 0; overflow: auto; }
 
 /* Bảng và lịch chia theo chiều rộng thực tế, kể cả khi zoom trình duyệt. */
 .gantt-shell { position: relative; min-width: 0; }
