@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import ExcelJS from 'exceljs';
 import { cookieOf, memoryDb, startServer } from './test-helpers.ts';
 
-test('xuất Excel theo mẫu Gantt: sheet PLAN có tiêu đề, bảng, nhóm, DAYS, lưới ngày và conditional formatting; sheet Dữ liệu phẳng', { timeout: 90_000 }, async () => {
+test('xuất Excel theo mẫu Gantt: sheet PLAN có tiêu đề, bảng, nhóm, DAYS, lưới ngày và conditional formatting; chỉ sheet PLAN, thanh tô sẵn', { timeout: 90_000 }, async () => {
   const mem = await memoryDb();
   const srv = await startServer({ PROJECT_DATABASE_URL: mem.url, PROJECT_DEV_LOGIN: '1' });
   const base = srv.base;
@@ -60,12 +60,11 @@ test('xuất Excel theo mẫu Gantt: sheet PLAN có tiêu đề, bảng, nhóm, 
     const rules = cf.flatMap((x) => x.rules);
     assert.ok(rules.some((r) => r.type === 'expression' && /WEEKDAY/.test(r.formulae?.[0] ?? '')), JSON.stringify(rules));
     assert.ok(cf.some((x) => /^K8:/.test(x.ref)), cf.map((x) => x.ref).join(','));
-    // Sheet Dữ liệu phẳng.
-    const data = wb.getWorksheet('Dữ liệu')!;
-    assert.equal(data.getCell('A1').value, 'STT');
-    assert.equal(data.getCell('B2').value, 'Thiết kế');
-    assert.equal(data.getCell('C4').value, 'Dựng API giỏ hàng');
-    assert.equal(data.rowCount, 4);
+    // File tải về chỉ có sheet PLAN; thanh được tô sẵn cho app không chạy conditional formatting.
+    assert.deepEqual(wb.worksheets.map((x) => x.name), ['PLAN']);
+    let painted = 0;
+    ws.eachRow({ includeEmpty: true }, (row) => row.eachCell({ includeEmpty: true }, (cell) => { if ((cell.fill as ExcelJS.FillPattern | undefined)?.fgColor?.argb === 'FF4F81BD') painted++; }));
+    assert.ok(painted > 0);
 
     // Task con xuất thành hàng riêng ngay dưới cha; không có lịch / ngày công riêng.
     const detail = await j('GET', `/projects/${p.id}`);
@@ -95,14 +94,6 @@ test('xuất Excel theo mẫu Gantt: sheet PLAN có tiêu đề, bảng, nhóm, 
     assert.equal((plan.getCell('H8').value as Date).toISOString().slice(0, 10), '2026-11-12');
     assert.equal(plan.getCell('B8').value, 'Thiết kế (2)');
     assert.equal(plan.getCell('J9').value, 5.5);
-    const raw = childrenBook.getWorksheet('Dữ liệu')!;
-    assert.equal(raw.rowCount, 6);
-    assert.equal(raw.getCell('K1').value, 'Task cha');
-    assert.equal(raw.getCell('A3').value, '1.1');
-    assert.equal(raw.getCell('C3').value, 'Xây API');
-    assert.equal(raw.getCell('K3').value, detail.tasks[0].name);
-    assert.equal(raw.getCell('G3').value, null);
-    assert.equal(raw.getCell('I3').value, null);
     // Chọn ít cột / không xuất lưới vẫn giữ các hàng con, đúng thứ tự cột.
     const narrow = await fetch(`${base}/api/projects/${p.id}/export?format=xlsx&cols=assignee,progress`, { headers: { cookie } });
     const narrowBook = new ExcelJS.Workbook();

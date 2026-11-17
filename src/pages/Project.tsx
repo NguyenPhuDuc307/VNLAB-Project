@@ -508,7 +508,7 @@ export function ProjectPage() {
       <MembersSheet open={members} onClose={() => setMembers(false)} project={p} />
       <ImportSheet open={importOpen} onClose={() => setImportOpen(false)} project={p} />
       <Sheet open={exportOpen} onClose={() => setExportOpen(false)} title="Xuất dự án">
-        <p className="mb-3 text-[13.5px] text-ink-2">Excel theo mẫu kế hoạch Gantt (bảng việc + lưới ngày theo tuần, thanh tự vẽ theo ngày bắt đầu/kết thúc, sheet "Dữ liệu" để dán ngược lại). CSV phẳng có BOM. JSON giữ nguyên cấu trúc nhóm và việc.</p>
+        <p className="mb-3 text-[13.5px] text-ink-2">Excel theo mẫu kế hoạch Gantt (bảng việc + lưới ngày theo tuần, thanh tự vẽ theo ngày bắt đầu/kết thúc). CSV phẳng có BOM. JSON giữ nguyên cấu trúc nhóm và việc.</p>
         <div className="mb-3 rounded-2xl border border-line bg-card p-3">
           <p className="mb-2 text-[12.5px] font-semibold text-ink-2">Cột trong sheet PLAN (Excel và Google Sheets)</p>
           <ColumnPicker value={exportCols ?? normalizeColumns(p.exportColumns)} onChange={setExportCols} />

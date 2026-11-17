@@ -1,6 +1,8 @@
-// Vẽ bố cục kế hoạch (server/plan-layout.ts) ra file Excel bằng exceljs. Thanh
-// Gantt và cột hôm nay là conditional formatting nên sửa ngày trong Excel /
-// Google Sheets là thanh tự chạy theo.
+// Vẽ bố cục kế hoạch (server/plan-layout.ts) ra file Excel bằng exceljs (chỉ sheet PLAN).
+// Thanh Gantt và cột hôm nay là conditional formatting nên sửa ngày trong Excel /
+// Google Sheets là thanh tự chạy theo. Thanh còn được tô sẵn bằng màu cố định cho
+// app không chạy conditional formatting (Numbers, xem nhanh trên Mac / điện thoại);
+// trong Excel một luật phủ trắng ô tô sẵn khi ngày đã sửa không còn nằm trong thanh.
 import ExcelJS from 'exceljs';
 import { colName, FONT, type Layout } from './plan-layout.ts';
 
@@ -34,6 +36,29 @@ export async function renderXlsx(layout: Layout): Promise<Buffer> {
   }
   for (const m of layout.merges) ws.mergeCells(m.r1, m.c1, m.r2, m.c2);
   const g = layout.grid;
+  if (g) {
+    // Tô sẵn thanh: hàng việc (STT là số), có đủ bắt đầu / kết thúc, ngày nằm trong khoảng, trừ Chủ nhật.
+    const val = new Map(layout.cells.map((x) => [`${x.r}:${x.c}`, x.v]));
+    const at = (r: number, c: number) => val.get(`${r}:${c}`);
+    const S = colName(g.startCol), E = colName(g.endCol);
+    for (let r = g.range.r1; r <= g.range.r2; r++) {
+      const s = at(r, g.startCol), e = at(r, g.endCol);
+      if (typeof at(r, 2) !== 'number' || typeof s !== 'number' || typeof e !== 'number') continue;
+      let c1 = 0, c2 = 0;
+      for (let c = g.range.c1; c <= g.range.c2; c++) {
+        const d = at(g.dayRow, c);
+        if (typeof d !== 'number' || d < s || d > e || (d - 1) % 7 === 0) continue; // serial 1 = Chủ nhật
+        ws.getCell(r, c).fill = fill(g.barColor);
+        c1 ||= c; c2 = c;
+      }
+      if (!c1) continue;
+      const K = colName(c1), D = `${K}$${g.dayRow}`;
+      ws.addConditionalFormatting({
+        ref: `${K}${r}:${colName(c2)}${r}`,
+        rules: [{ type: 'expression', priority: 3, formulae: [`NOT(AND($${S}${r}<>"",$${E}${r}<>"",${D}>=$${S}${r},${D}<=$${E}${r},WEEKDAY(${D})<>1))`], style: { fill: { type: 'pattern', pattern: 'solid', bgColor: { argb: argb('FFFFFF') } } } }],
+      });
+    }
+  }
   if (g) ws.addConditionalFormatting({
     ref: `${colName(g.range.c1)}${g.range.r1}:${colName(g.range.c2)}${g.range.r2}`,
     rules: [
@@ -43,13 +68,5 @@ export async function renderXlsx(layout: Layout): Promise<Buffer> {
   });
   ws.pageSetup = { orientation: 'landscape', fitToPage: true, fitToWidth: 1, fitToHeight: 0, paperSize: 9 };
 
-  const data = wb.addWorksheet('Dữ liệu', { views: [{ state: 'frozen', ySplit: 1 }] });
-  data.columns = layout.data.header.map((h, i) => ({ header: h, width: layout.data.widths[i] }));
-  data.getRow(1).font = { name: FONT, size: 11, bold: true };
-  for (const row of layout.data.rows) {
-    const r = data.addRow(row.map((v, i) => (v !== null && layout.data.dateCols.includes(i + 1) ? fromSerial(v as number) : v)));
-    r.font = { name: FONT, size: 11 };
-    for (const c of layout.data.dateCols) r.getCell(c).numFmt = 'yyyy-mm-dd';
-  }
   return Buffer.from(await wb.xlsx.writeBuffer());
 }

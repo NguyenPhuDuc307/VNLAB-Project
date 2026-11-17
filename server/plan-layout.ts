@@ -25,7 +25,7 @@ export type Layout = {
   subtaskRowGroups: { r1: number; r2: number }[];
   freeze: { rows: number; cols: number };
   /** Lưới ngày + hai luật conditional formatting (cú pháp en-US, tham chiếu ô đầu vùng); null = không xuất lưới. */
-  grid: { range: Range; barFormula: string; todayFormula: string; barColor: string; todayColor: string; borderColor: string } | null;
+  grid: { range: Range; barFormula: string; todayFormula: string; barColor: string; todayColor: string; borderColor: string; startCol: number; endCol: number; dayRow: number } | null;
   /** Sheet dữ liệu đủ cột, có liên kết task con với task cha. */
   data: { header: string[]; rows: (string | number | null)[][]; dateCols: number[]; widths: number[] };
   lastRow: number;
@@ -209,6 +209,7 @@ export function buildPlanLayout(p: LayoutProject, owner: string, groups: LayoutG
       barFormula: `AND(ISNUMBER($B${firstBodyRow}),$${S}${firstBodyRow}<>"",$${E}${firstBodyRow}<>"",${K}$5>=$${S}${firstBodyRow},${K}$5<=$${E}${firstBodyRow},WEEKDAY(${K}$5)<>1)`,
       todayFormula: `${K}$5=TODAY()`,
       barColor: COLORS.bar, todayColor: COLORS.today, borderColor: COLORS.grid,
+      startCol: col.get('start')!, endCol: col.get('end')!, dayRow: 5,
     };
   }
   return {
