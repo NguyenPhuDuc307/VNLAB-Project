@@ -45,6 +45,8 @@ export type Task = {
   startDate: string | null; endDate: string | null;
   /** Ngày công ước tính; null = tự tính từ khoảng ngày. */
   days: number | null; note: string; sort: number;
+  /** Gửi ghi chú lên mô tả việc trên Getfly khi đồng bộ (mặc định ghi chú là nội bộ). */
+  getflyNote?: boolean;
   /** Kế hoạch gốc (ngày lúc lập); khác ngày hiện tại = đã dời / gia hạn. */
   baselineStart: string | null; baselineEnd: string | null;
 };

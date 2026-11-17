@@ -57,6 +57,17 @@ test('phase: tạo / gán việc / lọc, MCP phase, gộp dự án khác thành
     assert.equal(xl.status, 200);
     assert.match(xl.headers.get('content-disposition') ?? '', /thang-12/);
     assert.equal((await fetch(`${srv.base}/api/projects/${a.id}/export?format=csv&phase=00000000-0000-4000-8000-000000000000`, { headers: { cookie: `prj_session=${session}` } })).status, 404);
+    // Xuất theo nhóm việc: chỉ việc của nhóm đó, tên file kèm tên nhóm.
+    const gPlan = (await R('POST', `/projects/${a.id}/groups`, { name: 'Lập kế hoạch' })).body;
+    const tPlan = (await R('POST', `/projects/${a.id}/tasks`, { name: 'Việc của nhóm', groupId: gPlan.id })).body;
+    const csvG = await (await fetch(`${srv.base}/api/projects/${a.id}/export?format=csv&group=${gPlan.id}`, { headers: { cookie: `prj_session=${session}` } })).text();
+    assert.ok(csvG.includes('Việc của nhóm') && !csvG.includes('Việc tháng 10') && !csvG.includes('Việc tháng 12'));
+    const xlG = await fetch(`${srv.base}/api/projects/${a.id}/export?format=xlsx&group=${gPlan.id}`, { headers: { cookie: `prj_session=${session}` } });
+    assert.equal(xlG.status, 200);
+    assert.match(xlG.headers.get('content-disposition') ?? '', /lap-ke-hoach\.xlsx/);
+    assert.equal((await fetch(`${srv.base}/api/projects/${a.id}/export?format=xlsx&group=00000000-0000-4000-8000-000000000000`, { headers: { cookie: `prj_session=${session}` } })).status, 404);
+    await R('DELETE', `/projects/${a.id}/tasks/${tPlan.id}`);
+    await R('DELETE', `/projects/${a.id}/groups/${gPlan.id}`);
     assert.equal((await R('DELETE', `/projects/${a.id}/phases/${p12.id}`)).body.tasks, 2);
     assert.equal((await R('GET', `/projects/${a.id}`)).body.tasks.filter((t: { phaseId: string | null }) => !t.phaseId).length, 2);
   } finally {

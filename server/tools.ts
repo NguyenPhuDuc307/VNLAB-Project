@@ -47,6 +47,7 @@ const taskBody = {
   endDate: zAnyDate.optional(),
   days: z.number().min(0).max(9999).optional().describe('Ngày công ước tính; bỏ qua = tự tính từ khoảng ngày (T2–T6 = 1, T7 = ½, CN = 0)'),
   note: z.string().trim().max(4000).optional(),
+  getflyNote: z.boolean().optional().describe('true = gửi ghi chú lên mô tả việc trên Getfly CRM khi đồng bộ; mặc định false (ghi chú nội bộ)'),
   scope: z.string().trim().max(80).optional().describe('Tên phạm vi (tag) của việc; chưa có thì tạo; "" = bỏ phạm vi. Xem danh sách phạm vi trong get_project'),
   phase: z.string().trim().max(80).optional().describe('Tên phase của việc (VD "Tháng 11"); chưa có thì tạo; "" = bỏ phase. Xem phases trong get_project'),
 };
@@ -105,7 +106,7 @@ const taskOut = (t: ReturnType<typeof D.taskView>, p: { satWeight: number; sunWe
   scope: t.scopeId ? scopes.get(t.scopeId) ?? null : null, scopeId: t.scopeId,
   phase: t.phaseId ? scopes.get(t.phaseId) ?? null : null, phaseId: t.phaseId,
   assignee: t.assignee, support: t.support, progress: t.progress, startDate: t.startDate, endDate: t.endDate,
-  days: D.effortOf(t, p), daysManual: t.days != null, note: t.note,
+  days: D.effortOf(t, p), daysManual: t.days != null, note: t.note, getflyNote: t.getflyNote,
   status: t.progress >= 100 ? 'done' : t.endDate && t.endDate < t0 ? 'overdue' : 'open',
   baseline: t.baselineStart && t.baselineEnd ? { startDate: t.baselineStart, endDate: t.baselineEnd, shiftDays: D.planShift(t)?.end ?? 0 } : null,
 });
@@ -257,7 +258,7 @@ export const TOOLS: Record<string, Tool> = {
       const groupId = a.groupId ?? (await groupByName(user, perms, p.id, a.group));
       const scopeId = await scopeByName(perms, p.id, a.scope as string | undefined);
       const phaseId = await phaseByName(perms, p.id, a.phase as string | undefined);
-      const t = await D.insertTask(p.id, D.taskCreate.parse({ groupId: groupId ?? null, scopeId: scopeId ?? null, phaseId: phaseId ?? null, name: a.name, assignee: a.assignee, support: a.support, progress: a.progress, startDate: date(a.startDate as string), endDate: date(a.endDate as string), days: a.days ?? null, note: a.note, subtasks: a.subtasks }));
+      const t = await D.insertTask(p.id, D.taskCreate.parse({ groupId: groupId ?? null, scopeId: scopeId ?? null, phaseId: phaseId ?? null, name: a.name, assignee: a.assignee, support: a.support, progress: a.progress, startDate: date(a.startDate as string), endDate: date(a.endDate as string), days: a.days ?? null, note: a.note, getflyNote: a.getflyNote, subtasks: a.subtasks }));
       const bundle = await D.projectBundle(p.id);
       const groups = new Map(bundle.groups.map((g) => [g.id, g.name]));
       return { project: p.name, task: taskOut(t, p, groups, today(), namesOf(bundle)), url: `https://project.vnlab.id.vn/du-an/${p.id}?task=${t.id}` };
@@ -282,7 +283,7 @@ export const TOOLS: Record<string, Tool> = {
         if (!byGroup.has(key)) byGroup.set(key, { name: key, tasks: [] });
         const scopeId = await scopeByName(perms, p.id, t.scope as string | undefined);
         const phaseId = await phaseByName(perms, p.id, (t.phase as string | undefined) ?? (a as { phase?: string }).phase);
-        byGroup.get(key)!.tasks.push(D.taskCreate.omit({ groupId: true }).parse({ scopeId: scopeId ?? null, phaseId: phaseId ?? null, name: t.name, assignee: t.assignee, support: t.support, progress: t.progress, startDate: date(t.startDate as string), endDate: date(t.endDate as string), days: t.days ?? null, note: t.note, subtasks: t.subtasks }));
+        byGroup.get(key)!.tasks.push(D.taskCreate.omit({ groupId: true }).parse({ scopeId: scopeId ?? null, phaseId: phaseId ?? null, name: t.name, assignee: t.assignee, support: t.support, progress: t.progress, startDate: date(t.startDate as string), endDate: date(t.endDate as string), days: t.days ?? null, note: t.note, getflyNote: t.getflyNote, subtasks: t.subtasks }));
       }
       const r = await D.importGroups(p.id, [...byGroup.values()]);
       return { project: p.name, groupsCreated: r.groups, tasksCreated: r.tasks, url: `https://project.vnlab.id.vn/du-an/${p.id}` };
@@ -310,6 +311,7 @@ export const TOOLS: Record<string, Tool> = {
       if (a.startDate !== undefined) patch.startDate = date(a.startDate as string);
       if (a.endDate !== undefined) patch.endDate = date(a.endDate as string);
       if (a.days !== undefined) patch.days = a.days as number;
+      if (a.getflyNote !== undefined) patch.getflyNote = a.getflyNote as boolean;
       if (a.note !== undefined) patch.note = a.note as string;
       if (a.group !== undefined || a.scope !== undefined || a.phase !== undefined) {
         const perms = await effectivePermissions(rolesOf(user));

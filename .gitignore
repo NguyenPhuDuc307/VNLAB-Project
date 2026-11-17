@@ -6,3 +6,4 @@ dist
 google-sa.json
 *.pem
 .playwright-mcp
+tsconfig.tsbuildinfo

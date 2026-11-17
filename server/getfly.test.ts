@@ -185,6 +185,18 @@ test('Getfly: cha riêng theo nhóm, bỏ qua mục chưa gắn, giữ liên k�
     assert.deepEqual([noSubtasks.created, noSubtasks.updated, noSubtasks.deleted, noSubtasks.errors], [0, 1, 0, []]);
     assert.ok(gf.tasks.has(9900));
     assert.equal(gf.tasks.get(Number(parent.task_id)).task_description, '<p>Nội dung nhập tay trên Getfly</p>');
+    // Tích "Gửi ghi chú lên Getfly": ghi chú vào khối app quản lý, giữ phần nhập tay; bỏ tích thì gỡ ra.
+    const shared = (await R('PATCH', `/projects/${p.id}/tasks/${t1.id}`, { note: 'Kế hoạch tuần\nChốt <b>giá</b> & tiến độ', getflyNote: true })).body;
+    assert.equal(shared.getflyNote, true);
+    const withNote = await run(`/projects/${p.id}/getfly/sync`);
+    assert.deepEqual([withNote.updated, withNote.errors], [1, []]);
+    const noted = gf.tasks.get(Number(parent.task_id)).task_description;
+    assert.match(noted, /^<p>Nội dung nhập tay trên Getfly<\/p>/);
+    assert.match(noted, /<p>Kế hoạch tuần<br>Chốt &lt;b&gt;giá&lt;\/b&gt; &amp; tiến độ<\/p>/);
+    await R('PATCH', `/projects/${p.id}/tasks/${t1.id}`, { getflyNote: false });
+    const hidden = await run(`/projects/${p.id}/getfly/sync`);
+    assert.deepEqual([hidden.updated, hidden.errors], [1, []]);
+    assert.equal(gf.tasks.get(Number(parent.task_id)).task_description, '<p>Nội dung nhập tay trên Getfly</p>');
     // Gỡ khỏi Getfly: xoá đúng các việc app đã tạo, giữ việc cha 8689 và việc có sẵn 9001.
     const un = await run(`/projects/${p.id}/getfly/unsync`);
     assert.deepEqual([un.deleted, un.errors], [2, []]);

@@ -280,6 +280,8 @@ const MIGRATIONS: string[] = [
     add column gcal_synced_at timestamptz,
     add column gcal_error text;
   `,
+  // 19: ghi chú của việc mặc định là nội bộ; chỉ việc được tích mới gửi ghi chú lên mô tả việc Getfly.
+  `alter table tasks add column getfly_note boolean not null default false;`,
 ];
 
 export async function migrate() {

@@ -1,4 +1,4 @@
-import { CaretDown, CaretRight, CheckCircle, CornersIn, CornersOut, DotsSixVertical, DotsThree, Plus } from '@phosphor-icons/react';
+import { CaretDown, CaretRight, CheckCircle, CornersIn, CornersOut, DotsSixVertical, DotsThree, DownloadSimple, Plus } from '@phosphor-icons/react';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as RPointerEvent } from 'react';
 import { planShift, type Group, type ProjectDetail, type Task, type TaskInput, type Subtask } from '../lib/api';
 import { addDays, coveredDays, dayNumber, diffDays, fmtDayMonth, fmtShort, fmtNum, fromDayNumber, mondayOf, WEEKDAY_SHORT, weekday, workDays } from '../lib/dates';
@@ -32,6 +32,8 @@ type Props = {
   onEditTask: (t: Task) => void;
   onAddTask: (groupId: string | null) => void;
   onGroupMenu: (g: Group, anchor: HTMLElement) => void;
+  /** Tải Excel kế hoạch của riêng nhóm (không truyền = ẩn nút). */
+  onDownloadGroup?: (g: Group) => void;
   onToggleGroup: (g: Group, collapsed: boolean) => void;
   collapsedTasks: string[];
   onToggleTask: (id: string) => void;
@@ -98,7 +100,7 @@ export function spanOf(tasks: Task[]): { start: string; end: string } | null {
 
 const isOverdue = (t: Task, today: string) => !!t.endDate && t.endDate < today && t.progress < 100;
 
-export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTask, onAddTask, onGroupMenu, onToggleGroup, collapsedTasks, onToggleTask, collapsedUngrouped, onToggleUngrouped, onChangeDates, onPatchTask, showBaseline = true, onReorder, onReorderGroups, fullscreen, onToggleFullscreen, menuFor, showScopes = true, headerTools }: Props) {
+export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTask, onAddTask, onGroupMenu, onDownloadGroup, onToggleGroup, collapsedTasks, onToggleTask, collapsedUngrouped, onToggleUngrouped, onChangeDates, onPatchTask, showBaseline = true, onReorder, onReorderGroups, fullscreen, onToggleFullscreen, menuFor, showScopes = true, headerTools }: Props) {
   const [menu, setMenu] = useState<MenuState>(null);
   // Kéo thả task con (ở số 1.1) trong cùng task cha; bấm không kéo thì không làm gì.
   type SubDrag = { parent: Task; parentId: string; id: string; y0: number; active: boolean; overId: string | null; after: boolean };
@@ -505,10 +507,11 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
                     {g ? g.name : 'Chưa phân nhóm'}
                   </button>
                   <span className="num shrink-0 text-[11px] font-semibold text-muted">{r.tasks.length}</span>
-                  {canEdit && (
+                  {(canEdit || (g && onDownloadGroup)) && (
                     <span className="ml-auto flex shrink-0 items-center">
-                      <IconButton label="Thêm việc vào nhóm" className="g-add h-7 w-7 rounded-lg" onClick={() => onAddTask(g?.id ?? null)}><Plus size={14} weight="bold" /></IconButton>
-                      {g && <IconButton label="Tuỳ chọn nhóm" className="h-7 w-7 rounded-lg" onClick={(e) => onGroupMenu(g, e.currentTarget)}><DotsThree size={16} weight="bold" /></IconButton>}
+                      {g && onDownloadGroup && r.tasks.length > 0 && <IconButton label={`Tải Excel kế hoạch nhóm ${g.name}`} className="h-7 w-7 rounded-lg" onClick={() => onDownloadGroup(g)}><DownloadSimple size={14} weight="bold" /></IconButton>}
+                      {canEdit && <IconButton label="Thêm việc vào nhóm" className="g-add h-7 w-7 rounded-lg" onClick={() => onAddTask(g?.id ?? null)}><Plus size={14} weight="bold" /></IconButton>}
+                      {canEdit && g && <IconButton label="Tuỳ chọn nhóm" className="h-7 w-7 rounded-lg" onClick={(e) => onGroupMenu(g, e.currentTarget)}><DotsThree size={16} weight="bold" /></IconButton>}
                     </span>
                   )}
                 </div>

@@ -157,6 +157,12 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, phaseI
             <Textarea value={f.note ?? ''} onChange={(e) => setF({ ...f, note: e.target.value })} maxLength={4000} className="leading-relaxed"
               rows={Math.min(30, Math.max(6, (f.note ?? '').split('\n').reduce((n, line) => n + Math.max(1, Math.ceil(line.length / 90)), 0) + 1))} />
           </Field>
+          {(project.getflyCreatorId || f.getflyNote) && (
+            <label className="-mt-1 mb-3 flex items-start gap-2 text-[13px] text-ink-2">
+              <input type="checkbox" checked={!!f.getflyNote} onChange={(e) => setF({ ...f, getflyNote: e.target.checked })} className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--primary)]" />
+              <span>Gửi ghi chú lên Getfly <span className="text-muted">— lần đồng bộ sau, ghi chú nằm trong mô tả việc trên CRM. Bỏ tích thì ghi chú chỉ ở nội bộ.</span></span>
+            </label>
+          )}
           {task && (
             <div className="mb-3 rounded-2xl border border-line bg-card p-3 text-[13px]">
               <div className="flex flex-wrap items-center gap-2">
@@ -188,7 +194,7 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, phaseI
   );
 }
 
-const FIELD_LABEL: Record<string, string> = { project: 'dự án', name: 'tên', groupId: 'nhóm', assignee: 'phụ trách', support: 'hỗ trợ', progress: 'tiến độ', startDate: 'bắt đầu', endDate: 'kết thúc', days: 'ngày công', note: 'ghi chú', baseline: 'kế hoạch gốc', subtasks: 'task con' };
+const FIELD_LABEL: Record<string, string> = { project: 'dự án', name: 'tên', groupId: 'nhóm', assignee: 'phụ trách', support: 'hỗ trợ', progress: 'tiến độ', startDate: 'bắt đầu', endDate: 'kết thúc', days: 'ngày công', note: 'ghi chú', getflyNote: 'gửi ghi chú Getfly', baseline: 'kế hoạch gốc', subtasks: 'task con' };
 const fmtVal = (field: string, v: string | null) => {
   if (v === null) return 'trống';
   if (field === 'subtasks') { try { return `${JSON.parse(v).length} task con`; } catch { return v; } }

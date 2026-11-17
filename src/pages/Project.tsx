@@ -317,6 +317,8 @@ export function ProjectPage() {
       } },
     ];
   };
+  // Excel kế hoạch của riêng một nhóm (theo phase đang xem, cùng lựa chọn cột của dự án).
+  const downloadGroup = (g: Group) => location.assign(`/api/projects/${p.id}/export?format=xlsx&group=${g.id}${curPhase ? `&phase=${curPhase.id}` : ''}`);
   const menuFor = (target: MenuTarget): MenuItem[] => {
     if (target.kind === 'blank') return blankItems(target.date);
     if (target.kind === 'group') {
@@ -327,6 +329,7 @@ export function ProjectPage() {
         ...(canTask ? [{ label: 'Thêm việc vào nhóm', icon: <Plus size={14} />, onSelect: () => setTaskSheet({ open: true, task: null, groupId: gid }) }] : []),
         { label: isCollapsed ? 'Mở nhóm' : 'Thu gọn nhóm', icon: isCollapsed ? <ArrowsOutLineVertical size={14} /> : <ArrowsInLineVertical size={14} />, onSelect: () => toggleCollapse(key, !isCollapsed) },
         ...(canTask && target.tasks.length > 1 ? [{ label: 'Sắp xếp việc trong nhóm theo ngày', icon: <SortAscending size={14} />, onSelect: () => sortByDate.mutate(gid) }] : []),
+        ...(g && can('project.data.export') && target.tasks.length ? [{ label: 'Tải Excel kế hoạch nhóm', icon: <DownloadSimple size={14} />, onSelect: () => downloadGroup(g) }] : []),
         ...(g ? getflyItems({ groupId: g.id }, `nhóm ${g.name}`, g.id) : []),
         ...(g && canStruct ? [
           'sep' as const,
@@ -478,6 +481,7 @@ export function ProjectPage() {
         onEditTask={(t) => setTaskSheet({ open: true, task: t })}
         onAddTask={(groupId) => setTaskSheet({ open: true, task: null, groupId })}
         onGroupMenu={(g) => setGroupSheet({ open: true, group: g })}
+        onDownloadGroup={can('project.data.export') ? downloadGroup : undefined}
         onToggleGroup={(g, c) => setCollapsed((xs) => (c ? [...new Set([...xs, g.id])] : xs.filter((x) => x !== g.id)))}
         onChangeDates={(task, startDate, endDate) => patchTask.mutate({ task, patch: { startDate, endDate } })}
         onPatchTask={(task, patch) => patchTask.mutate({ task, patch })}

@@ -747,8 +747,12 @@ auth.get('/projects/:id/export', requirePermission('project.data.export'), async
   // ?phase=<id>: chỉ xuất một phase (tên file / tiêu đề kèm tên phase, ngày neo theo phase).
   const phase = c.req.query('phase') ? full.phases.find((x) => x.id === c.req.query('phase')) : undefined;
   if (c.req.query('phase') && !phase) throw notFoundPhase();
-  const bundle = phase ? { ...full, tasks: full.tasks.filter((t) => t.phaseId === phase.id), groups: full.groups.filter((g) => full.tasks.some((t) => t.phaseId === phase.id && t.groupId === g.id)) } : full;
-  const p = phase ? { ...p0, name: `${p0.name} · ${phase.name}`, startDate: phase.startDate ?? null } : p0;
+  // ?group=<id>: chỉ xuất kế hoạch một nhóm việc (kết hợp được với phase).
+  const group = c.req.query('group') ? full.groups.find((x) => x.id === c.req.query('group')) : undefined;
+  if (c.req.query('group') && !group) throw new HTTPException(404, { message: 'Không thấy nhóm việc' });
+  const byPhase = phase ? { ...full, tasks: full.tasks.filter((t) => t.phaseId === phase.id), groups: full.groups.filter((g) => full.tasks.some((t) => t.phaseId === phase.id && t.groupId === g.id)) } : full;
+  const bundle = group ? { ...byPhase, tasks: byPhase.tasks.filter((t) => t.groupId === group.id), groups: [group] } : byPhase;
+  const p = { ...p0, name: [p0.name, phase?.name, group?.name].filter(Boolean).join(' · '), startDate: phase ? phase.startDate ?? null : p0.startDate };
   const slug = p.name.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/gi, 'd').replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase() || 'du-an';
   if (c.req.query('format') === 'xlsx') {
     const [owner] = await sql<{ name: string; email: string }[]>`select name, email from users where id = ${p.ownerId}`;

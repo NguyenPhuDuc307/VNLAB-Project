@@ -160,10 +160,14 @@ const hashOf = (o: unknown) => createHash('sha1').update(JSON.stringify(o)).dige
 const subtasksStart = '<!-- vnlab-project:subtasks:start -->';
 const subtasksEnd = '<!-- vnlab-project:subtasks:end -->';
 const escapeHtml = (text: string) => text.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
-function subtasksDescription(subtasks: D.Subtask[]) {
-  if (!subtasks.length) return '';
-  const rows = subtasks.map((s) => `<li>${escapeHtml(s.name)}</li>`).join('');
-  return `${subtasksStart}<ol>${rows}</ol>${subtasksEnd}`;
+/** Khối mô tả do app quản lý: ghi chú (chỉ khi việc được tích gửi) + danh sách task con. */
+function managedDescription(t: { note?: string; getflyNote?: boolean; subtasks?: D.Subtask[] }) {
+  const note = t.getflyNote ? (t.note ?? '').trim() : '';
+  const subtasks = t.subtasks ?? [];
+  if (!note && !subtasks.length) return '';
+  const notePart = note ? `<p>${escapeHtml(note).replace(/\r?\n/g, '<br>')}</p>` : '';
+  const listPart = subtasks.length ? `<ol>${subtasks.map((s) => `<li>${escapeHtml(s.name)}</li>`).join('')}</ol>` : '';
+  return `${subtasksStart}${notePart}${listPart}${subtasksEnd}`;
 }
 function mergeSubtasksDescription(current: string, block: string) {
   const pattern = /<!-- vnlab-project:subtasks:start -->[\s\S]*?<!-- vnlab-project:subtasks:end -->/g;
@@ -284,8 +288,8 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
           task_name: t.name,
           task_start_date: when(t.startDate ?? t.endDate, '08:00'),
           task_end_date: when(t.endDate ?? t.startDate, '17:30'),
-          // Chỉ quản lý khối task con trong mô tả; giữ nguyên nội dung nhập tay.
-          task_description: subtasksDescription(t.subtasks ?? []),
+          // Chỉ quản lý khối ghi chú (việc được tích) + task con trong mô tả; giữ nguyên nội dung nhập tay.
+          task_description: managedDescription(t),
           task_receiver: userOf(t.assignee),
           // Việc nằm thẳng dưới cha riêng của nhóm.
           task_parent: String(parent.id),
