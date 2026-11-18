@@ -46,7 +46,7 @@ let token: { value: string; exp: number } | null = null;
 
 export async function googleToken(): Promise<string> {
   const cfg = loadSa();
-  if (!cfg) throw new GoogleError(503, 'Chưa cấu hình Google service account (GOOGLE_SERVICE_ACCOUNT_FILE)');
+  if (!cfg) throw new GoogleError(503, 'Máy chủ chưa kết nối Google');
   if (token && token.exp > Date.now() + 60_000) return token.value;
   const key = await importPKCS8(cfg.private_key, 'RS256');
   const now = Math.floor(Date.now() / 1000);
@@ -94,12 +94,12 @@ export async function gfetch<T>(url: string, init: GfetchInit = {}): Promise<T> 
   if (!res.ok && init.allow?.includes(res.status)) return null as T;
   if (!res.ok) {
     const msg = (data as { error?: { message?: string } } | null)?.error?.message ?? `Google trả ${res.status}`;
-    if ((res.status === 403 || res.status === 429) && /rate ?limit|quota|usage limit/i.test(msg)) throw new GoogleError(429, `Google đang giới hạn tốc độ (${msg}) — thử lại sau ít phút`);
+    if ((res.status === 403 || res.status === 429) && /rate ?limit|quota|usage limit/i.test(msg)) throw new GoogleError(429, `Google đang bận, thử lại sau ít phút`);
     if (res.status === 403 && init.forbidden) throw new GoogleError(403, `${init.forbidden} (${msg})`);
     if (res.status === 404 && init.notFound) throw new GoogleError(404, init.notFound);
-    if (/not supported for this document|Office|\.xlsx/i.test(msg)) throw new GoogleError(400, 'File này là Excel (.xlsx) mở trong Google Sheets, không phải Google Sheet gốc. Trong Google Sheets chọn Tệp → Lưu dưới dạng Google Trang tính, rồi dán link bản mới.');
-    if (res.status === 403) throw new GoogleError(403, `Google từ chối (${msg}). Sheet đã Share quyền Người chỉnh sửa cho ${serviceAccountEmail() ?? 'service account'} chưa? (Service account không tự tạo file được — sheet phải do bạn tạo.)`);
-    if (res.status === 404) throw new GoogleError(404, 'Không tìm thấy Google Sheet — kiểm tra lại đường dẫn, hoặc sheet chưa Share cho service account');
+    if (/not supported for this document|Office|\.xlsx/i.test(msg)) throw new GoogleError(400, 'Đây là file Excel. Chọn Tệp → Lưu dưới dạng Google Trang tính rồi dán link mới.');
+    if (res.status === 403) throw new GoogleError(403, `Chưa có quyền ghi. Hãy Share sheet cho ${serviceAccountEmail() ?? 'service account'}, quyền Người chỉnh sửa.`);
+    if (res.status === 404) throw new GoogleError(404, 'Không tìm thấy sheet — kiểm tra link hoặc quyền Share');
     throw new GoogleError(502, `Google lỗi ${res.status}: ${msg}`);
   }
   return data as T;

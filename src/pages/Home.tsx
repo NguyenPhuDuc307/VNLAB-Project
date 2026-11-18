@@ -25,7 +25,7 @@ export function Home() {
       {ov.isPending && <div className="grid gap-3 md:grid-cols-3"><Skeleton className="h-32" /><Skeleton className="h-32" /><Skeleton className="h-32" /></div>}
       {d && !d.projects.length && (
         <div className="card">
-          <Empty icon={<FolderSimple size={30} />} title="Chưa có dự án nào" desc="Tạo dự án, thêm nhóm việc rồi dán kế hoạch từ bảng tính — hoặc chờ người khác mời bạn vào." action={can('project.project.create') && <Button onClick={() => setCreate(true)}>Tạo dự án đầu tiên</Button>} />
+          <Empty icon={<FolderSimple size={30} />} title="Chưa có dự án nào" desc="Tạo dự án mới hoặc chờ người khác mời bạn." action={can('project.project.create') && <Button onClick={() => setCreate(true)}>Tạo dự án đầu tiên</Button>} />
         </div>
       )}
 

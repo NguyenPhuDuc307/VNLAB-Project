@@ -359,7 +359,7 @@ export async function transferTasks(source: ProjectRow, target: ProjectRow, ids:
   const moved = await sql.begin(async (tx) => {
     await tx`select id from projects where id in ${tx([source.id, target.id])} order by id for update`;
     const tasks = await tx<TaskRow[]>`select * from tasks where project_id = ${source.id} and id in ${tx(ids)} order by group_id, sort, id for update`;
-    if (tasks.length !== ids.length) throw bad('Một hoặc nhiều việc không còn thuộc dự án nguồn; chưa chuyển việc nào');
+    if (tasks.length !== ids.length) throw bad('Có việc không còn trong dự án, chưa chuyển việc nào');
     const [freshTarget] = await tx<ProjectRow[]>`select * from projects where id = ${target.id}`;
     const targetParents = { ...(freshTarget.getflyGroups ?? {}) };
     const groupMap = new Map<string, string>(), scopeMap = new Map<string, string>();

@@ -83,7 +83,7 @@ export function PhaseSheet({ open, phase, project, unphased, onClose, onCreated,
         </div>
       }>
       <form id="phase-form" className="pt-1" onSubmit={(e) => { e.preventDefault(); save.mutate(undefined); }}>
-        <Field label="Tên phase" hint="VD: Tháng 10, Tháng 11, Giai đoạn 1 — mọi phase dùng chung thành viên, phạm vi, nhóm việc và cấu hình của dự án.">
+        <Field label="Tên phase" hint="VD: Tháng 10, Giai đoạn 1">
           <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required maxLength={80} autoFocus placeholder="VD: Tháng 11" />
         </Field>
         <div className="grid gap-x-3 sm:grid-cols-2">

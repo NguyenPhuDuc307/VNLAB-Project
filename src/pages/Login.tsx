@@ -103,7 +103,7 @@ export function Login() {
     <Shell>
       <p className="eyebrow text-primary">Đăng nhập</p>
       <h1 className="mt-2 text-[26px] font-extrabold leading-tight tracking-tight">Kế hoạch dự án</h1>
-      <p className="mb-6 mt-1.5 text-[15px] leading-relaxed text-muted">Việc theo nhóm, người phụ trách, tiến độ và biểu đồ Gantt theo ngày — cả nhóm cùng nhìn một bảng.</p>
+      <p className="mb-6 mt-1.5 text-[15px] leading-relaxed text-muted">Lên kế hoạch, giao việc và theo dõi tiến độ cùng cả nhóm.</p>
 
       {loggedOut && !err && <p className="mb-4 rounded-2xl border border-line bg-card px-4 py-3 text-sm text-ink-2">Đã đăng xuất.</p>}
       {err && <p role="alert" className={alertCls}>{err}</p>}
@@ -143,9 +143,9 @@ export function Consent({ user }: { user: User }) {
         <p className="eyebrow text-primary">Quyền riêng tư</p>
         <h1 className="mt-2 text-[24px] font-extrabold leading-tight tracking-tight">{user.consentAt ? 'Chính sách đã được cập nhật' : 'Trước khi bắt đầu'}</h1>
         <div className="mb-5 mt-3 space-y-2 text-sm leading-relaxed text-ink-2">
-          <p>VNLab Project lưu trên máy chủ của VNLab những gì bạn nhập: tên dự án, khách hàng, nhóm việc, việc, người phụ trách, ngày tháng, tiến độ, ghi chú và email người được mời, cùng email, tên và ảnh đại diện từ VNLab ID.</p>
-          <p>Dữ liệu chỉ dùng để chạy ứng dụng cho bạn và những người bạn mời vào dự án: không quảng cáo, không bán hay chia sẻ cho bên khác.</p>
-          <p>Bạn xuất được toàn bộ dữ liệu và xoá tài khoản bất cứ lúc nào trong Cài đặt.</p>
+          <p>VNLab lưu những gì bạn nhập (dự án, việc, người được mời) cùng email, tên và ảnh từ VNLab ID.</p>
+          <p>Dữ liệu chỉ dùng để chạy ứng dụng, không quảng cáo, không bán cho ai.</p>
+          <p>Bạn có thể tải dữ liệu hoặc xoá tài khoản trong Cài đặt.</p>
         </div>
         <label className="mb-4 flex items-start gap-2.5 text-[13px] leading-snug text-ink-2">
           <input type="checkbox" required checked={agree} onChange={(e) => setAgree(e.target.checked)} className="mt-0.5 size-4 shrink-0 accent-[var(--primary)]" />

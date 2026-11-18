@@ -27,14 +27,14 @@ export function Settings() {
       <Section title="Tài khoản">
         <div className="card p-4">
           <form onSubmit={(e) => { e.preventDefault(); saveName.mutate(name.trim()); }}>
-            <Field label="Tên hiển thị" hint={can('project.settings.write') ? 'Tên này hiện ở dự án và gợi ý ô Phụ trách' : 'Bạn chưa có quyền đổi tên — nhờ quản trị viên cấp ở VNLab Account'}>
+            <Field label="Tên hiển thị" hint={can('project.settings.write') ? 'Tên này hiện ở dự án và gợi ý ô Phụ trách' : 'Bạn chưa có quyền đổi tên'}>
               <div className="flex gap-2">
                 <Input value={name} onChange={(e) => setName(e.target.value)} maxLength={80} disabled={!can('project.settings.write')} />
                 <Button type="submit" variant="secondary" disabled={!can('project.settings.write') || saveName.isPending || name.trim() === u.name || !name.trim()} className="h-11 shrink-0">Lưu</Button>
               </div>
             </Field>
           </form>
-          <p className="text-[13px] text-muted">Email <b className="text-ink">{u.email}</b>. Email, mật khẩu, đăng nhập Google quản lý ở VNLab Account.</p>
+          <p className="text-[13px] text-muted">Email <b className="text-ink">{u.email}</b>. Đổi email, mật khẩu ở VNLab Account.</p>
           <div className="mt-2 flex flex-wrap gap-1.5">{u.roles.map((r) => <Chip key={r} tone="primary">{r}</Chip>)}</div>
           <div className="mt-4 flex flex-wrap gap-2">
             <Button variant="secondary" onClick={() => window.open(ACCOUNT_URL, '_blank', 'noopener')}><ArrowSquareOut size={16} /> Mở VNLab Account</Button>
@@ -72,7 +72,7 @@ export function Settings() {
         footer={<div className="flex gap-2"><Button variant="secondary" block onClick={() => setDel(false)}>Huỷ</Button><Button variant="danger" block disabled={confirmText.trim().toLowerCase() !== u.email.toLowerCase() || remove.isPending} onClick={() => remove.mutate(undefined)}>Xoá vĩnh viễn</Button></div>}
       >
         <div className="space-y-2 text-[14px] leading-relaxed text-ink-2">
-          <p>Mọi dự án bạn là chủ (cùng nhóm việc, việc, lời mời) bị xoá; bạn bị rút khỏi dự án được mời. Tài khoản VNLab ID vẫn còn — xoá VNLab ID ở VNLab Account.</p>
+          <p>Mọi dự án bạn tạo sẽ bị xoá, bạn rời các dự án được mời. Tài khoản VNLab ID vẫn còn.</p>
           <p>Gõ email <b className="text-ink">{u.email}</b> để xác nhận.</p>
         </div>
         <Input className="mt-3" value={confirmText} onChange={(e) => setConfirmText(e.target.value)} placeholder={u.email} autoCapitalize="none" />
@@ -106,9 +106,7 @@ function McpCard() {
     <Section title="AI bên ngoài (MCP)">
       <div className="card p-4">
         <p className="text-[13.5px] leading-relaxed text-ink-2">
-          Cho Claude Code, Codex, Claude Desktop hay client MCP khác tạo và cập nhật việc trong dự án của bạn
-          {tools.data ? ` (${tools.data.tools.length} công cụ: ${tools.data.tools.map((t) => t.name).join(', ')})` : ''}.
-          Endpoint <code className="rounded bg-fill px-1.5 py-0.5 text-[12.5px]">{url}</code>, Streamable HTTP, header <code className="rounded bg-fill px-1.5 py-0.5 text-[12.5px]">Authorization: Bearer …</code>.
+          Cho Claude, Codex… tạo và sửa việc trong dự án của bạn. Địa chỉ: <code className="rounded bg-fill px-1.5 py-0.5 text-[12.5px]">{url}</code>
         </p>
         <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={(e) => { e.preventDefault(); create.mutate(name.trim() || 'MCP client'); }}>
           <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Tên token, VD: Claude Desktop ở máy nhà" maxLength={80} className="h-10" />
@@ -144,7 +142,7 @@ function TokenHelp({ token, url }: { token: string; url: string }) {
   const copy = async (text: string) => { try { await navigator.clipboard.writeText(text); toast('Đã chép'); } catch { toast('Không chép được — chọn và sao chép tay', 'error'); } };
   return (
     <div className="space-y-3 pb-2">
-      <p className="text-[13.5px] text-danger">Ai có token này đọc và ghi được mọi dự án của bạn. Không gửi cho người khác; thu hồi trong Cài đặt khi không dùng nữa.</p>
+      <p className="text-[13.5px] text-danger">Ai có token này sửa được mọi dự án của bạn. Đừng gửi cho người khác.</p>
       {blocks.map((b) => (
         <div key={b.label}>
           <div className="mb-1 flex items-center justify-between text-[12px] font-semibold text-muted">

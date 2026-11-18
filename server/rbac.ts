@@ -58,7 +58,7 @@ export function requirePermission(key: PermissionKey): MiddlewareHandler<PermEnv
   const label = PERMISSION_GROUPS.flatMap((g) => g.permissions as readonly { key: string; label: string }[]).find((p) => p.key === key)!.label;
   return async (c, next) => {
     if (!c.get('permissions')?.has(key)) {
-      throw new HTTPException(403, { message: `Bạn chưa có quyền ${label.charAt(0).toLowerCase()}${label.slice(1)} trong Project — nhờ quản trị viên cấp ở VNLab Account` });
+      throw new HTTPException(403, { message: `Bạn chưa có quyền ${label.charAt(0).toLowerCase()}${label.slice(1)} — nhờ quản trị viên cấp` });
     }
     await next();
   };

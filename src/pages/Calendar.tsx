@@ -54,7 +54,7 @@ export function CalendarPage() {
 
   return (
     <div>
-      <PageHeader eyebrow="VNLab / Project" title="Lịch" sub="Việc có ngày của mọi dự án đang chạy. Bấm việc để mở trong dự án, kéo thanh để dời ngày." />
+      <PageHeader eyebrow="VNLab / Project" title="Lịch" sub="Việc của mọi dự án đang chạy. Kéo thanh để dời ngày." />
       <div className="mb-3 flex flex-wrap gap-1.5">
         {d.projects.filter((p) => counts.get(p.id)).map((p) => {
           const off = hidden.includes(p.id);

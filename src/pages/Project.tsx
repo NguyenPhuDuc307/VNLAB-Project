@@ -154,7 +154,7 @@ export function ProjectPage() {
   });
   const sortByDate = useAction((groupId?: string | null) => api<{ moved: number }>(`/projects/${id}/tasks/sort`, { method: 'POST', body: groupId === undefined ? {} : { groupId } }), { onSuccess: (r) => toast(r.moved ? `Đã sắp xếp lại ${r.moved} việc theo ngày` : 'Thứ tự đã đúng theo ngày') });
   const sortAll = async () => {
-    if (await confirm({ title: 'Sắp xếp mọi nhóm theo ngày?', desc: <p>Các nhóm xếp theo ngày bắt đầu sớm nhất của việc trong nhóm; việc trong từng nhóm xếp theo ngày bắt đầu (trống xếp cuối), rồi kết thúc, rồi tên. Thứ tự tay hiện tại sẽ mất.</p>, ok: 'Sắp xếp' })) sortByDate.mutate(undefined);
+    if (await confirm({ title: 'Sắp xếp mọi nhóm theo ngày?', desc: <p>Nhóm và việc sẽ xếp theo ngày bắt đầu. Thứ tự hiện tại sẽ mất.</p>, ok: 'Sắp xếp' })) sortByDate.mutate(undefined);
   };
   const [exportCols, setExportCols] = useState<ColKey[] | null>(null);
   const saveCols = useAction((cols: ColKey[]) => api(`/projects/${id}`, { method: 'PATCH', body: { exportColumns: cols } }), { onSuccess: () => toast('Đã lưu cột xuất cho dự án') });
@@ -309,11 +309,11 @@ export function ProjectPage() {
     return [
       'sep',
       { label: 'Đồng bộ lên Getfly', icon: <CloudArrowUp size={14} />, disabled: getflyJob.running, onSelect: () => {
-        if (!ready) { toast('Chọn người tạo và gắn việc cha Getfly cho nhóm trước khi đồng bộ', 'error'); setGetflyOpen(true); return; }
+        if (!ready) { toast('Cần chọn người tạo và gắn việc cha cho nhóm trước', 'error'); setGetflyOpen(true); return; }
         getflyJob.syncScope(scope);
       } },
       { label: 'Xoá khỏi Getfly…', icon: <Trash size={14} />, danger: true, disabled: getflyJob.running, onSelect: async () => {
-        if (await confirm({ title: 'Xoá khỏi Getfly?', desc: <p>Chỉ xoá các việc app đã tạo trên Getfly cho <b>{label}</b>. Việc cha Getfly được giữ nguyên. Dữ liệu trong VNLab vẫn còn. Không hoàn tác được; lần đồng bộ sau có thể tạo lại.</p>, ok: 'Xoá khỏi Getfly', danger: true })) getflyJob.unsyncScope(scope);
+        if (await confirm({ title: 'Xoá khỏi Getfly?', desc: <p>Xoá việc app đã tạo trên Getfly cho <b>{label}</b>. Dữ liệu ở đây vẫn còn.</p>, ok: 'Xoá khỏi Getfly', danger: true })) getflyJob.unsyncScope(scope);
       } },
     ];
   };
@@ -445,7 +445,7 @@ export function ProjectPage() {
           <Empty
             icon={<TableIcon size={30} />}
             title="Dự án chưa có việc nào"
-            desc="Thêm nhóm việc (giai đoạn / hạng mục) rồi thêm việc, hoặc dán thẳng kế hoạch từ Excel / Google Sheets. AI bên ngoài cũng thêm được qua MCP (Cài đặt)."
+            desc="Thêm nhóm việc rồi thêm việc, hoặc dán kế hoạch từ bảng tính."
             action={canTask && (
               <span className="flex flex-wrap justify-center gap-2">
                 {canStruct && <Button variant="secondary" onClick={() => setGroupSheet({ open: true, group: null })}><Plus size={14} weight="bold" /> Thêm nhóm</Button>}
@@ -495,7 +495,7 @@ export function ProjectPage() {
         showScopes={showScopes}
       />
       )}
-      {view === 'gantt' && !full && <p className="mt-2 hidden px-1 text-[12px] text-muted md:block">Bấm đúp vào ô để sửa tại chỗ (Enter lưu, Esc huỷ, Tab sang ô kế); bấm số thứ tự để mở chi tiết, ghi chú, lịch sử. Kéo thanh để dời ngày, kéo hai mép đổi ngày bắt đầu / kết thúc. Khung nét đứt "gốc" là khoảng ngày ban đầu của việc đã dời / gia hạn. Kéo ô số thứ tự để đổi thứ tự trong nhóm; nút ⤢ ở góc bảng để phóng to cả bảng ra toàn màn hình (Esc thoát).</p>}
+      {view === 'gantt' && !full && <p className="mt-2 hidden px-1 text-[12px] text-muted md:block">Bấm đúp ô để sửa, bấm số thứ tự để xem chi tiết, kéo thanh để dời ngày.</p>}
       </div>
 
       <TaskSheet open={taskSheet.open} onClose={() => setTaskSheet((s) => ({ ...s, open: false }))} project={p} task={taskSheet.task} groupId={taskSheet.groupId ?? null} phaseId={activePhase && activePhase !== 'none' ? activePhase : null} canEdit={editor} />
@@ -508,7 +508,7 @@ export function ProjectPage() {
       <MembersSheet open={members} onClose={() => setMembers(false)} project={p} />
       <ImportSheet open={importOpen} onClose={() => setImportOpen(false)} project={p} />
       <Sheet open={exportOpen} onClose={() => setExportOpen(false)} title="Xuất dự án">
-        <p className="mb-3 text-[13.5px] text-ink-2">Excel theo mẫu kế hoạch Gantt (bảng việc + lưới ngày theo tuần, thanh tự vẽ theo ngày bắt đầu/kết thúc). CSV phẳng có BOM. JSON giữ nguyên cấu trúc nhóm và việc.</p>
+        <p className="mb-3 text-[13.5px] text-ink-2">Tải kế hoạch về dạng Excel, CSV hoặc JSON.</p>
         <div className="mb-3 rounded-2xl border border-line bg-card p-3">
           <p className="mb-2 text-[12.5px] font-semibold text-ink-2">Cột trong sheet PLAN (Excel và Google Sheets)</p>
           <ColumnPicker value={exportCols ?? normalizeColumns(p.exportColumns)} onChange={setExportCols} />
@@ -571,10 +571,10 @@ function GroupSheet({ open, onClose, project, group, confirm, onSort }: {
       }
     >
       <form id="group-form" className="pt-1" onSubmit={(e) => { e.preventDefault(); save.mutate(name.trim()); }}>
-        <Field label="Tên nhóm" hint="VD: Thiết kế, Lập trình, Kiểm thử — mỗi nhóm là một giai đoạn hoặc hạng mục">
+        <Field label="Tên nhóm" hint="VD: Thiết kế, Lập trình, Kiểm thử">
           <Input value={name} onChange={(e) => setName(e.target.value)} required maxLength={160} autoFocus />
         </Field>
-        <Field label="Việc cha trên Getfly" hint="Dán link, id hoặc mã việc cha cho nhóm này. Để trống để bỏ qua nhóm khi đồng bộ.">
+        <Field label="Việc cha trên Getfly" hint="Dán link hoặc mã việc cha. Để trống thì không đồng bộ nhóm này.">
           <Input value={parentRef} onChange={(e) => setParentRef(e.target.value)} maxLength={500} placeholder="https://…/#/tasks/?task_id=… hoặc CVI/…" />
         </Field>
         {linkedParent && <p className="mb-4 break-words text-[13px] text-muted">Đang gắn: {linkedParent.name} · {linkedParent.code}{linkedParent.projectName ? ` · ${linkedParent.projectName}` : ''}</p>}

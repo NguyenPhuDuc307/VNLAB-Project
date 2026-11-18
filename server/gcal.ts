@@ -93,8 +93,8 @@ export function eventFor(p: { id: string; name: string; code: string; groups: re
 type Existing = { id: string; status?: string; extendedProperties?: { private?: Record<string, string> } };
 
 const errs = () => ({
-  forbidden: `Google Calendar từ chối. Lịch đã chia sẻ quyền "Thay đổi sự kiện" cho ${serviceAccountEmail() ?? 'service account'} chưa? Google Calendar API đã bật trong Google Cloud chưa?`,
-  notFound: `Không tìm thấy lịch — kiểm tra id lịch, hoặc lịch chưa chia sẻ cho ${serviceAccountEmail() ?? 'service account'}`,
+  forbidden: `Chưa có quyền. Hãy chia sẻ lịch cho ${serviceAccountEmail() ?? 'service account'}, quyền "Thay đổi sự kiện".`,
+  notFound: `Không tìm thấy lịch — kiểm tra Mã lịch và quyền chia sẻ`,
 });
 
 /** Gọi Google Calendar; bị giới hạn tốc độ thì chờ tăng dần (1, 2, 4, 8, 16 giây) rồi thử lại. */

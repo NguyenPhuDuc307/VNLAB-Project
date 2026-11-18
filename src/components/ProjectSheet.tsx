@@ -105,7 +105,7 @@ export function ProjectSheet({ open, onClose, project, onImport }: { open: boole
         </div>
         {project && (
           <div role="tabpanel" id={`${tabId}-panel-ai`} aria-labelledby={`${tabId}-tab-ai`} hidden={tab !== 'ai'}>
-          <Field label="Hướng dẫn cho AI (MCP)" hint="AI bên ngoài đọc phần này trước khi tạo / sửa việc: quy ước đặt tên, cách chia phạm vi, ai phụ trách gì… AI cũng tự ghi thêm được khi bạn bảo nó nhớ.">
+          <Field label="Hướng dẫn cho AI (MCP)" hint="Quy ước để AI làm theo khi tạo, sửa việc.">
             <Textarea value={f.aiContext} onChange={(e) => setF({ ...f, aiContext: e.target.value })} maxLength={20000} rows={5} placeholder={'VD:\n- Tên việc bắt đầu bằng động từ.\n- Việc nào cũng gắn phạm vi; phạm vi Kho do Lương phụ trách.'} />
           </Field>
           </div>
@@ -119,7 +119,7 @@ export function ProjectSheet({ open, onClose, project, onImport }: { open: boole
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <p className="text-[13px] font-bold">Nhập kế hoạch</p>
-              <p className="mt-0.5 text-[12px] text-muted">Dán các dòng chọn từ Excel / Google Sheets; có xem trước trước khi thêm vào dự án.</p>
+              <p className="mt-0.5 text-[12px] text-muted">Dán các dòng từ Excel hoặc Google Sheets.</p>
             </div>
             <Button variant="secondary" size="sm" onClick={onImport}><Table size={15} /> Dán từ bảng tính</Button>
           </div>
@@ -143,7 +143,7 @@ export function MembersSheet({ open, onClose, project }: { open: boolean; onClos
   const [email, setEmail] = useState('');
   const [role, setRole] = useState<'editor' | 'viewer'>('editor');
   const add = useAction((b: { email: string; role: 'editor' | 'viewer' }) => api<{ known: boolean }>(`/projects/${project.id}/members`, { method: 'POST', body: b }), {
-    onSuccess: (r) => { setEmail(''); toast(r.known ? 'Đã thêm thành viên' : 'Đã mời — người này sẽ thấy dự án khi đăng nhập Project bằng email đó'); },
+    onSuccess: (r) => { setEmail(''); toast(r.known ? 'Đã thêm thành viên' : 'Đã mời — họ sẽ thấy dự án khi đăng nhập'); },
   });
   const change = useAction((b: { email: string; role: 'editor' | 'viewer' }) => api(`/projects/${project.id}/members/${encodeURIComponent(b.email)}`, { method: 'PATCH', body: { role: b.role } }));
   const remove = useAction((em: string) => api(`/projects/${project.id}/members/${encodeURIComponent(em)}`, { method: 'DELETE' }), {
@@ -197,7 +197,7 @@ export function MembersSheet({ open, onClose, project }: { open: boolean; onClos
             </Select>
             <Button type="submit" disabled={add.isPending || !email.trim()} className="h-10 shrink-0"><UserPlus size={16} /> Mời</Button>
           </div>
-          <p className="mt-2 text-[12px] text-muted">Người được mời cần có VNLab ID với role Project (cấp ở VNLab Account). Chưa đăng nhập Project thì vẫn giữ lời mời.</p>
+          <p className="mt-2 text-[12px] text-muted">Người được mời cần có tài khoản VNLab ID.</p>
         </form>
       )}
     </Sheet>
@@ -209,7 +209,7 @@ function GoogleSheetBox({ project }: { project: ProjectDetail }) {
   const { toast, confirm } = useFeedback();
   const status = useQuery({ queryKey: ['google-status'], queryFn: () => api<GoogleStatus>('/google/status'), staleTime: Infinity });
   const [url, setUrl] = useState('');
-  const link = useAction((b: { sheetUrl?: string | null; sheetAuto?: boolean; sheetCollapseSubtasks?: boolean }) => api<Project>(`/projects/${project.id}/sheet`, { method: 'PATCH', body: b }), { onSuccess: (_r, b) => { if (b.sheetUrl) { setUrl(''); toast('Đã liên kết sheet, tự đồng bộ đã bật — bấm Đồng bộ ngay để ghi lần đầu'); } else if (b.sheetCollapseSubtasks !== undefined) toast('Đã lưu cách hiển thị — bấm Đồng bộ ngay để áp dụng'); } });
+  const link = useAction((b: { sheetUrl?: string | null; sheetAuto?: boolean; sheetCollapseSubtasks?: boolean }) => api<Project>(`/projects/${project.id}/sheet`, { method: 'PATCH', body: b }), { onSuccess: (_r, b) => { if (b.sheetUrl) { setUrl(''); toast('Đã liên kết — bấm Đồng bộ ngay để ghi lần đầu'); } else if (b.sheetCollapseSubtasks !== undefined) toast('Đã lưu cách hiển thị — bấm Đồng bộ ngay để áp dụng'); } });
   const sync = useAction(() => api<{ sheetUrl: string }>(`/projects/${project.id}/sheet/sync`, { method: 'POST', body: {} }), { onSuccess: () => toast('Đã đồng bộ sang Google Sheet') });
   const unlink = async () => {
     if (await confirm({ title: 'Bỏ liên kết Google Sheet?', desc: <p>Sheet vẫn còn trên Google Drive; app chỉ thôi ghi vào đó.</p>, ok: 'Bỏ liên kết', danger: true })) link.mutate({ sheetUrl: null });
@@ -223,7 +223,7 @@ function GoogleSheetBox({ project }: { project: ProjectDetail }) {
   return (
     <div className="mt-2 rounded-2xl border border-line bg-card p-3">
       <p className="text-[13px] font-semibold text-ink-2">Google Sheets</p>
-      {status.data && !status.data.configured && <p className="mt-1 text-[12.5px] text-muted">Server chưa cấu hình Google service account — xem README (GOOGLE_SERVICE_ACCOUNT_FILE).</p>}
+      {status.data && !status.data.configured && <p className="mt-1 text-[12.5px] text-muted">Máy chủ chưa kết nối Google.</p>}
       {project.sheetUrl ? (
         <>
           <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -236,19 +236,19 @@ function GoogleSheetBox({ project }: { project: ProjectDetail }) {
             <Button size="sm" variant="ghost" onClick={unlink} disabled={busy} className="text-danger">Bỏ liên kết</Button>
           </div>
           {email && <p className="mt-2 text-[12px] text-muted">Sheet phải Share quyền <b>Người chỉnh sửa</b> cho <code className="rounded bg-fill px-1 py-0.5">{email}</code> <button type="button" onClick={copyEmail} className="font-semibold text-primary hover:underline">Chép</button></p>}
-          <div className="mt-3"><Toggle checked={project.sheetAuto} onChange={(v) => link.mutate({ sheetAuto: v })} label="Tự đồng bộ" desc="Sau mỗi thay đổi việc / nhóm, ghi sang sheet (gộp trong 30 giây)" /></div>
+          <div className="mt-3"><Toggle checked={project.sheetAuto} onChange={(v) => link.mutate({ sheetAuto: v })} label="Tự đồng bộ" desc="Tự ghi sang sheet sau mỗi thay đổi" /></div>
           <fieldset disabled={busy}>
-            <Toggle checked={project.sheetCollapseSubtasks ?? true} onChange={(v) => link.mutate({ sheetCollapseSubtasks: v })} label="Thu gọn task con khi đồng bộ" desc="Bật: chỉ hiện việc chính, bấm +/− để mở chi tiết. Tắt: hiện đầy đủ task con. Áp dụng cho lần đồng bộ tiếp theo." />
+            <Toggle checked={project.sheetCollapseSubtasks ?? true} onChange={(v) => link.mutate({ sheetCollapseSubtasks: v })} label="Thu gọn task con khi đồng bộ" desc="Chỉ hiện việc chính, bấm +/− để xem task con" />
           </fieldset>
           <p className="mb-1.5 text-[12.5px] font-semibold text-ink-2">Cột đồng bộ</p>
           <ColumnPicker value={normalizeColumns(project.exportColumns)} onChange={(v) => saveCols.mutate(v)} disabled={saveCols.isPending} />
         </>
       ) : (
         <>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-muted">Ghi kế hoạch (bảng việc + lưới Gantt theo tuần) sang Google Sheet của bạn, một chiều từ app. Tab <b>PLAN</b> và <b>Dữ liệu</b> bị ghi đè, các tab khác giữ nguyên.</p>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-muted">Ghi kế hoạch sang Google Sheet. Tab <b>PLAN</b> và <b>Dữ liệu</b> sẽ bị ghi đè.</p>
           <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-[12.5px] leading-relaxed text-ink-2">
-            <li><a href={newSheetUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-primary hover:underline">Tạo Google Sheet mới</a> (mở Google Sheets, tên đặt sẵn) hoặc dùng sheet có sẵn. File .xlsx thì chọn Tệp → Lưu dưới dạng Google Trang tính trước.</li>
-            <li>Trong sheet bấm <b>Chia sẻ</b>, dán email {email ? <><code className="rounded bg-fill px-1 py-0.5">{email}</code> <button type="button" onClick={copyEmail} className="font-semibold text-primary hover:underline">Chép</button></> : 'service account'}, chọn quyền <b>Người chỉnh sửa</b>, bỏ tick gửi thông báo.</li>
+            <li><a href={newSheetUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-primary hover:underline">Tạo Google Sheet mới</a> hoặc dùng sheet có sẵn.</li>
+            <li>Trong sheet bấm <b>Chia sẻ</b>, dán email {email ? <><code className="rounded bg-fill px-1 py-0.5">{email}</code> <button type="button" onClick={copyEmail} className="font-semibold text-primary hover:underline">Chép</button></> : 'service account'}, quyền <b>Người chỉnh sửa</b>.</li>
             <li>Dán link sheet vào ô dưới và bấm <b>Liên kết</b>, rồi <b>Đồng bộ ngay</b>.</li>
           </ol>
           <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={(e) => { e.preventDefault(); if (url.trim()) link.mutate({ sheetUrl: url.trim() }); }}>
@@ -277,7 +277,7 @@ function GoogleCalendarBox({ project, owner }: { project: ProjectDetail; owner: 
     onSuccess: (_r, calendar) => { if (calendar) { setCal(''); sync.mutate(undefined); } else toast('Đã bỏ liên kết lịch và xoá các sự kiện app đã tạo'); },
   });
   const unlink = async () => {
-    if (await confirm({ title: 'Bỏ liên kết Google Calendar?', desc: <p>Các sự kiện app đã tạo trên lịch sẽ bị xoá; sự kiện khác trên lịch giữ nguyên.</p>, ok: 'Bỏ liên kết', danger: true })) link.mutate(null);
+    if (await confirm({ title: 'Bỏ liên kết Google Calendar?', desc: <p>Sự kiện app đã tạo sẽ bị xoá, sự kiện khác giữ nguyên.</p>, ok: 'Bỏ liên kết', danger: true })) link.mutate(null);
   };
   const email = status.data?.email;
   const copyEmail = async () => { try { await navigator.clipboard.writeText(email ?? ''); toast('Đã chép email service account'); } catch { toast('Không chép được — chọn và sao chép tay', 'error'); } };
@@ -287,7 +287,7 @@ function GoogleCalendarBox({ project, owner }: { project: ProjectDetail; owner: 
   return (
     <div className="mt-2 rounded-2xl border border-line bg-card p-3">
       <p className="text-[13px] font-semibold text-ink-2">Google Calendar</p>
-      {status.data && !status.data.configured && <p className="mt-1 text-[12.5px] text-muted">Server chưa cấu hình Google service account — xem README (GOOGLE_SERVICE_ACCOUNT_FILE).</p>}
+      {status.data && !status.data.configured && <p className="mt-1 text-[12.5px] text-muted">Máy chủ chưa kết nối Google.</p>}
       {project.gcalId ? (
         <>
           <div className="mt-2 flex flex-wrap items-center gap-2">
@@ -300,15 +300,15 @@ function GoogleCalendarBox({ project, owner }: { project: ProjectDetail; owner: 
             {can('project.project.write') && <Button size="sm" onClick={() => sync.mutate(undefined)} disabled={busy || !status.data?.configured}><ArrowsClockwise size={14} className={sync.isPending ? 'animate-spin' : undefined} /> Đồng bộ ngay</Button>}
             {owner && <Button size="sm" variant="ghost" onClick={unlink} disabled={busy} className="text-danger">Bỏ liên kết</Button>}
           </div>
-          <p className="mt-2 text-[12px] leading-relaxed text-muted">Mỗi việc có ngày là một sự kiện cả ngày (bắt đầu → kết thúc), việc xong có dấu ✓. Tự đồng bộ sau mỗi thay đổi (gộp trong 30 giây), kể cả thay đổi qua AI (MCP). Một chiều: sửa trên Google Calendar sẽ bị ghi đè.</p>
+          <p className="mt-2 text-[12px] leading-relaxed text-muted">Tự cập nhật theo kế hoạch. Sửa trên Google Calendar sẽ bị ghi đè.</p>
         </>
       ) : owner ? (
         <>
-          <p className="mt-1 text-[12.5px] leading-relaxed text-muted">Đưa các việc có ngày lên Google Calendar thành sự kiện cả ngày, một chiều từ app, tự cập nhật khi kế hoạch đổi. Nên dùng một lịch riêng cho dự án.</p>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-muted">Đưa việc có ngày lên Google Calendar. Nên dùng lịch riêng cho dự án.</p>
           <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-[12.5px] leading-relaxed text-ink-2">
             <li>Trong <a href="https://calendar.google.com/calendar/u/0/r/settings/createcalendar" target="_blank" rel="noopener noreferrer" className="font-semibold text-primary hover:underline">Google Calendar</a> tạo lịch mới (VD “{project.name}”) hoặc dùng lịch có sẵn.</li>
             <li>Vào <b>Cài đặt lịch</b> → <b>Chia sẻ với những người cụ thể</b> → thêm {emailEl}, quyền <b>Thay đổi sự kiện</b>.</li>
-            <li>Kéo xuống <b>Tích hợp lịch</b>, chép <b>Mã lịch</b> (dạng …@group.calendar.google.com) dán vào ô dưới.</li>
+            <li>Chép <b>Mã lịch</b> ở mục <b>Tích hợp lịch</b>, dán vào ô dưới.</li>
           </ol>
           <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={(e) => { e.preventDefault(); if (cal.trim()) link.mutate(cal.trim()); }}>
             <Input value={cal} onChange={(e) => setCal(e.target.value)} placeholder="abc123…@group.calendar.google.com" className="h-10" autoCapitalize="none" spellCheck={false} />
@@ -335,12 +335,12 @@ function MergeBox({ project }: { project: ProjectDetail }) {
   const src = others.find((x) => x.id === f.sourceId);
   const go = async () => {
     if (!src || !f.sourcePhase.trim()) return;
-    if (await confirm({ title: `Gộp “${src.name}” vào “${project.name}”?`, desc: <p>Mọi việc của “{src.name}” chuyển sang đây thành phase <b>{f.sourcePhase.trim()}</b>; nhóm và phạm vi trùng tên được ghép, thành viên được thêm. “{src.name}” sẽ được lưu trữ (không xoá).</p>, ok: 'Gộp dự án' })) merge.mutate(undefined);
+    if (await confirm({ title: `Gộp “${src.name}” vào “${project.name}”?`, desc: <p>Việc của “{src.name}” chuyển sang đây thành phase <b>{f.sourcePhase.trim()}</b>. “{src.name}” sẽ được lưu trữ.</p>, ok: 'Gộp dự án' })) merge.mutate(undefined);
   };
   return (
     <section className="mt-5 rounded-2xl border border-line p-4" aria-label="Gộp dự án thành phase">
       <p className="text-[13px] font-bold">Gộp dự án khác vào đây thành phase</p>
-      <p className="mb-3 mt-0.5 text-[12px] text-muted">Dùng khi hai dự án thực ra là hai giai đoạn (VD tháng 10 / tháng 11) dùng chung cấu hình.</p>
+      <p className="mb-3 mt-0.5 text-[12px] text-muted">Dùng khi hai dự án thực ra là hai giai đoạn.</p>
       <div className="grid gap-x-3 sm:grid-cols-2">
         <Field label="Dự án được gộp">
           <Select value={f.sourceId} onChange={(e) => { const x = others.find((o) => o.id === e.target.value); setF({ ...f, sourceId: e.target.value, sourcePhase: f.sourcePhase || (x ? x.name.replace(project.name, '').trim() || x.name : '') }); }}>

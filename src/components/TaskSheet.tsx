@@ -148,7 +148,7 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, phaseI
             <Field label="Kết thúc">
               <DateInput value={f.endDate ?? ''} onChange={(v) => setF({ ...f, endDate: v || null })} optional min={f.startDate ?? undefined} />
             </Field>
-            <Field label="Ngày công" hint={auto != null ? `Để trống = tự tính: ${fmtNum(auto)} ngày (T7 ×${project.satWeight}, CN ×${project.sunWeight})` : 'Để trống = tự tính khi có đủ ngày bắt đầu và kết thúc'}>
+            <Field label="Ngày công" hint={auto != null ? `Để trống thì tự tính: ${fmtNum(auto)} ngày` : 'Để trống thì tự tính theo ngày bắt đầu, kết thúc'}>
               <Input inputMode="decimal" value={daysText} onChange={(e) => setDaysText(e.target.value)} placeholder={auto != null ? fmtNum(auto) : '—'} className="num" />
             </Field>
           </div>
@@ -160,7 +160,7 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, phaseI
           {(project.getflyCreatorId || f.getflyNote) && (
             <label className="-mt-1 mb-3 flex items-start gap-2 text-[13px] text-ink-2">
               <input type="checkbox" checked={!!f.getflyNote} onChange={(e) => setF({ ...f, getflyNote: e.target.checked })} className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--primary)]" />
-              <span>Gửi ghi chú lên Getfly <span className="text-muted">— lần đồng bộ sau, ghi chú nằm trong mô tả việc trên CRM. Bỏ tích thì ghi chú chỉ ở nội bộ.</span></span>
+              <span>Gửi ghi chú lên Getfly <span className="text-muted">— bỏ tích thì chỉ lưu ở đây</span></span>
             </label>
           )}
           {task && (
@@ -169,7 +169,7 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, phaseI
                 <span className="font-semibold text-ink-2">Kế hoạch gốc:</span>
                 {task.baselineStart && task.baselineEnd ? (
                   <span className="num">{fmtShort(task.baselineStart)} → {fmtShort(task.baselineEnd)}</span>
-                ) : <span className="text-muted">chưa có (được chốt khi có đủ ngày bắt đầu và kết thúc)</span>}
+                ) : <span className="text-muted">chưa có (cần đủ ngày bắt đầu, kết thúc)</span>}
                 {shift && (
                   <span className={shift.end > 0 ? 'rounded-md bg-warning-soft px-1.5 py-0.5 text-[12px] font-semibold text-warning' : 'rounded-md bg-ok-soft px-1.5 py-0.5 text-[12px] font-semibold text-ok'}>
                     {shift.end > 0 ? `gia hạn ${shift.end} ngày` : shift.end < 0 ? `rút ngắn ${-shift.end} ngày` : `dời ${shift.start > 0 ? 'lùi' : 'sớm'} ${Math.abs(shift.start)} ngày`}

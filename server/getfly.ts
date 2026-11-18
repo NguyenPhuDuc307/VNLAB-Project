@@ -38,7 +38,7 @@ async function requestTurn() {
 }
 
 async function gf<T = Json>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: string, body?: unknown): Promise<T> {
-  if (!getflyStatus().configured) throw new GetflyError(503, { message: 'Chưa cấu hình Getfly trên máy chủ (GETFLY_BASE_URL, GETFLY_API_KEY)' });
+  if (!getflyStatus().configured) throw new GetflyError(503, { message: 'Máy chủ chưa kết nối Getfly' });
   for (let attempt = 0; ; attempt++) {
     await requestTurn();
     const ctl = new AbortController();
@@ -66,7 +66,7 @@ async function gf<T = Json>(method: 'GET' | 'POST' | 'PUT' | 'DELETE', path: str
         const retryMs = Number.isFinite(seconds) ? seconds * 1000 : retry ? Date.parse(retry) - Date.now() : 0;
         nextRequestAt = Math.max(nextRequestAt, Date.now() + Math.max(Number.isFinite(retryMs) ? retryMs : 0, 2000 * 2 ** attempt));
         if (attempt < 3) continue;
-        throw new GetflyError(429, { message: 'Getfly đang giới hạn số yêu cầu. Đợi một lát rồi thử lại.' });
+        throw new GetflyError(429, { message: 'Getfly đang bận, thử lại sau ít phút' });
       }
       if (res.status === 401 || res.status === 403) throw new GetflyError(502, { message: `Getfly từ chối API key (${msg})` });
       throw new GetflyError(res.status === 404 ? 404 : 502, { message: `Getfly: ${msg}` });
@@ -277,7 +277,7 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
       if (!parent?.id || unavailable.has(key)) continue;
       // Getfly bắt buộc thời gian bắt đầu/kết thúc: gửi đi chỉ để nhận lỗi khó hiểu
       // ("Thời gian bắt đầu công việc…"). Báo thẳng cách sửa; liên kết cũ vẫn giữ.
-      if (!t.startDate && !t.endDate) { warnings.push(`Bỏ qua việc ${t.name}: chưa có ngày bắt đầu/kết thúc (Getfly bắt buộc). Nhập ngày rồi đồng bộ lại.`); continue; }
+      if (!t.startDate && !t.endDate) { warnings.push(`Bỏ qua ${t.name}: chưa có ngày bắt đầu, kết thúc.`); continue; }
       const projectInfo = { project_id: parent.projectId || undefined };
       items.push({
         localId: t.id, parentLocal: gKey(key), label: t.name,
@@ -354,7 +354,7 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
       })();
       const task = (await descriptionsPromise).get(code);
       if (!task || task.task_description === undefined || (task.task_description !== null && typeof task.task_description !== 'string')) {
-        throw new GetflyError(502, { message: 'Chưa đọc được mô tả hiện tại trên Getfly — giữ nguyên để tránh ghi đè nội dung' });
+        throw new GetflyError(502, { message: 'Chưa đọc được mô tả trên Getfly, tạm chưa ghi' });
       }
       return task.task_description ?? '';
     };
@@ -408,7 +408,7 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
         return pendingCode.size === 0;
       }, 10);
       for (const l of links.values()) if (l.getflyCode && l.getflyId) await save(l);
-      if (pendingCode.size) r.warnings.push(`${pendingCode.size} việc vừa tạo chưa tra được mã trên Getfly — lần đồng bộ sau sẽ thử lại`);
+      if (pendingCode.size) r.warnings.push(`${pendingCode.size} việc chưa lấy được mã, sẽ thử lại lần sau`);
     }
     const [row] = await sql<{ getflySyncedAt: Date }[]>`
       update projects set getfly_synced_at = now(), getfly_error = ${r.errors.length ? r.errors.slice(0, 5).join('\n') : null}

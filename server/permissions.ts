@@ -41,7 +41,7 @@ export const PERMISSION_GROUPS = [
     key: 'mcp',
     label: 'AI bên ngoài (MCP)',
     permissions: [
-      { key: 'project.tokens.manage', label: 'Tạo token MCP cho AI bên ngoài', description: 'Claude, Codex… đọc và ghi dự án của bạn qua token; gỡ quyền này thì token đã tạo thôi dùng được', dangerous: true },
+      { key: 'project.tokens.manage', label: 'Tạo token MCP cho AI bên ngoài', description: 'Cho Claude, Codex… sửa dự án qua token. Gỡ quyền thì token ngừng chạy.', dangerous: true },
     ],
   },
   {

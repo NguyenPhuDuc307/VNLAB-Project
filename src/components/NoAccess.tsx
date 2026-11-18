@@ -13,7 +13,7 @@ export function NoAccess({ title }: { title: string }) {
         <Empty
           icon={<LockKey size={30} />}
           title="Bạn chưa có quyền dùng mục này"
-          desc="Quyền trong Project do quản trị viên VNLab cấp ở VNLab Account. Được cấp rồi thì tải lại trang."
+          desc="Nhờ quản trị viên cấp quyền, rồi tải lại trang."
           action={<a href={ACCOUNT_URL} className="text-sm font-semibold text-primary">Mở VNLab Account</a>}
         />
       </div>

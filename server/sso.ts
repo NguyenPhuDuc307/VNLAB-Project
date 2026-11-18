@@ -143,7 +143,7 @@ a.btn{display:flex;align-items:center;justify-content:center;height:46px;margin-
 </style></head><body><main>
 <p class="eyebrow">VNLab ID</p>
 <h1>Tài khoản VNLab ID của bạn chưa được cấp quyền dùng ${esc(p.app)}</h1>
-<p>${p.email ? `Bạn đang đăng nhập bằng <b>${esc(p.email)}</b>. ` : ''}Nhờ quản trị viên VNLab cấp quyền ${esc(p.app)} cho tài khoản này ở trang VNLab Account, rồi đăng nhập lại.</p>
+<p>${p.email ? `Bạn đang đăng nhập bằng <b>${esc(p.email)}</b>. ` : ''}Nhờ quản trị viên cấp quyền rồi đăng nhập lại.</p>
 <a class="btn primary" href="${ACCOUNT_URL}">Mở VNLab Account</a>
 <a class="btn ghost" href="${esc(p.logoutUrl)}">Đăng xuất để dùng tài khoản khác</a>
 </main></body></html>`;

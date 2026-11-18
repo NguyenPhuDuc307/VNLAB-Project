@@ -17,14 +17,14 @@ export function ScopesEditor({ project, canEdit }: { project: ProjectDetail; can
   const remove = useAction((s: Scope) => api<{ untagged: number }>(`/projects/${project.id}/scopes/${s.id}`, { method: 'DELETE' }), { onSuccess: (r) => toast(r.untagged ? `Đã xoá phạm vi, bỏ tag ${r.untagged} việc` : 'Đã xoá phạm vi') });
   const del = async (s: Scope) => {
     const n = count(s.id);
-    if (await confirm({ title: `Xoá phạm vi “${s.name}”?`, desc: <p>{n ? `${n} việc đang gắn phạm vi này sẽ chỉ bị bỏ tag, không bị xoá.` : 'Chưa có việc nào gắn phạm vi này.'}</p>, ok: 'Xoá phạm vi', danger: true })) remove.mutate(s);
+    if (await confirm({ title: `Xoá phạm vi “${s.name}”?`, desc: <p>{n ? `${n} việc sẽ bị bỏ tag, không bị xoá.` : 'Chưa có việc nào gắn phạm vi này.'}</p>, ok: 'Xoá phạm vi', danger: true })) remove.mutate(s);
   };
   const add = () => { if (draft.name.trim()) create.mutate({ name: draft.name.trim(), owner: draft.owner.trim() }); };
 
   return (
     <section className="mt-5 rounded-2xl border border-line p-4" aria-label="Phạm vi">
       <p className="text-[13px] font-bold">Phạm vi <span className="num font-semibold text-muted">· {scopes.length}</span></p>
-      <p className="mb-3 mt-0.5 text-[12px] text-muted">Gắn tag phạm vi cho từng việc để lọc và biết ai phụ trách phạm vi đó. AI qua MCP cũng dùng danh sách này.</p>
+      <p className="mb-3 mt-0.5 text-[12px] text-muted">Gắn tag cho việc để lọc và biết ai phụ trách mảng nào.</p>
       {scopes.length > 0 && (
         <div className="mb-3 grid grid-cols-[28px_minmax(0,1fr)_minmax(0,1fr)_40px_32px] items-center gap-x-2 gap-y-1.5">
           <span />

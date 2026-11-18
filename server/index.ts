@@ -489,7 +489,7 @@ auth.patch('/projects/:id/sheet', requirePermission('project.project.write'), as
     if (b.sheetUrl === null || b.sheetUrl === '') Object.assign(patch, { sheetId: null, sheetSyncedAt: null, sheetError: null, sheetAuto: false });
     else {
       const id = parseSheetId(b.sheetUrl);
-      if (!id) throw new HTTPException(400, { message: 'Không nhận ra link Google Sheet (dạng https://docs.google.com/spreadsheets/d/…)' });
+      if (!id) throw new HTTPException(400, { message: 'Link Google Sheet không hợp lệ' });
       // Liên kết mới: bật tự đồng bộ luôn (mọi thay đổi, kể cả qua MCP, ghi sang sheet sau ~30 giây).
       Object.assign(patch, { sheetId: id, sheetError: null, sheetAuto: b.sheetAuto ?? true });
     }
@@ -521,7 +521,7 @@ auth.patch('/projects/:id/gcal', requirePermission('project.project.write'), asy
     patch = { gcalId: null, gcalSyncedAt: null, gcalError: null };
   } else {
     const id = parseCalendarId(b.calendar);
-    if (!id) throw new HTTPException(400, { message: 'Không nhận ra lịch — dán Mã lịch (dạng …@group.calendar.google.com hoặc email) trong Cài đặt lịch của Google Calendar' });
+    if (!id) throw new HTTPException(400, { message: 'Mã lịch không hợp lệ — xem ở Cài đặt lịch của Google Calendar' });
     if (p.gcalId && p.gcalId !== id) await clearCalendar(p.id, p.gcalId).catch((err) => console.warn('[gcal] gỡ sự kiện lịch cũ lỗi:', (err as Error).message));
     patch = { gcalId: id, gcalError: null, ...(p.gcalId !== id ? { gcalSyncedAt: null } : {}) };
   }

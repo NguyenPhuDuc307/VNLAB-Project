@@ -520,7 +520,7 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
                 <div className="num px-2 text-[12px] font-bold text-ink-2">{r.tasks.length ? `${avg}%` : ''}</div>
                 <div className="c-start num px-2 text-[12px] text-muted">{span ? fmtShort(span.start) : ''}</div>
                 <div className="c-end num px-2 text-[12px] text-muted">{span ? fmtShort(span.end) : ''}</div>
-                <div className="c-days num px-2 text-right text-[12px] font-bold text-ink-2" title="Số ngày công có việc trong nhóm; ngày có nhiều việc gối nhau chỉ tính một lần">{totalDays ? fmtNum(totalDays) : ''}</div>
+                <div className="c-days num px-2 text-right text-[12px] font-bold text-ink-2" title="Số ngày công của nhóm (ngày trùng chỉ tính một lần)">{totalDays ? fmtNum(totalDays) : ''}</div>
               </div>
               {!list && (
                 <div className="gantt-days min-h-9">
@@ -595,7 +595,7 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
                   </>
                 )}
               </div>
-              <div className={cx('c-days num px-2 text-right text-[12px]', t.days == null ? 'text-muted' : 'font-semibold text-ink-2', canEdit && 'cursor-text')} title={t.days == null ? 'Tự tính từ ngày bắt đầu/kết thúc — gõ số để nhập tay, xoá trống để tự tính' : 'Ngày công nhập tay'} data-field="days" onDoubleClick={startEdit(t, 'days')}>
+              <div className={cx('c-days num px-2 text-right text-[12px]', t.days == null ? 'text-muted' : 'font-semibold text-ink-2', canEdit && 'cursor-text')} title={t.days == null ? 'Tự tính theo ngày — gõ số để nhập tay' : 'Ngày công nhập tay'} data-field="days" onDoubleClick={startEdit(t, 'days')}>
                 {editable(t, 'days') ? inputFor(t, 'days', 'text', t.days == null ? '' : String(t.days).replace('.', ','), { placeholder: effort ? fmtNum(effort) : '' }) : (effort ? fmtNum(effort) : '')}
               </div>
               {/* Ghi chú nhiều dòng: chỉ hiện ở chế độ Danh sách; bấm để mở chi tiết và sửa. */}

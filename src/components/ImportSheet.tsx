@@ -28,9 +28,8 @@ export function ImportSheet({ open, onClose, project }: { open: boolean; onClose
       }
     >
       <p className="mb-3 text-[13px] leading-relaxed text-muted">
-        Chọn các dòng trong Excel / Google Sheets (có hoặc không có dòng tiêu đề) rồi dán vào đây. Cột theo thứ tự:
-        <b> STT · Việc · Phụ trách · Hỗ trợ · Tiến độ · Bắt đầu · Kết thúc · (bỏ) · Ngày</b>. Dòng chỉ có tên, không số thứ tự và không ngày, được hiểu là tên nhóm.
-        Ngày hiểu được các dạng 2/11/2026, 2-Nov-26, 2-thg 11-26.
+        Chép các dòng từ Excel hoặc Google Sheets rồi dán vào đây. Thứ tự cột:
+        <b> STT · Việc · Phụ trách · Hỗ trợ · Tiến độ · Bắt đầu · Kết thúc · (bỏ) · Ngày</b>. Dòng chỉ có tên là tên nhóm.
       </p>
       <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={8} placeholder={'Thiết kế\n1\tThiết kế màn hình đăng nhập\tAn\t\t100%\t2-Mar-26\t4-Mar-26\t\t3\n2\tThiết kế trang chủ\tAn\tBình, Chi\t0%\t5-Mar-26\t10-Mar-26\t\t4'} className="font-mono text-[13px]" />
       {total > 0 && (

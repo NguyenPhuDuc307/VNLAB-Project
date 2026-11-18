@@ -35,7 +35,7 @@ export function SubtasksEditor({ items, onChange, readOnly }: { items: Subtask[]
         <span className="text-sm font-bold">Task con{items.length ? <span className="num font-semibold text-muted"> · {items.length}</span> : null}</span>
         {!readOnly && <Button type="button" size="sm" variant="secondary" disabled={items.length >= 100} onClick={add}><Plus size={14} /> Thêm</Button>}
       </div>
-      <p className="mb-3 text-xs text-muted">Lịch và ngày công theo task cha; tiến độ cha = trung bình các task con.</p>
+      <p className="mb-3 text-xs text-muted">Tiến độ việc cha là trung bình các task con.</p>
       {items.length > 0 && (
         <div ref={box} className="grid grid-cols-[22px_minmax(0,1fr)_minmax(84px,28%)_64px_28px] items-center gap-x-1.5 gap-y-1">
           <span className={`${head} text-right`}>#</span>
@@ -54,7 +54,7 @@ export function SubtasksEditor({ items, onChange, readOnly }: { items: Subtask[]
           ))}
         </div>
       )}
-      {!items.length && <p className="text-xs text-muted">Chia việc lớn thành các đầu việc nhỏ, mỗi đầu việc có người phụ trách và % riêng.</p>}
+      {!items.length && <p className="text-xs text-muted">Chia việc lớn thành các đầu việc nhỏ.</p>}
     </section>
   );
 }

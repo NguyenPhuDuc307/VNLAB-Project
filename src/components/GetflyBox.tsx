@@ -100,7 +100,7 @@ export function useGetflyJob(projectId: string) {
     // tưởng nút không ăn và bấm lại.
     onSuccess: (j, v) => {
       watchingJobs.add(j.id); qc.setQueryData(key, j);
-      if (j.status === 'running') toast(v.kind === 'unsync' ? 'Đang xoá khỏi Getfly…' : 'Đang đồng bộ lên Getfly…', 'ok', { meta: 'Xong sẽ báo kết quả ở đây. Tiến độ hiện cạnh nút đám mây.' });
+      if (j.status === 'running') toast(v.kind === 'unsync' ? 'Đang xoá khỏi Getfly…' : 'Đang đồng bộ lên Getfly…', 'ok', { meta: 'Xong sẽ báo ở đây.' });
     },
   });
   const running = job.data?.status === 'running' || start.isPending;
@@ -126,10 +126,10 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
   const { confirm } = useFeedback();
   const askRemoveGroup = async (id: string, name: string) => {
     if (save.isPending) return;
-    if (await confirm({ title: 'Bỏ liên kết nhóm trên Getfly?', desc: <p>Bỏ liên kết Getfly của nhóm <b>{name}</b>. Nhóm này sẽ được bỏ qua ở các lần đồng bộ sau.</p>, ok: 'Bỏ liên kết', danger: true })) save.mutate({ groups: { [id]: '' } });
+    if (await confirm({ title: 'Bỏ liên kết nhóm trên Getfly?', desc: <p>Nhóm <b>{name}</b> sẽ không được đồng bộ nữa.</p>, ok: 'Bỏ liên kết', danger: true })) save.mutate({ groups: { [id]: '' } });
   };
   const askUnsync = async () => {
-    if (await confirm({ title: 'Gỡ dự án khỏi Getfly?', desc: <p>Xoá trên Getfly mọi việc app đã tạo cho dự án này (việc của nhóm, việc, task con). Việc cha và việc có sẵn đã gắn cho nhóm được giữ nguyên. Không hoàn tác được.</p>, ok: 'Xoá khỏi Getfly', danger: true })) gj.unsync();
+    if (await confirm({ title: 'Gỡ dự án khỏi Getfly?', desc: <p>Xoá các việc app đã tạo trên Getfly. Việc cha được giữ. Không hoàn tác được.</p>, ok: 'Xoá khỏi Getfly', danger: true })) gj.unsync();
   };
   // Ghép người dùng cho các việc chính được đồng bộ.
   const names = useMemo(() => {
@@ -156,13 +156,13 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
         <p className="text-[13px] font-bold">Getfly CRM</p>
         {status.data?.configured && ready && <Button size="sm" variant="secondary" onClick={gj.sync} disabled={gj.running || !canEdit}><CloudArrowUp size={15} className={gj.running ? 'animate-pulse' : undefined} /> {gj.running ? `${gj.job?.kind === 'unsync' ? 'Đang xoá' : 'Đang đồng bộ'}${gj.progress ? ` ${gj.progress}` : '…'}` : 'Đồng bộ ngay'}</Button>}
       </div>
-      <p className="mb-3 mt-0.5 text-[12px] text-muted">Bấm đồng bộ để tạo việc mới, sửa việc đã đổi và xoá việc đã xoá trên Getfly. Mỗi nhóm gắn một việc cha riêng trên Getfly → việc chính. Chỉ đồng bộ nhóm đã gắn cha; task con được ghi vào mô tả của việc chính, không tạo việc riêng. Không gửi ghi chú, tiến độ hay trạng thái hoàn thành — cập nhật các mục đó trên Getfly.</p>
+      <p className="mb-3 mt-0.5 text-[12px] text-muted">Đẩy việc lên Getfly. Chỉ nhóm đã gắn việc cha mới được đồng bộ.</p>
       {!status.data?.configured ? (
-        <p className="rounded-xl bg-fill px-3 py-2 text-[12px] text-muted">Máy chủ chưa có thông tin Getfly. Chạy <code>./scripts/getfly-setup.sh</code> để lưu API key lên VPS.</p>
+        <p className="rounded-xl bg-fill px-3 py-2 text-[12px] text-muted">Máy chủ chưa kết nối Getfly.</p>
       ) : (
         <>
           {project.groups.length > 0 && (
-            <Field group label="Nhóm việc trên Getfly" hint="Gắn việc cha riêng khi sửa nhóm việc. Có thể dán link, id hoặc mã việc tại đây. Nhóm chưa gắn cha sẽ không đồng bộ.">
+            <Field group label="Nhóm việc trên Getfly" hint="Dán link hoặc mã việc cha cho từng nhóm.">
               <div className="space-y-1.5">
                 {project.groups.flatMap((g) => {
                   // Một dòng chung cho nhóm, thêm một dòng cho mỗi phase có việc trong nhóm (gắn riêng thì ưu tiên).
@@ -204,11 +204,11 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
             </div>
           )}
           {gj.job?.kind === 'sync' && gj.job.status === 'done' && (gj.job.result as GetflyResult)?.warnings?.map((w, i) => <p key={i} className="mb-2 text-[13px] text-muted">{w}</p>)}
-          <Field label="Người tạo việc trên Getfly" hint="Getfly bắt buộc có người tạo; việc đẩy sang sẽ đứng tên người này.">
+          <Field label="Người tạo việc trên Getfly" hint="Việc trên Getfly sẽ đứng tên người này.">
             {userSelect(project.getflyCreatorId ?? '', (v) => save.mutate({ creatorId: v }), 'Người tạo việc trên Getfly', 'Chọn người tạo')}
           </Field>
           {names.length > 0 && (
-            <Field group label="Ghép người phụ trách → người dùng Getfly" hint="Người chưa ghép thì Getfly tự giao việc cho người tạo.">
+            <Field group label="Ghép người phụ trách → người dùng Getfly" hint="Chưa ghép thì giao cho người tạo.">
               <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] items-center gap-x-2 gap-y-1.5">
                 {names.map((n) => (
                   <div key={n} className="contents">
@@ -221,7 +221,7 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
             </Field>
           )}
           {gUsers.error && <p className="text-[12px] text-danger">{(gUsers.error as Error).message}</p>}
-          {gj.running && <p className="mb-1 text-[12px] font-semibold text-primary">{gj.job?.kind === 'unsync' ? 'Đang xoá trên Getfly' : 'Đang đồng bộ'} {gj.progress} — chạy nền, đóng hộp này cũng không sao.</p>}
+          {gj.running && <p className="mb-1 text-[12px] font-semibold text-primary">{gj.job?.kind === 'unsync' ? 'Đang xoá trên Getfly' : 'Đang đồng bộ'} {gj.progress} — có thể đóng hộp này.</p>}
           {project.getflySyncedAt && <p className="text-[12px] text-muted">Đồng bộ lần cuối {new Date(project.getflySyncedAt).toLocaleString('vi-VN')}</p>}
           {canEdit && (
             <button type="button" className="mt-2 inline-flex items-center gap-1.5 text-[12px] font-semibold text-danger hover:underline disabled:opacity-50" disabled={gj.running} onClick={() => void askUnsync()}>
