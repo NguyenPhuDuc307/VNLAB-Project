@@ -13,7 +13,8 @@ import { ImportSheet } from '../components/ImportSheet';
 import { MembersSheet, ProjectSheet } from '../components/ProjectSheet';
 import { TaskSheet } from '../components/TaskSheet';
 import { ColumnPicker, normalizeColumns, type ColKey } from '../components/ColumnPicker';
-import { Button, Chip, Empty, Field, IconButton, Input, PageHeader, Segmented, Sheet, Skeleton, useFeedback, cx } from '../components/ui';
+import { Button, Chip, Empty, Field, IconButton, Input, MoreButton, PageHeader, SectionLabel, Segmented, Sheet, Skeleton, useFeedback, cx } from '../components/ui';
+import { RADIUS_TALL, SURFACE } from '../lib/grid';
 import { api, canEditRole, planShift, ROLE_LABEL, useAction, useCan, useProject, type Group, type ProjectDetail, type Task, type TaskInput } from '../lib/api';
 import { diffDays, fmtShort, todayStr } from '../lib/dates';
 
@@ -183,52 +184,72 @@ export function ProjectPage() {
   // ---- Cụm nút điều khiển đặt ở khoảng trống đầu bảng (trên cột # / Việc).
   const parentsWithSubs = p.tasks.filter((t) => t.subtasks?.length).map((t) => t.id);
   const allSubsCollapsed = parentsWithSubs.length > 0 && parentsWithSubs.every((x) => collapsedTasks.includes(x));
+  // Thanh công cụ đầu bảng theo kiểu VNLab Home: chỉ giữ vài nút hay dùng (hôm nay, phóng/thu,
+  // lọc phạm vi, Getfly, thêm việc) dạng ô tròn; mọi thao tác ít dùng gom vào một nút "⋯".
   // IconButton mặc định h-9 w-9: cx không gộp lớp Tailwind, nên dùng ! để cỡ nhỏ thắng.
-  const tb = '!h-7 !w-7 !rounded-lg';
+  const tb = '!h-7 !w-7';
+  const canSheet = !!p.sheetUrl && editor && can('project.project.write');
+  const canGetfly = !!getfly.data?.configured && editor && can('project.project.write');
+  const moreItems = (): MenuItem[] => {
+    const nav: MenuItem[] = view === 'gantt' ? [
+      { label: 'Về đầu tháng', icon: <CalendarBlank size={14} />, onSelect: () => setFocus({ date: `${today.slice(0, 7)}-01`, tick: focus.tick + 1 }) },
+      ...(p.startDate ? [{ label: 'Về đầu dự án', icon: <Flag size={14} />, onSelect: () => setFocus({ date: p.startDate!, tick: focus.tick + 1 }) }] : []),
+      { label: 'Kế hoạch gốc', icon: <ClockCounterClockwise size={14} />, checked: showBaseline, onSelect: () => setShowBaseline((v) => !v) },
+    ] : [];
+    const show: MenuItem[] = [
+      ...(p.scopes?.length ? [{ label: 'Nhãn phạm vi', icon: <Tag size={14} />, checked: showScopes, onSelect: () => setShowScopes((v) => !v) }] : []),
+      ...(parentsWithSubs.length > 0 ? [{ label: allSubsCollapsed ? 'Mở rộng mọi task con' : 'Thu gọn mọi task con', icon: allSubsCollapsed ? <ArrowsOutLineVertical size={14} /> : <ArrowsInLineVertical size={14} />, onSelect: () => setCollapsedTasks(allSubsCollapsed ? [] : parentsWithSubs) }] : []),
+    ];
+    const edit: MenuItem[] = [
+      ...(canStruct ? [{ label: 'Thêm nhóm', icon: <FolderPlus size={14} />, onSelect: () => setGroupSheet({ open: true, group: null }) }] : []),
+      ...(canTask && p.tasks.length > 1 ? [{ label: 'Sắp xếp theo ngày', icon: <SortAscending size={14} />, disabled: sortByDate.isPending, onSelect: () => void sortAll() }] : []),
+    ];
+    const sync: MenuItem[] = [
+      ...(canSheet ? [{ label: 'Đồng bộ Google Sheet', hint: p.sheetSyncedAt ? new Date(p.sheetSyncedAt).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : undefined, icon: <ArrowsClockwise size={14} />, disabled: syncSheet.isPending, onSelect: () => syncSheet.mutate() }] : []),
+      ...(canGetfly ? [{ label: 'Cài đặt Getfly…', icon: <CloudArrowUp size={14} />, onSelect: () => setGetflyOpen(true) }] : []),
+      ...(can('project.data.export') ? [{ label: 'Xuất Excel, CSV…', icon: <DownloadSimple size={14} />, onSelect: () => setExportOpen(true) }] : []),
+    ];
+    // Bảng Gantt đã có nút phóng to ở góc; chế độ Danh sách thì vào toàn màn hình từ đây.
+    const screen: MenuItem[] = view === 'list' ? [{ label: full ? 'Thoát toàn màn hình' : 'Toàn màn hình', icon: full ? <CornersIn size={14} /> : <CornersOut size={14} />, hint: full ? 'Esc' : undefined, onSelect: () => setFull((v) => !v) }] : [];
+    const out: MenuItem[] = [];
+    for (const part of [nav, show, edit, sync, screen]) if (part.length) out.push(...(out.length ? ['sep' as const] : []), ...part);
+    return out;
+  };
   const scopeTools = (<>
         {!!p.scopes?.length && (
-          <span className="inline-flex items-center gap-1">
-            <select aria-label="Lọc theo phạm vi" value={activeScope} onChange={(e) => setScopeFilter(e.target.value)}
-              className={cx('h-7 max-w-[180px] rounded-xl border bg-card px-2.5 text-[12px] font-semibold outline-none transition focus:border-primary', activeScope ? 'border-primary text-primary' : 'border-line text-ink-2')}>
-              <option value="">Mọi phạm vi</option>
-              {p.scopes.map((s) => <option key={s.id} value={s.id}>{s.name}{s.owner ? ` · ${s.owner}` : ''}</option>)}
-              <option value="none">Chưa gắn phạm vi</option>
-            </select>
-            <IconButton label={showScopes ? 'Ẩn nhãn phạm vi' : 'Hiện nhãn phạm vi'} aria-pressed={showScopes} className={cx(tb, showScopes && 'bg-fill text-primary')} onClick={() => setShowScopes((v) => !v)}><Tag size={18} weight={showScopes ? 'fill' : 'regular'} /></IconButton>
-          </span>
+          <select aria-label="Lọc theo phạm vi" value={activeScope} onChange={(e) => setScopeFilter(e.target.value)}
+            className={cx('select-chevron h-7 max-w-[180px] appearance-none rounded-full pl-3 pr-8 text-[12px] font-semibold outline-none transition [background-position:right_0.5rem_center] focus-visible:ring-2 focus-visible:ring-primary', activeScope ? 'bg-primary-soft text-primary' : 'bg-fill text-ink-2')}>
+            <option value="">Mọi phạm vi</option>
+            {p.scopes.map((s) => <option key={s.id} value={s.id}>{s.name}{s.owner ? ` · ${s.owner}` : ''}</option>)}
+            <option value="none">Chưa gắn phạm vi</option>
+          </select>
         )}
   </>);
   const actionTools = (
-        <span className="inline-flex shrink-0 items-center gap-0.5">
-          {getfly.data?.configured && editor && can('project.project.write') && (
+        <span className="inline-flex shrink-0 items-center gap-1">
+          {canGetfly && (
             <IconButton
               className={tb}
               label={getflyJob.running ? `Đang chạy Getfly ${getflyJob.progress}` : !p.getflyCreatorId ? 'Thiết lập đồng bộ Getfly' : p.getflySyncedAt ? `Đồng bộ Getfly (lần cuối ${new Date(p.getflySyncedAt).toLocaleString('vi-VN')})` : 'Đồng bộ Getfly'}
               disabled={getflyJob.running}
               onClick={() => {
-                // Chưa chọn người tạo thì mở hộp cấu hình Getfly; xong rồi thì bấm là đồng bộ (chuột phải để mở cấu hình).
+                // Chưa chọn người tạo thì mở hộp cấu hình Getfly; xong rồi thì bấm là đồng bộ (chuột phải / menu ⋯ để mở cấu hình).
                 if (!p.getflyCreatorId) { setGetflyOpen(true); return; }
                 getflyJob.sync();
               }}
               onContextMenu={(e) => { e.preventDefault(); setGetflyOpen(true); }}
             >
-              <CloudArrowUp size={18} className={getflyJob.running ? 'animate-pulse text-primary' : undefined} />
+              <CloudArrowUp size={17} className={getflyJob.running ? 'animate-pulse text-primary' : undefined} />
             </IconButton>
           )}
           {getflyJob.running && (
-            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[12px] font-semibold tabular-nums text-primary" role="status" aria-live="polite">
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-primary-soft px-2 py-0.5 text-[12px] font-semibold tabular-nums text-primary" role="status" aria-live="polite">
               <CircleNotch size={13} className="animate-spin" /> Getfly {getflyJob.progress || '…'}
             </span>
           )}
-          {p.sheetUrl && editor && can('project.project.write') && (
-            <IconButton className={tb} label="Đồng bộ Sheets" onClick={() => syncSheet.mutate()} disabled={syncSheet.isPending} title={p.sheetSyncedAt ? `Đồng bộ Sheets · lần cuối ${new Date(p.sheetSyncedAt).toLocaleString('vi-VN')}` : 'Đồng bộ Sheets'}>
-              <ArrowsClockwise size={18} className={syncSheet.isPending ? 'animate-spin' : undefined} />
-            </IconButton>
-          )}
-          {can('project.data.export') && <IconButton className={tb} label="Xuất" onClick={() => setExportOpen(true)}><DownloadSimple size={18} /></IconButton>}
-          {canTask && p.tasks.length > 1 && <IconButton className={tb} label="Sắp xếp theo ngày" onClick={sortAll} disabled={sortByDate.isPending} title="Sắp xếp việc trong từng nhóm theo ngày bắt đầu"><SortAscending size={18} /></IconButton>}
-          {canStruct && <IconButton className={tb} label="Thêm nhóm" onClick={() => setGroupSheet({ open: true, group: null })}><FolderPlus size={18} /></IconButton>}
-          {canTask && <Button size="sm" className="!h-7 !w-7 !rounded-lg !px-0" aria-label="Thêm việc" title="Thêm việc" onClick={() => setTaskSheet({ open: true, task: null, groupId: p.groups[0]?.id ?? null })}><ListPlus size={18} /></Button>}
+          {syncSheet.isPending && <span className="inline-flex shrink-0 items-center text-primary" role="status" aria-label="Đang đồng bộ Google Sheet"><ArrowsClockwise size={15} className="animate-spin" /></span>}
+          <MoreButton className={tb} size={17} label="Thêm thao tác" items={moreItems} />
+          {canTask && <Button size="sm" className="!h-7 !w-7 !px-0" aria-label="Thêm việc" title="Thêm việc" onClick={() => setTaskSheet({ open: true, task: null, groupId: p.groups[0]?.id ?? null })}><Plus size={16} weight="bold" /></Button>}
         </span>
   );
   const headerTools = (
@@ -236,21 +257,13 @@ export function ProjectPage() {
       {view === 'gantt' && (
         <>
           <IconButton label="Về hôm nay" className={tb} onClick={() => setFocus({ date: today, tick: focus.tick + 1 })}><CrosshairSimple size={16} /></IconButton>
-          <IconButton label="Đầu tháng" className={tb} onClick={() => setFocus({ date: `${today.slice(0, 7)}-01`, tick: focus.tick + 1 })}><CalendarBlank size={16} /></IconButton>
-          {p.startDate && <IconButton label="Đầu dự án" className={cx(tb, 'hidden md:inline-flex')} onClick={() => setFocus({ date: p.startDate!, tick: focus.tick + 1 })}><Flag size={16} /></IconButton>}
-          <IconButton label={showBaseline ? 'Ẩn kế hoạch gốc' : 'Hiện kế hoạch gốc'} className={cx(tb, 'hidden md:inline-flex', showBaseline && 'bg-fill text-primary')} onClick={() => setShowBaseline((v) => !v)} aria-pressed={showBaseline}><ClockCounterClockwise size={16} /></IconButton>
-          <span className="mx-0.5 inline-flex items-center rounded-lg bg-fill p-0.5">
-            <IconButton label="Thu nhỏ lịch" className="!h-6 !w-6 !rounded-md" onClick={() => setDayWidth((w) => Math.max(18, w - 4))} disabled={dayWidth <= 18}><Minus size={13} weight="bold" /></IconButton>
-            <IconButton label="Phóng to lịch" className="!h-6 !w-6 !rounded-md" onClick={() => setDayWidth((w) => Math.min(60, w + 4))} disabled={dayWidth >= 60}><Plus size={13} weight="bold" /></IconButton>
+          <span className="mx-0.5 inline-flex items-center rounded-full bg-fill p-0.5">
+            <IconButton label="Thu nhỏ lịch" className="!h-6 !w-6" onClick={() => setDayWidth((w) => Math.max(18, w - 4))} disabled={dayWidth <= 18}><Minus size={13} weight="bold" /></IconButton>
+            <IconButton label="Phóng to lịch" className="!h-6 !w-6" onClick={() => setDayWidth((w) => Math.min(60, w + 4))} disabled={dayWidth >= 60}><Plus size={13} weight="bold" /></IconButton>
           </span>
         </>
       )}
-      {parentsWithSubs.length > 0 && (
-        <IconButton label={allSubsCollapsed ? 'Mở rộng tất cả task con' : 'Thu gọn tất cả task con'} className={tb} onClick={() => setCollapsedTasks(allSubsCollapsed ? [] : parentsWithSubs)}>
-          {allSubsCollapsed ? <ArrowsOutLineVertical size={16} /> : <ArrowsInLineVertical size={16} />}
-        </IconButton>
-      )}
-      <span className="ml-auto inline-flex shrink-0 items-center gap-2">{scopeTools}{actionTools}</span>
+      <span className="ml-auto inline-flex shrink-0 items-center gap-1.5">{scopeTools}{actionTools}</span>
     </>
   );
 
@@ -403,32 +416,39 @@ export function ProjectPage() {
   return (
     <div>
       {p.phases?.length
-        ? <Link to={`/du-an/${p.id}`} className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold text-ink-2 hover:text-ink"><CaretLeft size={14} weight="bold" /> Các phase · {p.name}</Link>
-        : <Link to="/du-an" className="mb-2 inline-flex items-center gap-1 text-[13px] font-semibold text-ink-2 hover:text-ink"><CaretLeft size={14} weight="bold" /> Dự án</Link>}
+        ? <Link to={`/du-an/${p.id}`} className="-ml-1 mb-2 inline-flex h-8 max-w-full items-center gap-1 rounded-full px-2 text-[13px] font-semibold text-ink-2 transition-colors hover:bg-fill hover:text-ink"><CaretLeft size={14} weight="bold" className="shrink-0" /> <span className="truncate">Các phase · {p.name}</span></Link>
+        : <Link to="/du-an" className="-ml-1 mb-2 inline-flex h-8 items-center gap-1 rounded-full px-2 text-[13px] font-semibold text-ink-2 transition-colors hover:bg-fill hover:text-ink"><CaretLeft size={14} weight="bold" /> Dự án</Link>}
       <PageHeader
-        eyebrow={`VNLab / Project${p.code ? ` / ${p.code}` : ''}`}
+        eyebrow={p.code || undefined}
         title={p.name}
         sub={
-          <span className="flex flex-wrap items-center gap-1.5">
-            {p.customer && <Chip>KH: {p.customer}</Chip>}
-            <Chip>PM: {p.owner.name || p.owner.email}</Chip>
-            <Chip tone="primary">{curPhase ? `${curPhase.name}: ` : ''}{avg}% · {done}/{phaseTasks.length} việc</Chip>
-            {overdue > 0 && <Chip tone="danger">{overdue} quá hạn</Chip>}
-            {/* Bắt đầu = ngày bắt đầu dự án (Cài đặt); chưa đặt thì lấy ngày bắt đầu sớm nhất của việc. Kết thúc = hạn muộn nhất của việc. */}
-            {(p.startDate || span || curPhase?.startDate) && (() => {
-              const start = curPhase ? curPhase.startDate ?? span?.start ?? '' : p.startDate ?? span!.start;
-              const end = curPhase?.endDate ?? span?.end;
-              if (!start) return null;
-              return <Chip className="num">{fmtShort(start)}{end ? ` → ${fmtShort(end)}` : ''}{end && end >= today ? ` · còn ${diffDays(today, end)} ngày` : ''}</Chip>;
-            })()}
-            {p.myRole !== 'owner' && <Chip tone="warning">{ROLE_LABEL[p.myRole]}</Chip>}
-            {p.archived && <Chip tone="warning">Đã lưu trữ</Chip>}
+          <span className="flex flex-col gap-2">
+            {/* Một dòng thông tin (mỗi thứ một lần), rồi vài chip trạng thái. */}
+            <span className="num">
+              {[
+                p.customer && `KH ${p.customer}`,
+                `PM ${p.owner.name || p.owner.email}`,
+                /* Bắt đầu = ngày bắt đầu dự án (Cài đặt); chưa đặt thì lấy ngày bắt đầu sớm nhất của việc. Kết thúc = hạn muộn nhất của việc. */
+                (() => {
+                  const start = curPhase ? curPhase.startDate ?? span?.start ?? '' : p.startDate ?? span?.start ?? '';
+                  const end = curPhase?.endDate ?? span?.end;
+                  if (!start) return null;
+                  return `${fmtShort(start)}${end ? ` → ${fmtShort(end)}` : ''}${end && end >= today ? ` · còn ${diffDays(today, end)} ngày` : ''}`;
+                })(),
+              ].filter(Boolean).join(' · ')}
+            </span>
+            <span className="flex flex-wrap items-center gap-1.5">
+              <Chip tone="primary" className="num">{curPhase ? `${curPhase.name}: ` : ''}{avg}% · {done}/{phaseTasks.length} việc xong</Chip>
+              {overdue > 0 && <Chip tone="danger" className="num">{overdue} quá hạn</Chip>}
+              {p.myRole !== 'owner' && <Chip tone="warning">{ROLE_LABEL[p.myRole]}</Chip>}
+              {p.archived && <Chip tone="warning">Đã lưu trữ</Chip>}
+            </span>
           </span>
         }
         action={
           <>
             <Button variant="secondary" size="sm" onClick={() => setMembers(true)}><Users size={15} /> Thành viên{p.members.length ? ` · ${p.members.length + 1}` : ''}</Button>
-            {editor && can('project.project.write') && <Button variant="secondary" size="sm" onClick={() => setSettings(true)}><GearSix size={15} /> Cài đặt</Button>}
+            {editor && can('project.project.write') && <IconButton label="Cài đặt dự án" className="!h-8 !w-8 bg-fill hover:bg-fill-2" onClick={() => setSettings(true)}><GearSix size={17} /></IconButton>}
           </>
         }
       />
@@ -437,13 +457,13 @@ export function ProjectPage() {
       <PhaseBar project={p} value={activePhase} onChange={setPhaseFilter} canEdit={editor && can('project.project.write')} />
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <Segmented size="sm" value={view} onChange={setView} options={[{ value: 'gantt', label: 'Gantt' }, { value: 'list', label: 'Danh sách' }, { value: 'calendar', label: 'Lịch' }]} className="w-60" />
-        {!p.groups.length && !p.tasks.length && <span className="ml-auto flex flex-wrap items-center gap-1">{scopeTools}{actionTools}</span>}
+        {!p.groups.length && !p.tasks.length && <span className="ml-auto flex flex-wrap items-center gap-1.5">{scopeTools}{actionTools}</span>}
       </div>
 
       {!p.groups.length && !p.tasks.length ? (
-        <div className="card">
+        <div className={cx(SURFACE, RADIUS_TALL)}>
           <Empty
-            icon={<TableIcon size={30} />}
+            icon={<TableIcon size={26} />}
             title="Dự án chưa có việc nào"
             desc="Thêm nhóm việc rồi thêm việc, hoặc dán kế hoạch từ bảng tính."
             action={canTask && (
@@ -509,8 +529,8 @@ export function ProjectPage() {
       <ImportSheet open={importOpen} onClose={() => setImportOpen(false)} project={p} />
       <Sheet open={exportOpen} onClose={() => setExportOpen(false)} title="Xuất dự án">
         <p className="mb-3 text-[13.5px] text-ink-2">Tải kế hoạch về dạng Excel, CSV hoặc JSON.</p>
-        <div className="mb-3 rounded-2xl border border-line bg-card p-3">
-          <p className="mb-2 text-[12.5px] font-semibold text-ink-2">Cột trong sheet PLAN (Excel và Google Sheets)</p>
+        <SectionLabel>Cột trong sheet PLAN</SectionLabel>
+        <div className="mb-4">
           <ColumnPicker value={exportCols ?? normalizeColumns(p.exportColumns)} onChange={setExportCols} />
           {canStruct && exportCols && JSON.stringify(exportCols) !== JSON.stringify(normalizeColumns(p.exportColumns)) && (
             <Button size="sm" variant="secondary" className="mt-2" onClick={() => saveCols.mutate(exportCols)} disabled={saveCols.isPending}>Lưu làm mặc định cho dự án (dùng cho Google Sheets)</Button>
@@ -556,15 +576,18 @@ function GroupSheet({ open, onClose, project, group, confirm, onSort }: {
       title={group ? 'Nhóm việc' : 'Thêm nhóm việc'}
       footer={
         <div className="flex flex-col gap-2">
-          {group && (
-            <div className="flex flex-wrap items-center gap-1 border-b border-line pb-2">
-              {count > 1 && <Button variant="ghost" size="sm" onClick={() => onSort(group)}><SortAscending size={14} /> Sắp xếp theo ngày</Button>}
-              {count > 0 && <Button variant="ghost" size="sm" onClick={() => del(true)} disabled={remove.isPending}>Xoá nhóm, giữ {count} việc</Button>}
-              <Button variant="ghost" size="sm" className="text-danger hover:bg-danger-soft" onClick={() => del(false)} disabled={remove.isPending}><Trash size={14} /> {count ? 'Xoá nhóm cùng việc' : 'Xoá nhóm'}</Button>
-            </div>
-          )}
+          {/* Sửa trong sheet, xoá nằm ở chân sheet (như VNLab Home): một nút xoá tròn + "⋯" cho các thao tác ít dùng. */}
           <div className="flex items-center justify-end gap-2">
-            <Button variant="secondary" onClick={onClose}>Huỷ</Button>
+            {group && (
+              <>
+                <IconButton label={count ? 'Xoá nhóm cùng việc' : 'Xoá nhóm'} className="!h-10 !w-10 bg-danger-soft text-danger hover:brightness-95" onClick={() => del(false)} disabled={remove.isPending}><Trash size={18} /></IconButton>
+                {count > 0 && <MoreButton className="!h-10 !w-10 bg-fill hover:bg-fill-2" items={() => [
+                  ...(count > 1 ? [{ label: 'Sắp xếp theo ngày', icon: <SortAscending size={14} />, onSelect: () => onSort(group) }] : []),
+                  { label: `Xoá nhóm, giữ ${count} việc`, icon: <Trash size={14} />, disabled: remove.isPending, onSelect: () => void del(true) },
+                ]} />}
+              </>
+            )}
+            <Button variant="secondary" className="ml-auto" onClick={onClose}>Huỷ</Button>
             <Button type="submit" form="group-form" disabled={save.isPending || !name.trim()}>{group ? 'Lưu' : 'Thêm'}</Button>
           </div>
         </div>

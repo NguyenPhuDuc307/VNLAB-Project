@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { api, planShift, useAction, useCan, type ProjectDetail, type Task, type TaskHistory, type TaskInput } from '../lib/api';
 import { fmtNum, fmtShort, workDays } from '../lib/dates';
-import { Button, DateInput, Field, IconButton, Input, Select, Sheet, Textarea, useFeedback } from './ui';
+import { Button, DateInput, Field, IconButton, Input, MoreButton, Select, Sheet, SectionLabel, Textarea, useFeedback } from './ui';
 
 type Props = {
   open: boolean;
@@ -89,11 +89,14 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, phaseI
       footer={
         readOnly ? <Button variant="secondary" block onClick={onClose}>Đóng</Button> : (
           <div className="flex items-center gap-2">
+            {/* Như bảng sửa lịch bên VNLab Home: xoá là nút tròn ở chân sheet; đổi thứ tự (ít dùng) nằm trong "⋯". */}
             {task && (
               <>
-                <IconButton label="Chuyển lên" onClick={() => move(-1)} disabled={reorder.isPending}><ArrowUp size={18} /></IconButton>
-                <IconButton label="Chuyển xuống" onClick={() => move(1)} disabled={reorder.isPending}><ArrowDown size={18} /></IconButton>
-                {can('project.task.delete') && <IconButton label="Xoá việc" onClick={del} className="text-danger hover:bg-danger-soft" disabled={busy}><Trash size={18} /></IconButton>}
+                {can('project.task.delete') && <IconButton label="Xoá việc" onClick={del} className="!h-10 !w-10 bg-danger-soft text-danger hover:brightness-95" disabled={busy}><Trash size={18} /></IconButton>}
+                <MoreButton className="!h-10 !w-10 bg-fill hover:bg-fill-2" label="Thứ tự việc" items={() => [
+                  { label: 'Chuyển lên', icon: <ArrowUp size={14} />, disabled: reorder.isPending, onSelect: () => move(-1) },
+                  { label: 'Chuyển xuống', icon: <ArrowDown size={14} />, disabled: reorder.isPending, onSelect: () => move(1) },
+                ]} />
               </>
             )}
             <Button variant="secondary" className="ml-auto" onClick={onClose}>Huỷ</Button>
@@ -109,6 +112,7 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, phaseI
           </Field>
           {!readOnly && f.name.includes('\n') && <Button className="mb-3" type="button" size="sm" variant="ghost" onClick={splitName}>Tách các dòng thành task con</Button>}
           <SubtasksEditor items={children} onChange={setChildren} readOnly={readOnly} />
+          <SectionLabel>Phân công và tiến độ</SectionLabel>
           <div className="grid gap-x-3 sm:grid-cols-2 md:grid-cols-3">
             {(project.phases?.length ?? 0) > 0 && (
               <Field label="Phase">
@@ -152,6 +156,7 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, phaseI
               <Input inputMode="decimal" value={daysText} onChange={(e) => setDaysText(e.target.value)} placeholder={auto != null ? fmtNum(auto) : '—'} className="num" />
             </Field>
           </div>
+          <SectionLabel>Ghi chú</SectionLabel>
           <Field label="Ghi chú">
             {/* Ghi chú việc thường dài nhiều đoạn: giãn theo nội dung (6–30 dòng), quá thì cuộn. */}
             <Textarea value={f.note ?? ''} onChange={(e) => setF({ ...f, note: e.target.value })} maxLength={4000} className="leading-relaxed"
@@ -164,21 +169,21 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, phaseI
             </label>
           )}
           {task && (
-            <div className="mb-3 rounded-2xl border border-line bg-card p-3 text-[13px]">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="font-semibold text-ink-2">Kế hoạch gốc:</span>
+            <div className="mb-3 text-[13px]">
+              <SectionLabel>Kế hoạch gốc</SectionLabel>
+              <div className="flex flex-wrap items-center gap-2 px-1">
                 {task.baselineStart && task.baselineEnd ? (
                   <span className="num">{fmtShort(task.baselineStart)} → {fmtShort(task.baselineEnd)}</span>
                 ) : <span className="text-muted">chưa có (cần đủ ngày bắt đầu, kết thúc)</span>}
                 {shift && (
-                  <span className={shift.end > 0 ? 'rounded-md bg-warning-soft px-1.5 py-0.5 text-[12px] font-semibold text-warning' : 'rounded-md bg-ok-soft px-1.5 py-0.5 text-[12px] font-semibold text-ok'}>
+                  <span className={shift.end > 0 ? 'rounded-full bg-warning-soft px-2 py-0.5 text-[12px] font-semibold text-warning' : 'rounded-full bg-ok-soft px-2 py-0.5 text-[12px] font-semibold text-ok'}>
                     {shift.end > 0 ? `gia hạn ${shift.end} ngày` : shift.end < 0 ? `rút ngắn ${-shift.end} ngày` : `dời ${shift.start > 0 ? 'lùi' : 'sớm'} ${Math.abs(shift.start)} ngày`}
                   </span>
                 )}
                 {!readOnly && shift && <Button type="button" size="sm" variant="ghost" onClick={() => rebase.mutate(undefined)} disabled={rebase.isPending}>Chốt ngày hiện tại làm kế hoạch gốc</Button>}
               </div>
               {history.data && history.data.length > 0 && (
-                <details className="mt-2">
+                <details className="mt-2 px-1">
                   <summary className="cursor-pointer select-none text-[12.5px] font-semibold text-ink-2"><ClockCounterClockwise size={14} className="mr-1 inline" />Lịch sử thay đổi ({history.data.length})</summary>
                   <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-[12.5px] text-ink-2">
                     {history.data.map((h) => <li key={h.id}><span className="num text-muted">{new Date(h.at).toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</span> · {h.user ?? 'AI / hệ thống'} · {describeChange(h)}</li>)}

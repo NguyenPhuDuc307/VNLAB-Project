@@ -1,8 +1,8 @@
-import { Plus } from '@phosphor-icons/react';
+import { Plus, Trash, Tray } from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
 import { api, useAction, type Phase, type ProjectDetail } from '../lib/api';
 import { fmtShort } from '../lib/dates';
-import { Button, DateInput, Field, Input, Sheet, cx, useFeedback } from './ui';
+import { Button, DateInput, Field, IconButton, Input, MoreButton, Sheet, cx, useFeedback } from './ui';
 
 /** Giá trị lọc phase: '' = tất cả, 'none' = chưa có phase, còn lại = id phase. */
 export type PhaseFilter = string;
@@ -69,15 +69,18 @@ export function PhaseSheet({ open, phase, project, unphased, onClose, onCreated,
     <Sheet open={open} onClose={onClose} title={phase ? 'Sửa phase' : 'Phase mới'}
       footer={
         <div className="flex flex-col gap-2">
-          {phase && (
-            <div className="flex flex-wrap items-center gap-1 border-b border-line pb-2">
-              {unphased > 0 && <Button variant="ghost" size="sm" onClick={() => assign.mutate(undefined)} disabled={assign.isPending}>Đưa {unphased} việc chưa có phase vào đây</Button>}
-              <Button variant="ghost" size="sm" onClick={() => del(false)} disabled={remove.isPending}>Xoá phase, giữ {n} việc</Button>
-              {n > 0 && <Button variant="ghost" size="sm" className="text-danger hover:bg-danger-soft" onClick={() => del(true)} disabled={remove.isPending}>Xoá phase cùng việc</Button>}
-            </div>
-          )}
+          {/* Xoá ở chân sheet (nút tròn: xoá phase, giữ việc); thao tác ít dùng trong "⋯". */}
           <div className="flex items-center justify-end gap-2">
-            <Button variant="secondary" onClick={onClose}>Huỷ</Button>
+            {phase && (
+              <>
+                <IconButton label={`Xoá phase, giữ ${n} việc`} className="!h-10 !w-10 bg-danger-soft text-danger hover:brightness-95" onClick={() => void del(false)} disabled={remove.isPending}><Trash size={18} /></IconButton>
+                {(unphased > 0 || n > 0) && <MoreButton className="!h-10 !w-10 bg-fill hover:bg-fill-2" items={() => [
+                  ...(unphased > 0 ? [{ label: `Đưa ${unphased} việc chưa có phase vào đây`, icon: <Tray size={14} />, disabled: assign.isPending, onSelect: () => assign.mutate(undefined) }] : []),
+                  ...(n > 0 ? [{ label: 'Xoá phase cùng việc', icon: <Trash size={14} />, danger: true, disabled: remove.isPending, onSelect: () => void del(true) }] : []),
+                ]} />}
+              </>
+            )}
+            <Button variant="secondary" className="ml-auto" onClick={onClose}>Huỷ</Button>
             <Button type="submit" form="phase-form" disabled={save.isPending || !f.name.trim()}>{phase ? 'Lưu' : 'Tạo phase'}</Button>
           </div>
         </div>

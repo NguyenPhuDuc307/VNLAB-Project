@@ -38,7 +38,10 @@
   --bg-grad: linear-gradient(160deg, #f9fbfe 0%, #f2f6fb 45%, #e8f0f9 100%);
   --blob-1: rgba(165, 216, 255, 0.42);
   --blob-2: rgba(66, 116, 188, 0.1);
-  --card: rgba(255, 255, 255, 0.8);
+  --card: rgba(255, 255, 255, 0.75);
+  /* Viền mặt thẻ kiểu VNLab Home: trắng mờ trên nền sáng, gần như vô hình — thẻ
+     tách khỏi nền bằng màu, không bằng đường kẻ đậm. */
+  --card-border: rgba(255, 255, 255, 0.9);
   --surface: #fcfdff;
   --fill: rgba(27, 42, 65, 0.055);
   --fill-2: rgba(27, 42, 65, 0.12);
@@ -63,8 +66,10 @@
   --grid: rgba(27, 42, 65, 0.07);
   --weekend: rgba(27, 42, 65, 0.035);
   --today: rgba(66, 116, 188, 0.1);
-  --shadow: 0 1px 2px rgba(40, 60, 90, 0.04), 0 10px 30px -14px rgba(40, 60, 90, 0.22);
-  --shadow-lg: 0 2px 6px rgba(40, 60, 90, 0.05), 0 28px 60px -24px rgba(40, 60, 90, 0.32);
+  --shadow-xs: 0 1px 2px 0 rgba(27, 42, 65, 0.05);
+  --shadow: 0 1px 2px 0 rgba(27, 42, 65, 0.04), 0 6px 18px -8px rgba(27, 42, 65, 0.12);
+  --shadow-md: 0 2px 4px -1px rgba(27, 42, 65, 0.05), 0 12px 28px -10px rgba(27, 42, 65, 0.16);
+  --shadow-lg: 0 4px 8px -2px rgba(27, 42, 65, 0.05), 0 24px 48px -16px rgba(27, 42, 65, 0.2);
   --shadow-primary: 0 10px 24px -10px rgba(66, 116, 188, 0.6);
   --glass-bg: rgba(255, 255, 255, 0.64);
   --glass-border: rgba(255, 255, 255, 0.95);
@@ -79,6 +84,7 @@
     --blob-1: rgba(165, 216, 255, 0.14);
     --blob-2: rgba(66, 116, 188, 0.24);
     --card: rgba(28, 39, 56, 0.72);
+    --card-border: rgba(255, 255, 255, 0.07);
     --surface: #182434;
     --fill: rgba(232, 238, 246, 0.07);
     --fill-2: rgba(232, 238, 246, 0.16);
@@ -103,7 +109,9 @@
     --grid: rgba(232, 238, 246, 0.08);
     --weekend: rgba(232, 238, 246, 0.04);
     --today: rgba(141, 189, 245, 0.14);
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
+    --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.18);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 8px 22px -12px rgba(0, 0, 0, 0.5);
+    --shadow-md: 0 2px 4px -1px rgba(0, 0, 0, 0.22), 0 14px 30px -12px rgba(0, 0, 0, 0.55);
     --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.25), 0 30px 60px -24px rgba(0, 0, 0, 0.7);
     --shadow-primary: 0 10px 26px -10px rgba(141, 189, 245, 0.45);
     --glass-bg: rgba(22, 32, 46, 0.64);
@@ -119,6 +127,7 @@
   --blob-1: rgba(165, 216, 255, 0.14);
   --blob-2: rgba(66, 116, 188, 0.24);
   --card: rgba(28, 39, 56, 0.72);
+  --card-border: rgba(255, 255, 255, 0.07);
   --surface: #182434;
   --fill: rgba(232, 238, 246, 0.07);
   --fill-2: rgba(232, 238, 246, 0.16);
@@ -143,7 +152,9 @@
   --grid: rgba(232, 238, 246, 0.08);
   --weekend: rgba(232, 238, 246, 0.04);
   --today: rgba(141, 189, 245, 0.14);
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 12px 32px -16px rgba(0, 0, 0, 0.6);
+  --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.18);
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.2), 0 8px 22px -12px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 2px 4px -1px rgba(0, 0, 0, 0.22), 0 14px 30px -12px rgba(0, 0, 0, 0.55);
   --shadow-lg: 0 2px 6px rgba(0, 0, 0, 0.25), 0 30px 60px -24px rgba(0, 0, 0, 0.7);
   --shadow-primary: 0 10px 26px -10px rgba(141, 189, 245, 0.45);
   --glass-bg: rgba(22, 32, 46, 0.64);
@@ -171,6 +182,16 @@
   --color-danger-soft: var(--danger-soft);
   --color-warning: var(--warning);
   --color-warning-soft: var(--warning-soft);
+  /* Thang bo góc như VNLab Home (Material 3): nhỏ 8 · vừa 12 · lớn 16 · thẻ 24 ·
+     hộp thoại/sheet 28. Nút, ô nhập, chip, tab dùng rounded-full (viên thuốc);
+     nút chỉ có icon và ô icon là hình tròn. */
+  --radius-xs: 6px;
+  --radius-sm: 8px;
+  --radius-md: 12px;
+  --radius-lg: 16px;
+  --radius-xl: 24px;
+  --radius-2xl: 28px;
+  --radius-3xl: 32px;
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
@@ -221,10 +242,38 @@ body::before {
 
 .card {
   background: var(--card);
-  border-radius: 18px;
-  box-shadow: var(--shadow), inset 0 0 0 1px var(--rim);
-  border: 1px solid var(--line);
-  border-color: color-mix(in srgb, var(--line) 60%, transparent);
+  border-radius: 24px;
+  border: 1px solid var(--card-border);
+  box-shadow: var(--shadow-xs);
+}
+/* Mặt thẻ chung (như HOME_SURFACE của VNLab Home): mọi thẻ, ô, danh sách nhóm
+   cùng màu, cùng viền mờ, cùng bóng rất nhẹ. Hover chỉ nổi bóng, không đổi viền. */
+.surface-card {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--shadow-xs);
+}
+.surface-card.hoverable { transition: box-shadow 150ms; }
+.surface-card.hoverable:hover { box-shadow: var(--shadow-md); }
+/* Ô đang "sống" (VD: phase đang chạy): nền pha nhẹ màu chính thay cho viền đậm. */
+.surface-card.is-active {
+  background: color-mix(in srgb, var(--primary) 8%, var(--card));
+  border-color: color-mix(in srgb, var(--primary) 22%, transparent);
+}
+/* Ô "Thêm …" cùng cỡ thẻ, viền nét đứt — như ô Thêm lịch trình bên VNLab Home. */
+.add-tile {
+  border: 2px dashed var(--line);
+  background: color-mix(in srgb, var(--card) 50%, transparent);
+  color: var(--muted);
+  transition: border-color 150ms, color 150ms;
+}
+.add-tile:hover { border-color: color-mix(in srgb, var(--primary) 40%, transparent); color: var(--ink); }
+/* Mũi tên cho <select> (appearance: none) — cùng một chevron ở mọi trình duyệt. */
+.select-chevron {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%237a8699' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.875rem center;
+  background-size: 1rem 1rem;
 }
 
 .liquid-glass {
@@ -261,24 +310,16 @@ body::before {
 
 /* Thanh bên (màn rộng) và thanh trên (màn hẹp): kính mờ theo nền, như Stock. */
 @layer components {
+  /* Thanh bên đứng yên cạnh nội dung (không đè lên gì) nên không cần kính mờ:
+     mặt phẳng nhạt, mục điều hướng là viên thuốc. */
   .sidebar {
-    background: var(--glass-bg);
+    background: color-mix(in srgb, var(--surface) 55%, transparent);
     border-right: 1px solid var(--line);
-    -webkit-backdrop-filter: blur(22px) saturate(160%);
-    backdrop-filter: blur(22px) saturate(160%);
   }
+  /* Mục đang chọn: nền tròn pha màu chính + chữ màu chính (như tab nav VNLab Home). */
   .side-active {
-    background: var(--card);
-    color: var(--ink);
-    box-shadow: 0 0 0 1px var(--line), var(--shadow);
-  }
-  .side-active::before {
-    content: '';
-    position: absolute;
-    inset: 9px auto 9px 0;
-    width: 3px;
-    border-radius: 999px;
-    background: linear-gradient(180deg, var(--accent), var(--primary));
+    background: var(--primary-soft);
+    color: var(--primary);
   }
   .topbar {
     background: color-mix(in srgb, var(--bg) 72%, transparent);
@@ -305,9 +346,11 @@ body::before {
   max-height: calc(100dvh - 240px);
   overscroll-behavior-x: contain;
   background: var(--surface);
-  border-radius: 18px;
+  /* Thẻ cao: 24px. Mặt phẳng đặc, không kính mờ — bảng cuộn lớn cần nét và nhanh. */
+  border-radius: 24px;
   border: 1px solid var(--line);
-  box-shadow: var(--shadow);
+  border-color: color-mix(in srgb, var(--line) 70%, var(--card-border));
+  box-shadow: var(--shadow-xs);
 }
 .gantt-row {
   display: grid;
@@ -348,59 +391,71 @@ body::before {
   width: var(--day);
   align-self: stretch;
 }
-/* Hàng nhóm: dải màu rõ, cả phần bảng lẫn phần lưới ngày. */
-.gantt-group { background: color-mix(in srgb, var(--ink) 9%, var(--surface)); }
-.gantt-group-left { background: color-mix(in srgb, var(--ink) 9%, var(--surface)); border-top: 1px solid color-mix(in srgb, var(--ink) 14%, transparent); }
-.gantt-group .gantt-days .gantt-day.weekend { background: color-mix(in srgb, var(--ink) 5%, transparent); }
-/* Ranh giới tháng: vạch đậm ở mép trái ngày mồng 1, chạy suốt đầu bảng và mọi hàng. */
-.gantt-day.month-start { box-shadow: inset 2px 0 0 #eab308; }
+/* Hàng nhóm: dải nền pha nhẹ (không viền đậm), cả phần bảng lẫn phần lưới ngày. */
+.gantt-group { background: color-mix(in srgb, var(--ink) 5%, var(--surface)); }
+.gantt-group-left { background: color-mix(in srgb, var(--ink) 5%, var(--surface)); }
+.gantt-group .gantt-days .gantt-day.weekend { background: color-mix(in srgb, var(--ink) 3.5%, transparent); }
+/* Ranh giới tháng: vạch mảnh màu chính ở mép trái ngày mồng 1, chạy suốt đầu bảng và mọi hàng. */
+.gantt-day.month-start { box-shadow: inset 1.5px 0 0 color-mix(in srgb, var(--primary) 55%, transparent); }
 .gantt-day.weekend {
   background: var(--weekend);
 }
+/* Hôm nay: cột pha rất nhạt + vạch mảnh giữa cột chạy suốt các hàng (đầu bảng
+   đã có số ngày trong vòng tròn màu chính nên không vẽ vạch đè lên). */
 .gantt-day.today {
-  background: var(--today);
+  background:
+    linear-gradient(to right, transparent calc(50% - 1px), color-mix(in srgb, var(--primary) 55%, transparent) calc(50% - 1px), color-mix(in srgb, var(--primary) 55%, transparent) calc(50% + 1px), transparent calc(50% + 1px)),
+    var(--today);
 }
+.gantt-head .gantt-day.today { background: var(--today); }
+/* Thanh việc: viên thuốc. Rãnh là màu việc pha nhạt, phần đã làm là màu việc
+   pha đậm hơn — chữ % màu mực đọc được trên cả hai phần, cả sáng lẫn tối. */
 .gantt-bar {
+  --bar: var(--primary);
   position: absolute;
   top: 50%;
-  height: 26px;
-  margin-top: -13px;
-  border-radius: 7px;
+  height: 22px;
+  margin-top: -11px;
+  border-radius: 999px;
   overflow: hidden;
   cursor: grab;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08);
+  background: color-mix(in srgb, var(--bar) 24%, var(--surface));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bar) 30%, transparent);
 }
+.gantt-bar.late { box-shadow: inset 0 0 0 1.5px var(--danger); }
+.gantt-bar.dragging { box-shadow: inset 0 0 0 1.5px var(--bar), var(--shadow-md); }
 .gantt-bar:active {
   cursor: grabbing;
 }
 .gantt-bar .fill {
   position: absolute;
   inset: 0 auto 0 0;
-  background: rgba(0, 0, 0, 0.22);
+  border-radius: inherit;
+  background: color-mix(in srgb, var(--bar) 62%, var(--surface));
 }
+.gantt-bar.done .fill { background: color-mix(in srgb, var(--bar) 55%, var(--surface)); }
 .gantt-bar .label {
   position: relative;
-  padding: 0 8px;
+  padding: 0 10px;
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 700;
   line-height: 1;
   white-space: nowrap;
-  color: #fff;
-  text-shadow: 0 1px 1px rgba(0, 0, 0, 0.25);
+  color: var(--ink);
 }
 /* Kế hoạch gốc: khung thanh rỗng nét đứt cùng cỡ thanh thật, nằm dưới thanh hiện tại —
    đọc như "thanh cũ" của việc trước khi bị dời / gia hạn. */
 .gantt-baseline {
   position: absolute;
   top: 50%;
-  height: 26px;
-  margin-top: -13px;
-  border-radius: 7px;
-  border: 1.5px dashed color-mix(in srgb, var(--ink) 38%, transparent);
-  background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--ink) 7%, transparent) 0 4px, transparent 4px 8px);
+  height: 22px;
+  margin-top: -11px;
+  border-radius: 999px;
+  border: 1.5px dashed color-mix(in srgb, var(--ink) 32%, transparent);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
 }
 .gantt-baseline::after {
   content: 'gốc';
@@ -429,18 +484,19 @@ body::before {
   width: 100%;
   min-width: 0;
   height: 28px;
-  padding: 0 6px;
+  padding: 0 10px;
   border: 1.5px solid var(--primary);
-  border-radius: 6px;
+  border-radius: 999px;
   background: var(--surface);
   color: var(--ink);
   font-size: 13px !important;
   outline: none;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 20%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 18%, transparent);
 }
-.gantt-input[type='date'] { padding: 0 4px; font-size: 12px !important; }
+.gantt-input[type='date'] { padding: 0 6px; font-size: 12px !important; }
+textarea.gantt-input { border-radius: 12px; padding: 4px 8px; }
 /* Việc trong tuần này: nền xanh nhạt + vạch trái ở phần bảng (đè nền surface của cột dính). */
-.gantt-row.this-week > .gantt-left { background: color-mix(in srgb, var(--primary) 9%, var(--surface)); box-shadow: inset 3px 0 0 var(--primary); }
+.gantt-row.this-week > .gantt-left { background: color-mix(in srgb, var(--primary) 7%, var(--surface)); box-shadow: inset 3px 0 0 color-mix(in srgb, var(--primary) 60%, transparent); }
 .gantt-row.this-week > .gantt-days { background-color: color-mix(in srgb, var(--primary) 4%, transparent); }
 /* Kéo thả hàng: hàng đang kéo mờ đi, vạch chỉ vị trí thả trên / dưới hàng đích. */
 .gantt-row.is-dragging { opacity: 0.45; }
@@ -529,21 +585,19 @@ body::before {
 /* Nút phóng to cả bảng (góc trên-phải, nổi trên đầu bảng dính). */
 .gantt-max {
   position: absolute;
-  top: 5px;
+  top: 6px;
   right: 10px;
   z-index: 6;
   display: grid;
   place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 8px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
   color: var(--muted);
-  background: color-mix(in oklab, var(--surface) 88%, transparent);
-  border: 1px solid var(--line);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
-  transition: color 120ms, background 120ms, border-color 120ms;
+  background: color-mix(in srgb, var(--fill) 100%, var(--surface));
+  transition: color 120ms, background 120ms;
 }
-.gantt-max:hover, .gantt-max:focus-visible, .gantt-max.on { color: var(--primary); border-color: var(--primary); background: var(--surface); }
+.gantt-max:hover, .gantt-max:focus-visible, .gantt-max.on { color: var(--primary); background: var(--primary-soft); }
 .gantt-max:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 /* Toàn màn hình: khung bảng kéo dài hết phần còn lại của màn hình thay vì giới hạn theo 100dvh - 240px. */
 .gantt-full .gantt-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
@@ -581,7 +635,7 @@ body::before {
   left: 3px;
   width: 6px;
   height: 32px;
-  border-radius: 6px;
+  border-radius: 999px;
   background: var(--muted);
 }
 .gantt-splitter:hover::before, .gantt-splitter:focus-visible::before,
@@ -643,17 +697,16 @@ body::before {
   width: min(360px, calc(100vw - 32px));
   padding: 12px 12px 14px;
   overflow: hidden;
-  border-radius: 16px;
-  border: 1px solid color-mix(in srgb, var(--toast-accent) 22%, var(--line));
-  background: linear-gradient(135deg, color-mix(in srgb, var(--toast-accent) 9%, var(--surface)), var(--surface) 70%);
-  box-shadow: 0 10px 30px -8px color-mix(in srgb, var(--toast-accent) 35%, transparent), var(--shadow-lg);
-  backdrop-filter: blur(10px);
+  border-radius: 20px;
+  border: 1px solid color-mix(in srgb, var(--toast-accent) 16%, var(--line));
+  background: color-mix(in srgb, var(--toast-accent) 6%, var(--surface));
+  box-shadow: var(--shadow-lg);
   animation: toast-in 220ms cubic-bezier(.2,.8,.2,1);
 }
 .toast-error { --toast-accent: var(--danger); }
 .toast-icon {
   display: grid; place-items: center; flex-shrink: 0;
-  width: 30px; height: 30px; border-radius: 10px;
+  width: 30px; height: 30px; border-radius: 999px;
   color: var(--toast-accent);
   background: color-mix(in srgb, var(--toast-accent) 14%, transparent);
 }
@@ -699,25 +752,24 @@ body::before {
 /* ---- Menu chuột phải */
 .ctx-menu {
   position: fixed; z-index: 70; min-width: 220px; max-width: 320px; max-height: calc(100vh - 16px); overflow-y: auto;
-  padding: 5px; border-radius: 14px; outline: none;
-  background: color-mix(in srgb, var(--surface) 96%, transparent);
+  padding: 6px; border-radius: 20px; outline: none;
+  background: var(--surface);
   border: 1px solid var(--line);
-  box-shadow: 0 14px 40px -10px rgb(15 30 60 / .28), var(--shadow-lg);
-  backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-lg);
   animation: ctx-in 110ms ease-out;
 }
-.ctx-title { padding: 6px 10px 4px; font-size: 11px; font-weight: 700; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ctx-title { padding: 6px 12px 4px; font-size: 11px; font-weight: 700; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ctx-item {
-  display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 10px; border-radius: 9px;
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 12px; border-radius: 999px;
   font-size: 13px; font-weight: 600; color: var(--ink); cursor: default;
 }
-.ctx-item.active, .ctx-item:hover:not(:disabled) { background: color-mix(in srgb, var(--primary) 11%, transparent); color: var(--primary); }
+.ctx-item.active, .ctx-item:hover:not(:disabled) { background: var(--primary-soft); color: var(--primary); }
 .ctx-item.danger { color: var(--danger); }
 .ctx-item.danger.active, .ctx-item.danger:hover { background: var(--danger-soft); color: var(--danger); }
 .ctx-item:disabled { opacity: .45; }
 .ctx-icon { display: grid; place-items: center; width: 16px; flex-shrink: 0; color: currentColor; opacity: .85; }
 .ctx-hint { font-size: 11px; font-weight: 600; color: var(--muted); }
-.ctx-sep { height: 1px; margin: 4px 6px; background: var(--line); }
+.ctx-sep { height: 1px; margin: 4px 10px; background: var(--line); }
 @keyframes ctx-in { from { opacity: 0; transform: scale(.97); } to { opacity: 1; transform: none; } }
 
 /* Cụm nút điều khiển ở góc trên-trái đầu bảng; nhãn cột nằm dưới. */
@@ -730,15 +782,17 @@ body::before {
 .gantt.list.has-tools .gantt-head .gantt-left { min-height: 70px; }
 .gantt.list.has-tools .gantt-head .gantt-left > *:not(.gantt-tools) { align-items: flex-end !important; padding-bottom: 6px !important; }
 
-/* Thanh phase ở đầu trang dự án. */
+/* Thanh phase ở đầu trang dự án: chip viên thuốc nền nhạt, đang chọn = nền pha
+   màu chính + chữ màu chính (không tô đặc, không viền). */
 .phase-tab {
   display: inline-flex; align-items: center; gap: 6px; max-width: 240px; height: 32px; padding: 0 12px;
-  border-radius: 999px; border: 1px solid var(--line); background: var(--card, var(--surface));
-  font-size: 13px; font-weight: 700; color: var(--ink-2); transition: background 120ms, color 120ms, border-color 120ms;
+  border-radius: 999px; border: 1px solid transparent; background: var(--fill);
+  font-size: 13px; font-weight: 600; color: var(--ink-2); transition: background 120ms, color 120ms, border-color 120ms;
 }
-.phase-tab:hover { border-color: color-mix(in srgb, var(--primary) 40%, var(--line)); color: var(--ink); }
-.phase-tab.on { background: var(--primary); border-color: var(--primary); color: var(--on-primary, #fff); }
-.phase-tab.add { border-style: dashed; color: var(--muted); font-weight: 600; }
+.phase-tab:hover { background: var(--fill-2); color: var(--ink); }
+.phase-tab.on { background: var(--primary-soft); color: var(--primary); font-weight: 700; }
+.phase-tab.add { background: transparent; border: 1.5px dashed var(--line); color: var(--muted); }
+.phase-tab.add:hover { border-color: color-mix(in srgb, var(--primary) 40%, transparent); color: var(--ink); }
 
 /* Form dài trong ngăn trượt (Sửa việc): desktop gọn lại để thấy nhiều trường một
    lúc. Điện thoại giữ 16px — nhỏ hơn là iOS tự phóng to khi gõ. Không nằm trong
@@ -747,9 +801,9 @@ body::before {
 .form-dense input[type='number']::-webkit-inner-spin-button,
 .form-dense input[type='number']::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
 @media (min-width: 768px) {
-  .form-dense :is(input:not([type='range']):not([type='checkbox']), select) { height: 2.25rem; font-size: 14px; padding-left: 0.625rem; padding-right: 0.625rem; border-radius: 0.625rem; }
-  .form-dense select { padding-right: 2rem; }
-  .form-dense textarea { font-size: 14px; padding: 0.5rem 0.625rem; border-radius: 0.625rem; }
+  .form-dense :is(input:not([type='range']):not([type='checkbox']), select) { height: 2.25rem; font-size: 14px; padding-left: 0.875rem; padding-right: 0.875rem; }
+  .form-dense select { padding-right: 2.25rem; }
+  .form-dense textarea { font-size: 14px; padding: 0.5rem 0.875rem; }
   .form-dense label, .form-dense fieldset > label { margin-bottom: 0.75rem; }
   .form-dense label > span:first-child { margin-bottom: 0.25rem; font-size: 12.5px; }
   .form-dense label > span + span { font-size: 12px; }

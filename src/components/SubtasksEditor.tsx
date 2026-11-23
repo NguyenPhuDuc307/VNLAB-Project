@@ -1,7 +1,7 @@
 import { Plus, Trash } from '@phosphor-icons/react';
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { Subtask } from '../lib/api';
-import { Button, IconButton, Input } from './ui';
+import { Button, IconButton, Input, SectionLabel } from './ui';
 
 /**
  * Task con dạng bảng gọn: mỗi dòng = số thứ tự · tên · phụ trách · %.
@@ -28,14 +28,13 @@ export function SubtasksEditor({ items, onChange, readOnly }: { items: Subtask[]
     if (i < items.length - 1) box.current?.querySelectorAll<HTMLInputElement>('input[data-sub-name]')[i + 1]?.focus();
     else if (items[i].name.trim()) add();
   };
-  const head = 'px-1 text-[10.5px] font-bold uppercase tracking-wider text-muted';
+  const head = 'px-1 text-[10.5px] font-semibold uppercase tracking-wider text-muted';
   return (
-    <section className="mb-4 rounded-2xl border border-line p-3" aria-label="Task con">
-      <div className="mb-1 flex items-center justify-between gap-2">
-        <span className="text-sm font-bold">Task con{items.length ? <span className="num font-semibold text-muted"> · {items.length}</span> : null}</span>
-        {!readOnly && <Button type="button" size="sm" variant="secondary" disabled={items.length >= 100} onClick={add}><Plus size={14} /> Thêm</Button>}
-      </div>
-      <p className="mb-3 text-xs text-muted">Tiến độ việc cha là trung bình các task con.</p>
+    <section className="mb-4" aria-label="Task con">
+      <SectionLabel action={!readOnly && <Button type="button" size="sm" variant="secondary" disabled={items.length >= 100} onClick={add}><Plus size={14} /> Thêm</Button>}>
+        Task con{items.length ? <span className="num"> · {items.length}</span> : null}
+      </SectionLabel>
+      {items.length > 0 && <p className="mb-2 px-1 text-xs text-muted">Tiến độ việc cha là trung bình các task con.</p>}
       {items.length > 0 && (
         <div ref={box} className="grid grid-cols-[22px_minmax(0,1fr)_minmax(84px,28%)_64px_28px] items-center gap-x-1.5 gap-y-1">
           <span className={`${head} text-right`}>#</span>
@@ -49,12 +48,12 @@ export function SubtasksEditor({ items, onChange, readOnly }: { items: Subtask[]
               <Input data-sub-name={item.id} aria-label={`Tên task con ${i + 1}`} value={item.name} required maxLength={300} placeholder="Đầu việc nhỏ" disabled={readOnly} onKeyDown={(e) => onKey(e, i)} onChange={(e) => patch(item.id, { name: e.target.value })} />
               <Input aria-label={`Phụ trách task con ${i + 1}`} list="prj-names" maxLength={160} value={item.assignee} placeholder="Ai làm" disabled={readOnly} onKeyDown={(e) => onKey(e, i)} onChange={(e) => patch(item.id, { assignee: e.target.value })} />
               <Input aria-label={`Tiến độ task con ${i + 1} (%)`} type="number" inputMode="numeric" min={0} max={100} step={1} value={item.progress} disabled={readOnly} className="num px-1 text-center" onKeyDown={(e) => onKey(e, i)} onChange={(e) => patch(item.id, { progress: Math.max(0, Math.min(100, Math.round(Number(e.target.value) || 0))) })} />
-              {readOnly ? <span /> : <IconButton label={`Xoá task con ${i + 1}`} type="button" className="h-8 w-7" onClick={() => onChange(items.filter((s) => s.id !== item.id))}><Trash size={14} /></IconButton>}
+              {readOnly ? <span /> : <IconButton label={`Xoá task con ${i + 1}`} type="button" className="!h-7 !w-7" onClick={() => onChange(items.filter((s) => s.id !== item.id))}><Trash size={14} /></IconButton>}
             </div>
           ))}
         </div>
       )}
-      {!items.length && <p className="text-xs text-muted">Chia việc lớn thành các đầu việc nhỏ.</p>}
+      {!items.length && <p className="px-1 text-xs text-muted">Chia việc lớn thành các đầu việc nhỏ.</p>}
     </section>
   );
 }

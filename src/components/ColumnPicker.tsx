@@ -15,7 +15,7 @@ export function ColumnPicker({ value, onChange, disabled }: { value: ColKey[]; o
   };
   return (
     <div className="flex flex-wrap gap-1.5">
-      <span className="inline-flex h-7 items-center rounded-lg bg-fill px-2 text-[12px] font-semibold text-muted">No · Việc</span>
+      <span className="inline-flex h-7 items-center rounded-full bg-fill px-3 text-[12px] font-semibold text-muted">No · Việc</span>
       {ALL_COLUMNS.map((k) => {
         const locked = grid && (k === 'start' || k === 'end');
         const on = set.has(k);
@@ -28,9 +28,9 @@ export function ColumnPicker({ value, onChange, disabled }: { value: ColKey[]; o
             disabled={disabled || locked}
             onClick={() => toggle(k)}
             title={locked ? 'Lưới Gantt cần ngày bắt đầu / kết thúc' : undefined}
-            className={cx('inline-flex h-7 items-center gap-1 rounded-lg border px-2 text-[12px] font-semibold transition disabled:opacity-60', on ? 'border-primary/40 bg-primary-soft text-primary' : 'border-line bg-card text-ink-2 hover:bg-fill')}
+            className={cx('inline-flex h-7 items-center gap-1.5 rounded-full border px-3 text-[12px] font-semibold transition disabled:opacity-60', on ? 'border-primary/40 bg-primary-soft text-primary' : 'border-line bg-card text-ink-2 hover:bg-fill')}
           >
-            <span className={cx('inline-block h-3 w-3 rounded-[3px] border', on ? 'border-primary bg-primary' : 'border-line')} />
+            <span className={cx('inline-block h-3 w-3 rounded-full border', on ? 'border-primary bg-primary' : 'border-line')} />
             {COLUMN_LABELS[k]}
           </button>
         );

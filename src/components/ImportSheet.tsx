@@ -33,7 +33,7 @@ export function ImportSheet({ open, onClose, project }: { open: boolean; onClose
       </p>
       <Textarea value={text} onChange={(e) => setText(e.target.value)} rows={8} placeholder={'Thiết kế\n1\tThiết kế màn hình đăng nhập\tAn\t\t100%\t2-Mar-26\t4-Mar-26\t\t3\n2\tThiết kế trang chủ\tAn\tBình, Chi\t0%\t5-Mar-26\t10-Mar-26\t\t4'} className="font-mono text-[13px]" />
       {total > 0 && (
-        <div className="mt-3 max-h-72 overflow-auto rounded-2xl border border-line">
+        <div className="mt-3 max-h-72 overflow-auto rounded-[20px] border border-line">
           <table className="w-full text-[12.5px]">
             <thead className="sticky top-0 bg-surface text-left text-[10.5px] font-bold uppercase tracking-wider text-muted">
               <tr><th className="px-3 py-2">Việc</th><th className="px-2 py-2">Phụ trách</th><th className="px-2 py-2">%</th><th className="px-2 py-2">Bắt đầu</th><th className="px-2 py-2">Kết thúc</th><th className="px-2 py-2 text-right">Ngày</th></tr>

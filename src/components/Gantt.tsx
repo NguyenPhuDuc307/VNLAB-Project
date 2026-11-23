@@ -445,21 +445,21 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
         <div className="gantt-row">
           <div className="gantt-left h-full items-stretch">
             {headerTools && <div className="gantt-tools" onDoubleClick={(e) => e.stopPropagation()}>{headerTools}</div>}
-            <div className="c-no flex h-full items-end px-2 pb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted">#</div>
-            <div className="flex h-full items-end px-2 pb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted">Việc</div>
-            <div className="c-asg flex h-full items-end px-2 pb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted">Phụ trách</div>
-            <div className="c-sup flex h-full items-end px-2 pb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted">Hỗ trợ</div>
-            <div className="flex h-full items-end px-2 pb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted">Tiến độ</div>
-            <div className="c-start flex h-full items-end px-2 pb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted">Bắt đầu</div>
-            <div className="c-end flex h-full items-end px-2 pb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted">Kết thúc</div>
-            <div className="c-days flex h-full items-end px-2 pb-1.5 text-right text-[10.5px] font-bold uppercase tracking-wider text-muted">Ngày</div>
-            <div className="c-note flex h-full items-end px-2 pb-1.5 text-[10.5px] font-bold uppercase tracking-wider text-muted">Ghi chú</div>
+            <div className="c-no flex h-full items-end px-2 pb-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted">#</div>
+            <div className="flex h-full items-end px-2 pb-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted">Việc</div>
+            <div className="c-asg flex h-full items-end px-2 pb-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted">Phụ trách</div>
+            <div className="c-sup flex h-full items-end px-2 pb-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted">Hỗ trợ</div>
+            <div className="flex h-full items-end px-2 pb-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted">Tiến độ</div>
+            <div className="c-start flex h-full items-end px-2 pb-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted">Bắt đầu</div>
+            <div className="c-end flex h-full items-end px-2 pb-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted">Kết thúc</div>
+            <div className="c-days flex h-full items-end px-2 pb-1.5 text-right text-[10.5px] font-semibold uppercase tracking-wider text-muted">Ngày</div>
+            <div className="c-note flex h-full items-end px-2 pb-1.5 text-[10.5px] font-semibold uppercase tracking-wider text-muted">Ghi chú</div>
           </div>
           {!list && (
             <div className="gantt-days flex-col" style={{ backgroundImage: 'none' }}>
               <div className="flex">
                 {weeks.map((w) => (
-                  <div key={w.start} className="shrink-0 overflow-hidden border-l border-line px-2 pt-2 text-[11px] font-semibold whitespace-nowrap text-ink-2" style={{ width: w.count * dayWidth }}>
+                  <div key={w.start} className="shrink-0 overflow-hidden border-l border-line px-2 pt-2 text-[11px] font-semibold whitespace-nowrap text-muted" style={{ width: w.count * dayWidth }}>
                     {w.count >= 3 ? `${fmtDayMonth(w.start)} – ${fmtDayMonth(addDays(w.start, w.count - 1))}${w.start.slice(0, 4) !== today.slice(0, 4) || w.start.slice(5, 7) === '01' ? ` ${w.start.slice(0, 4)}` : ''}` : ''}
                   </div>
                 ))}
@@ -496,22 +496,33 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
             <div key={`g-${key}`} data-group-key={key} data-group-row={g?.id} className={cx('gantt-row gantt-group border-b border-line', groupDrag?.active && groupDrag.id === g?.id && 'is-dragging', groupDrag?.active && g && groupDrag.overId === g.id && (groupDrag.after ? 'drop-after' : 'drop-before'))}>
               <div className="gantt-left min-h-9 gantt-group-left">
                 <div className="c-no flex items-center justify-center">
-                  <IconButton label={collapsed ? 'Mở nhóm' : 'Thu gọn nhóm'} title={g && canEdit && onReorderGroups ? 'Bấm: thu/mở nhóm · Kéo: đổi thứ tự nhóm' : undefined} className={cx('h-7 w-7 rounded-lg', g && canEdit && onReorderGroups && 'cursor-grab active:cursor-grabbing')} style={{ touchAction: 'none' }}
+                  <IconButton label={collapsed ? 'Mở nhóm' : 'Thu gọn nhóm'} title={g && canEdit && onReorderGroups ? 'Bấm: thu/mở nhóm · Kéo: đổi thứ tự nhóm' : undefined} className={cx('!h-7 !w-7', g && canEdit && onReorderGroups && 'cursor-grab active:cursor-grabbing')} style={{ touchAction: 'none' }}
                     onPointerDown={g ? (e) => beginGroup(e, g.id, toggleGroup) : undefined} onPointerMove={g ? moveGroup : undefined} onPointerUp={g ? endGroup : undefined} onPointerCancel={() => setGroupDrag(null)}
                     onClick={g ? (e) => e.stopPropagation() : toggleGroup}>
                       {collapsed ? <CaretRight size={14} weight="bold" /> : <CaretDown size={14} weight="bold" />}
                     </IconButton>
                 </div>
                 <div className="flex min-w-0 items-center gap-1.5 px-2">
-                  <button type="button" className="min-w-0 line-clamp-2 break-words text-left text-[13px] font-extrabold leading-snug tracking-tight hover:text-primary" title={g ? g.name : undefined} onClick={toggleGroup}>
+                  <button type="button" className="min-w-0 line-clamp-2 break-words text-left text-[13px] font-bold leading-snug tracking-tight hover:text-primary" title={g ? g.name : undefined} onClick={toggleGroup}>
                     {g ? g.name : 'Chưa phân nhóm'}
                   </button>
                   <span className="num shrink-0 text-[11px] font-semibold text-muted">{r.tasks.length}</span>
-                  {(canEdit || (g && onDownloadGroup)) && (
+                  {(canEdit || (g && onDownloadGroup) || menuFor) && (
                     <span className="ml-auto flex shrink-0 items-center">
-                      {g && onDownloadGroup && r.tasks.length > 0 && <IconButton label={`Tải Excel kế hoạch nhóm ${g.name}`} className="h-7 w-7 rounded-lg" onClick={() => onDownloadGroup(g)}><DownloadSimple size={14} weight="bold" /></IconButton>}
-                      {canEdit && <IconButton label="Thêm việc vào nhóm" className="g-add h-7 w-7 rounded-lg" onClick={() => onAddTask(g?.id ?? null)}><Plus size={14} weight="bold" /></IconButton>}
-                      {canEdit && g && <IconButton label="Tuỳ chọn nhóm" className="h-7 w-7 rounded-lg" onClick={(e) => onGroupMenu(g, e.currentTarget)}><DotsThree size={16} weight="bold" /></IconButton>}
+                      {canEdit && <IconButton label="Thêm việc vào nhóm" className="g-add !h-7 !w-7" onClick={() => onAddTask(g?.id ?? null)}><Plus size={14} weight="bold" /></IconButton>}
+                      {/* "⋯" mở cùng menu thao tác nhóm như chuột phải (tải Excel, sắp xếp, Getfly, đổi thứ tự, sửa/xoá) thay cho hàng nút rời. */}
+                      {menuFor ? (
+                        <IconButton label="Tuỳ chọn nhóm" className="!h-7 !w-7" onClick={(e) => {
+                          const rect = e.currentTarget.getBoundingClientRect();
+                          const items = menuFor({ kind: 'group', group: g, tasks: r.tasks });
+                          if (items.length) setMenu({ x: rect.left, y: rect.bottom + 6, items, title: g ? (g.name.length > 48 ? `${g.name.slice(0, 46)}…` : g.name) : 'Chưa phân nhóm' });
+                        }}><DotsThree size={16} weight="bold" /></IconButton>
+                      ) : (
+                        <>
+                          {g && onDownloadGroup && r.tasks.length > 0 && <IconButton label={`Tải Excel kế hoạch nhóm ${g.name}`} className="!h-7 !w-7" onClick={() => onDownloadGroup(g)}><DownloadSimple size={14} weight="bold" /></IconButton>}
+                          {canEdit && g && <IconButton label="Tuỳ chọn nhóm" className="!h-7 !w-7" onClick={(e) => onGroupMenu(g, e.currentTarget)}><DotsThree size={16} weight="bold" /></IconButton>}
+                        </>
+                      )}
                     </span>
                   )}
                 </div>
@@ -549,13 +560,13 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
         return (
           <div key={t.id} data-task-row={t.id} data-group={t.groupId ?? UNGROUPED} className={cx('gantt-row group border-b border-line last:border-b-0 hover:bg-fill/40', inWeek(t) && 'this-week', rowDrag?.active && rowDrag.task.id === t.id && 'is-dragging', rowDrag?.active && rowDrag.overId === t.id && (rowDrag.after ? 'drop-after' : 'drop-before'))}>
             <div className={cx('gantt-left min-h-10 py-1.5', (!canEdit || compact) && 'cursor-pointer')} onClick={canEdit && !compact ? undefined : () => onEditTask(t)} role={canEdit ? undefined : 'button'} tabIndex={canEdit ? undefined : 0} onKeyDown={canEdit ? undefined : (e) => (e.key === 'Enter' || e.key === ' ') && (e.preventDefault(), onEditTask(t))}>
-              <button type="button" className={cx('c-no group/no relative flex h-7 w-full items-center justify-start rounded-lg pl-1 text-[12px] text-muted hover:bg-fill hover:text-ink', canEdit && 'cursor-grab active:cursor-grabbing')} title={canEdit ? 'Bấm: mở chi tiết · Kéo: đổi thứ tự trong nhóm' : 'Mở chi tiết'} style={{ touchAction: 'none' }}
+              <button type="button" className={cx('c-no group/no relative flex h-7 w-full items-center justify-start rounded-full pl-1.5 text-[12px] text-muted hover:bg-fill hover:text-ink', canEdit && 'cursor-grab active:cursor-grabbing')} title={canEdit ? 'Bấm: mở chi tiết · Kéo: đổi thứ tự trong nhóm' : 'Mở chi tiết'} style={{ touchAction: 'none' }}
                 onPointerDown={(e) => beginRow(e, t)} onPointerMove={moveRow} onPointerUp={endRow} onPointerCancel={() => setRowDrag(null)} onClick={(e) => e.stopPropagation()}>
                 <span className="num group-hover:hidden">{r.index}</span>
                 <DotsSixVertical size={16} weight="bold" className="hidden group-hover:block" />
               </button>
               <div className={cx('flex min-w-0 items-center gap-1.5 px-2', canEdit && 'cursor-text')} data-field="name" onDoubleClick={startEdit(t, 'name')}>
-                {!!t.subtasks?.length && <button type="button" className="flex h-5 w-4 shrink-0 items-center justify-center rounded text-primary hover:bg-fill"
+                {!!t.subtasks?.length && <button type="button" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-primary hover:bg-fill"
                   aria-label={collapsedTasks.includes(t.id) ? 'Mở rộng task con' : 'Thu gọn task con'} aria-expanded={!collapsedTasks.includes(t.id)}
                   onClick={(e) => { e.stopPropagation(); onToggleTask(t.id); }} onDoubleClick={(e) => e.stopPropagation()}>
                   {collapsedTasks.includes(t.id) ? <CaretRight size={12} /> : <CaretDown size={12} />}
@@ -589,7 +600,7 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
                 {editable(t, 'endDate') ? inputFor(t, 'endDate', 'date', t.endDate ?? '', { min: t.startDate ?? undefined }) : (
                   <>
                     {fmtShort(t.endDate)}
-                    {shift && <span className={cx('rounded px-1 text-[10px] font-bold leading-4', shift.end > 0 ? 'bg-warning-soft text-warning' : 'bg-ok-soft text-ok')} title={`Kế hoạch gốc ${fmtShort(t.baselineStart)} → ${fmtShort(t.baselineEnd)}; ${shift.end > 0 ? `gia hạn ${shift.end} ngày` : shift.end < 0 ? `rút ngắn ${-shift.end} ngày` : 'dời ngày bắt đầu'}`}>
+                    {shift && <span className={cx('rounded-full px-1.5 text-[10px] font-bold leading-4', shift.end > 0 ? 'bg-warning-soft text-warning' : 'bg-ok-soft text-ok')} title={`Kế hoạch gốc ${fmtShort(t.baselineStart)} → ${fmtShort(t.baselineEnd)}; ${shift.end > 0 ? `gia hạn ${shift.end} ngày` : shift.end < 0 ? `rút ngắn ${-shift.end} ngày` : 'dời ngày bắt đầu'}`}>
                       {shift.end > 0 ? `+${shift.end}` : shift.end < 0 ? `${shift.end}` : '↔'}
                     </span>}
                   </>
@@ -611,8 +622,8 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
                 )}
                 {start && end && (
                   <div
-                    className={cx('gantt-bar', late && 'ring-2 ring-danger/70', !canEdit && 'cursor-default')}
-                    style={{ left: x(start) + 1, width: (diffDays(start, end) + 1) * dayWidth - 2, background: color, opacity: d ? 0.85 : 1 }}
+                    className={cx('gantt-bar', late && 'late', t.progress >= 100 && 'done', d && 'dragging', !canEdit && 'cursor-default')}
+                    style={{ left: x(start) + 1, width: (diffDays(start, end) + 1) * dayWidth - 2, ['--bar' as string]: color }}
                     title={`${t.name} · ${fmtShort(start)} → ${fmtShort(end)} · ${t.progress}%`}
                     onPointerDown={(e) => begin(e, t, 'move')}
                     onClick={(e) => e.stopPropagation()}
@@ -790,7 +801,7 @@ function SubtaskRow({ parent, subtask, index, canEdit, onPatch, children, drag, 
   return <div className={cx('gantt-row group/sub border-b border-line', drag)} data-subtask-row={subtask.id} data-parent={parent.id}>
     <div className="gantt-left min-h-10 bg-fill/30 py-1.5">
       {/* Số 1.1: rê chuột hiện tay kéo, kéo để đổi thứ tự task con trong task cha. */}
-      <span className={cx('c-no flex h-7 w-full items-center rounded-lg pl-1 text-[12px] text-muted', handle && 'cursor-grab hover:bg-fill hover:text-ink active:cursor-grabbing')} style={handle ? { touchAction: 'none' } : undefined}
+      <span className={cx('c-no flex h-7 w-full items-center rounded-full pl-1.5 text-[12px] text-muted', handle && 'cursor-grab hover:bg-fill hover:text-ink active:cursor-grabbing')} style={handle ? { touchAction: 'none' } : undefined}
         title={handle ? 'Kéo để đổi thứ tự task con' : undefined} {...handle}>
         <span className={cx('num', handle && 'group-hover/sub:hidden')}>{index}</span>
         {handle && <DotsSixVertical size={16} weight="bold" className="hidden group-hover/sub:block" />}

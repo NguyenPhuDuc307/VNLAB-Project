@@ -1,7 +1,7 @@
 import { Plus, Trash } from '@phosphor-icons/react';
 import { useEffect, useState } from 'react';
 import { api, useAction, type ProjectDetail, type Scope } from '../lib/api';
-import { Button, IconButton, Input, useFeedback } from './ui';
+import { Button, IconButton, Input, SectionLabel, useFeedback } from './ui';
 
 /**
  * Quản lý phạm vi (tag) của dự án: tên, màu, người phụ trách (điền tay), số việc đang gắn.
@@ -22,15 +22,15 @@ export function ScopesEditor({ project, canEdit }: { project: ProjectDetail; can
   const add = () => { if (draft.name.trim()) create.mutate({ name: draft.name.trim(), owner: draft.owner.trim() }); };
 
   return (
-    <section className="mt-5 rounded-2xl border border-line p-4" aria-label="Phạm vi">
-      <p className="text-[13px] font-bold">Phạm vi <span className="num font-semibold text-muted">· {scopes.length}</span></p>
-      <p className="mb-3 mt-0.5 text-[12px] text-muted">Gắn tag cho việc để lọc và biết ai phụ trách mảng nào.</p>
+    <section className="mt-1" aria-label="Phạm vi">
+      <SectionLabel>Phạm vi <span className="num">· {scopes.length}</span></SectionLabel>
+      <p className="mb-3 px-1 text-[12px] text-muted">Gắn tag cho việc để lọc và biết ai phụ trách mảng nào.</p>
       {scopes.length > 0 && (
         <div className="mb-3 grid grid-cols-[28px_minmax(0,1fr)_minmax(0,1fr)_40px_32px] items-center gap-x-2 gap-y-1.5">
           <span />
-          <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted">Tên</span>
-          <span className="text-[10.5px] font-bold uppercase tracking-wider text-muted">Phụ trách</span>
-          <span className="text-center text-[10.5px] font-bold uppercase tracking-wider text-muted">Việc</span>
+          <span className="text-[10.5px] font-semibold uppercase tracking-wider text-muted">Tên</span>
+          <span className="text-[10.5px] font-semibold uppercase tracking-wider text-muted">Phụ trách</span>
+          <span className="text-center text-[10.5px] font-semibold uppercase tracking-wider text-muted">Việc</span>
           <span />
           {scopes.map((s) => <ScopeRowEdit key={s.id} scope={s} count={count(s.id)} canEdit={canEdit} onPatch={(body) => patch.mutate({ id: s.id, body })} onDelete={() => del(s)} />)}
         </div>
@@ -52,13 +52,13 @@ function ScopeRowEdit({ scope, count, canEdit, onPatch, onDelete }: { scope: Sco
   useEffect(() => { setName(scope.name); setOwner(scope.owner); }, [scope.name, scope.owner]);
   return (
     <div className="contents">
-      <label className="relative h-7 w-7 cursor-pointer overflow-hidden rounded-full border border-line" style={{ background: scope.color }} title="Đổi màu">
+      <label className="relative h-7 w-7 cursor-pointer overflow-hidden rounded-full" style={{ background: scope.color }} title="Đổi màu">
         <input type="color" value={scope.color} disabled={!canEdit} onChange={(e) => onPatch({ color: e.target.value })} className="absolute inset-0 cursor-pointer opacity-0" aria-label={`Màu phạm vi ${scope.name}`} />
       </label>
       <Input value={name} disabled={!canEdit} maxLength={80} aria-label="Tên phạm vi" onChange={(e) => setName(e.target.value)} onBlur={() => { const v = name.trim(); if (v && v !== scope.name) onPatch({ name: v }); else setName(scope.name); }} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), (e.target as HTMLInputElement).blur())} />
       <Input value={owner} disabled={!canEdit} maxLength={200} placeholder="Chưa có" list="prj-names" aria-label="Người phụ trách phạm vi" onChange={(e) => setOwner(e.target.value)} onBlur={() => { if (owner.trim() !== scope.owner) onPatch({ owner: owner.trim() }); }} onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), (e.target as HTMLInputElement).blur())} />
       <span className="num text-center text-[12px] text-muted">{count}</span>
-      {canEdit ? <IconButton label={`Xoá phạm vi ${scope.name}`} className="h-8 w-8 text-danger hover:bg-danger-soft" onClick={onDelete}><Trash size={15} /></IconButton> : <span />}
+      {canEdit ? <IconButton label={`Xoá phạm vi ${scope.name}`} className="!h-8 !w-8 text-danger hover:bg-danger-soft" onClick={onDelete}><Trash size={15} /></IconButton> : <span />}
     </div>
   );
 }

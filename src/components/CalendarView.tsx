@@ -132,8 +132,8 @@ export function CalendarView(props: Props) {
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-line px-3 py-2">
         <Button size="sm" variant="secondary" className="!h-7" onClick={() => setCursor(today)} disabled={atToday} title="Về hôm nay (T)">Hôm nay</Button>
         <span className="inline-flex items-center gap-0.5">
-          <IconButton label="Trước (K)" className="!h-7 !w-7 !rounded-lg" onClick={() => step(-1)}><CaretLeft size={16} weight="bold" /></IconButton>
-          <IconButton label="Sau (J)" className="!h-7 !w-7 !rounded-lg" onClick={() => step(1)}><CaretRight size={16} weight="bold" /></IconButton>
+          <IconButton label="Trước (K)" className="!h-7 !w-7" onClick={() => step(-1)}><CaretLeft size={16} weight="bold" /></IconButton>
+          <IconButton label="Sau (J)" className="!h-7 !w-7" onClick={() => step(1)}><CaretRight size={16} weight="bold" /></IconButton>
         </span>
         <h2 className="min-w-[140px] text-[15px] font-extrabold tracking-tight">{title}</h2>
         {undated.length > 0 && (
@@ -230,7 +230,7 @@ function WeekRow({ ws, inMonth, maxLanes, head, minHeight, ...p }: Shared & { ws
             {head && (
               <button
                 type="button"
-                className={cx('absolute left-1 top-1 grid h-5 min-w-5 place-items-center rounded-full px-1 text-[12px] font-semibold tabular-nums', isToday ? 'bg-primary text-white' : muted ? 'text-muted/70 hover:bg-fill' : 'text-ink-2 hover:bg-fill')}
+                className={cx('absolute left-1 top-1 grid h-5 min-w-5 place-items-center rounded-full px-1 text-[12px] font-semibold tabular-nums', isToday ? 'bg-primary text-on-primary' : muted ? 'text-muted/70 hover:bg-fill' : 'text-ink-2 hover:bg-fill')}
                 title={`${fmtDate(d)}${all[c].length ? ` · ${all[c].length} việc` : ''} — xem ngày`}
                 onClick={() => p.openDay(d)}
               >
@@ -238,7 +238,7 @@ function WeekRow({ ws, inMonth, maxLanes, head, minHeight, ...p }: Shared & { ws
               </button>
             )}
             {hidden[c].length > 0 && (
-              <button type="button" className="absolute bottom-0.5 left-1 right-1 truncate rounded px-1 text-left text-[11.5px] font-semibold text-muted hover:bg-fill hover:text-ink"
+              <button type="button" className="absolute bottom-0.5 left-1 right-1 truncate rounded-full px-1.5 text-left text-[11.5px] font-semibold text-muted hover:bg-fill hover:text-ink"
                 onClick={() => setList({ title: `Ngày ${fmtDate(d)}`, tasks: all[c] })}>
                 +{hidden[c].length} việc
               </button>
@@ -274,9 +274,9 @@ function WeekRow({ ws, inMonth, maxLanes, head, minHeight, ...p }: Shared & { ws
             }}
             title={`${t.name}\n${fmtShort(s.start)} → ${fmtShort(s.end)} · ${t.progress}%${t.assignee ? ` · ${t.assignee}` : ''}${t.note.trim() ? `\n\n${t.note.trim()}` : ''}`}
             className={cx(
-              'absolute z-[1] flex items-center gap-1 overflow-hidden px-1.5 text-left text-[12px] font-semibold leading-none text-ink transition hover:brightness-95',
-              startsHere ? 'rounded-l-md' : 'rounded-l-none',
-              endsHere ? 'rounded-r-md' : 'rounded-r-none',
+              'absolute z-[1] flex items-center gap-1 overflow-hidden px-2 text-left text-[12px] font-semibold leading-none text-ink transition hover:brightness-95',
+              startsHere ? 'rounded-l-full' : 'rounded-l-none',
+              endsHere ? 'rounded-r-full' : 'rounded-r-none',
               canEdit(t) && 'cursor-grab active:cursor-grabbing',
             )}
             style={{
@@ -284,8 +284,9 @@ function WeekRow({ ws, inMonth, maxLanes, head, minHeight, ...p }: Shared & { ws
               height: LANE_H - 3,
               left: `calc(${(col / 7) * 100}% + ${startsHere ? 3 : 0}px)`,
               width: `calc(${(len / 7) * 100}% - ${(startsHere ? 3 : 0) + (endsHere ? 3 : 0)}px)`,
-              background: `color-mix(in srgb, ${color} 20%, var(--surface))`,
-              boxShadow: startsHere ? `inset 3px 0 0 ${color}` : undefined,
+              // Viên thuốc nền pha nhạt + viền mảnh cùng màu, như thanh Gantt.
+              background: `color-mix(in srgb, ${color} 22%, var(--surface))`,
+              boxShadow: `inset 0 0 0 1px color-mix(in srgb, ${color} 30%, transparent)`,
             }}
           >
             {done && <CheckCircle size={13} weight="fill" className="shrink-0 text-ok" />}
@@ -314,7 +315,7 @@ function WeekdayHeader({ ws, today, onPick }: { ws?: string; today: string; onPi
             {name}
             {d && (
               <button type="button" onClick={() => onPick?.(d)} title="Xem ngày"
-                className={cx('mx-auto mt-0.5 grid h-8 w-8 place-items-center rounded-full text-[18px] font-bold tabular-nums', isToday ? 'bg-primary text-white' : 'text-ink hover:bg-fill')}>
+                className={cx('mx-auto mt-0.5 grid h-8 w-8 place-items-center rounded-full text-[18px] font-bold tabular-nums', isToday ? 'bg-primary text-on-primary' : 'text-ink hover:bg-fill')}>
                 {Number(d.slice(8))}
               </button>
             )}
@@ -413,7 +414,7 @@ function YearView(p: Shared) {
                 const n = counts.get(d) ?? 0;
                 return (
                   <button key={d} type="button" onClick={() => p.openDay(d)} title={`${fmtDate(d)}${n ? ` · ${n} việc` : ''}`}
-                    className={cx('grid aspect-square place-items-center rounded-md text-[11.5px] tabular-nums transition hover:ring-1 hover:ring-primary', d === p.today ? 'bg-primary font-bold text-white' : n ? 'font-semibold text-ink' : 'text-ink-2')}
+                    className={cx('grid aspect-square place-items-center rounded-full text-[11.5px] tabular-nums transition hover:ring-1 hover:ring-primary', d === p.today ? 'bg-primary font-bold text-on-primary' : n ? 'font-semibold text-ink' : 'text-ink-2')}
                     style={d !== p.today && n ? { background: `color-mix(in srgb, var(--primary) ${Math.round(10 + (n / max) * 45)}%, transparent)` } : undefined}>
                     {Number(d.slice(8))}
                   </button>
@@ -447,9 +448,9 @@ function AgendaView(p: Shared) {
       )}
       {days.map((d) => (
         <section key={d} className="mb-3 grid grid-cols-[64px_minmax(0,1fr)] gap-3">
-          <button type="button" onClick={() => p.openDay(d)} className={cx('flex h-fit flex-col items-center rounded-xl py-1.5 hover:bg-fill', d === p.today && 'cal-today')}>
+          <button type="button" onClick={() => p.openDay(d)} className={cx('flex h-fit flex-col items-center rounded-[20px] py-1.5 hover:bg-fill', d === p.today && 'cal-today')}>
             <span className={cx('text-[11px] font-semibold', d === p.today ? 'text-primary' : 'text-muted')}>{WEEKDAYS[(weekday(d) + 6) % 7]}</span>
-            <span className={cx('grid h-8 w-8 place-items-center rounded-full text-[17px] font-bold tabular-nums', d === p.today ? 'bg-primary text-white' : 'text-ink')}>{Number(d.slice(8))}</span>
+            <span className={cx('grid h-8 w-8 place-items-center rounded-full text-[17px] font-bold tabular-nums', d === p.today ? 'bg-primary text-on-primary' : 'text-ink')}>{Number(d.slice(8))}</span>
             <span className="text-[10.5px] text-muted">th {Number(d.slice(5, 7))}</span>
           </button>
           <ul className="divide-y divide-line rounded-2xl border border-line">{byStart.get(d)!.map(row)}</ul>

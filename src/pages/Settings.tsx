@@ -105,7 +105,7 @@ function SettingsGroup({ label, children }: { label: string; children: ReactNode
   return (
     <div>
       <div className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-wider text-muted">{label}</div>
-      <div className="overflow-hidden rounded-xl border border-line bg-card shadow-[var(--shadow)] [&>*+*]:border-t [&>*+*]:border-line">{children}</div>
+      <div className="overflow-hidden rounded-2xl border border-[var(--card-border)] bg-card shadow-[var(--shadow-xs)] [&>*+*]:border-t [&>*+*]:border-line">{children}</div>
     </div>
   );
 }
@@ -130,14 +130,14 @@ function SettingsSection({ title, hint, icon: Ico, tone = 'primary', children }:
         aria-expanded={open}
         className="flex w-full items-center gap-3 px-3.5 py-3 text-left transition-colors hover:bg-fill"
       >
-        <span className={cx('grid size-9 shrink-0 place-items-center rounded-[10px]', TONES[tone])}><Ico size={19} weight="duotone" /></span>
+        <span className={cx('grid size-9 shrink-0 place-items-center rounded-full', TONES[tone])}><Ico size={19} /></span>
         <span className="min-w-0 flex-1">
           <span className="block text-[15px] font-semibold leading-tight">{title}</span>
           {hint && <span className="mt-0.5 block truncate text-xs text-muted">{hint}</span>}
         </span>
         <CaretRight size={16} weight="bold" className={cx('shrink-0 text-muted transition-transform', open && 'rotate-90')} />
       </button>
-      {open && <div className="min-w-0 border-t border-line bg-fill/50 p-4">{children}</div>}
+      {open && <div className="min-w-0 border-t border-line bg-fill/40 p-4">{children}</div>}
     </section>
   );
 }
@@ -208,9 +208,9 @@ function TokenHelp({ token, url }: { token: string; url: string }) {
         <div key={b.label}>
           <div className="mb-1 flex items-center justify-between text-[12px] font-semibold text-muted">
             <span>{b.label}</span>
-            <button type="button" onClick={() => copy(b.code)} className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-primary hover:bg-primary-soft"><Copy size={13} /> Chép</button>
+            <button type="button" onClick={() => copy(b.code)} className="inline-flex h-7 items-center gap-1 rounded-full px-2.5 text-primary hover:bg-primary-soft"><Copy size={13} /> Chép</button>
           </div>
-          <pre className="overflow-x-auto rounded-xl bg-fill p-3 text-[12px] leading-relaxed whitespace-pre-wrap break-all">{b.code}</pre>
+          <pre className="overflow-x-auto rounded-[20px] bg-fill px-4 py-3 text-[12px] leading-relaxed whitespace-pre-wrap break-all">{b.code}</pre>
         </div>
       ))}
       <p className="text-[12.5px] text-muted">Thử: "Liệt kê dự án của tôi", "Thêm việc <i>Viết tài liệu hướng dẫn</i> vào nhóm Kiểm thử, An phụ trách, 14–21/3", "Việc nào quá hạn?".</p>

@@ -2,7 +2,7 @@ import { CloudArrowUp, Trash } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { api, useAction, type ProjectDetail } from '../lib/api';
-import { Button, Field, Input, Sheet, useFeedback, cx } from './ui';
+import { Button, Field, Input, SectionLabel, Sheet, useFeedback, cx } from './ui';
 
 export type GetflyResult = { created: number; updated: number; deleted: number; unchanged: number; errors: string[]; warnings: string[]; syncedAt: string };
 export const useGetflyStatus = () => useQuery({ queryKey: ['getfly-status'], queryFn: () => api<{ configured: boolean; host: string | null }>('/getfly/status'), staleTime: 300_000 });
@@ -38,13 +38,13 @@ export function GetflyReport({ projectId }: { projectId: string }) {
           {r.errors.length > 0 && (
             <section>
               <h3 className="mb-1.5 text-[12px] font-bold uppercase tracking-wide text-danger">{r.errors.length} lỗi</h3>
-              <ul className="space-y-1.5">{r.errors.map((e, i) => <li key={i} className="select-text break-words rounded-xl bg-danger-soft px-3 py-2">{e}</li>)}</ul>
+              <ul className="space-y-1.5">{r.errors.map((e, i) => <li key={i} className="select-text break-words rounded-[18px] bg-danger-soft px-3.5 py-2">{e}</li>)}</ul>
             </section>
           )}
           {r.warnings.length > 0 && (
             <section>
               <h3 className="mb-1.5 text-[12px] font-bold uppercase tracking-wide text-muted">{r.warnings.length} lưu ý</h3>
-              <ul className="space-y-1.5">{r.warnings.map((w, i) => <li key={i} className="select-text break-words rounded-xl bg-fill px-3 py-2">{w}</li>)}</ul>
+              <ul className="space-y-1.5">{r.warnings.map((w, i) => <li key={i} className="select-text break-words rounded-[18px] bg-fill px-3.5 py-2">{w}</li>)}</ul>
             </section>
           )}
         </div>
@@ -144,21 +144,18 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
   const ready = !!project.getflyCreatorId;
   const userSelect = (value: string, onChange: (v: string) => void, label: string, emptyText: string) => (
     <select aria-label={label} value={value} disabled={!canEdit || !gUsers.data} onChange={(e) => onChange(e.target.value)}
-      className="h-9 w-full min-w-0 rounded-xl border border-line bg-card px-2.5 text-[13px] outline-none focus:border-primary">
+      className="select-chevron h-9 w-full min-w-0 appearance-none rounded-full border border-line bg-card pl-3.5 pr-9 text-[13px] outline-none focus:border-primary">
       <option value="">{gUsers.isLoading ? 'Đang tải…' : emptyText}</option>
       {(gUsers.data ?? []).map((u) => <option key={u.id} value={u.id}>{u.name}{u.dept ? ` · ${u.dept}` : ''}</option>)}
     </select>
   );
 
   return (
-    <section className="mt-5 rounded-2xl border border-line p-4" aria-label="Getfly CRM">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[13px] font-bold">Getfly CRM</p>
-        {status.data?.configured && ready && <Button size="sm" variant="secondary" onClick={gj.sync} disabled={gj.running || !canEdit}><CloudArrowUp size={15} className={gj.running ? 'animate-pulse' : undefined} /> {gj.running ? `${gj.job?.kind === 'unsync' ? 'Đang xoá' : 'Đang đồng bộ'}${gj.progress ? ` ${gj.progress}` : '…'}` : 'Đồng bộ ngay'}</Button>}
-      </div>
-      <p className="mb-3 mt-0.5 text-[12px] text-muted">Đẩy việc lên Getfly. Chỉ nhóm đã gắn việc cha mới được đồng bộ.</p>
+    <section className="mt-1" aria-label="Getfly CRM">
+      <SectionLabel action={status.data?.configured && ready && <Button size="sm" variant="secondary" onClick={gj.sync} disabled={gj.running || !canEdit}><CloudArrowUp size={15} className={gj.running ? 'animate-pulse' : undefined} /> {gj.running ? `${gj.job?.kind === 'unsync' ? 'Đang xoá' : 'Đang đồng bộ'}${gj.progress ? ` ${gj.progress}` : '…'}` : 'Đồng bộ ngay'}</Button>}>Getfly CRM</SectionLabel>
+      <p className="mb-3 px-1 text-[12px] text-muted">Đẩy việc lên Getfly. Chỉ nhóm đã gắn việc cha mới được đồng bộ.</p>
       {!status.data?.configured ? (
-        <p className="rounded-xl bg-fill px-3 py-2 text-[12px] text-muted">Máy chủ chưa kết nối Getfly.</p>
+        <p className="rounded-[20px] bg-fill px-4 py-2.5 text-[12px] text-muted">Máy chủ chưa kết nối Getfly.</p>
       ) : (
         <>
           {project.groups.length > 0 && (
@@ -178,7 +175,7 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
                           {row.sub && <span className={cx('text-muted', row.label && 'ml-1 text-[12px]')}>{row.label ? `· ${row.sub}` : `› ${row.sub}`}</span>}
                         </span>
                         {m ? (
-                          <span className="flex min-w-0 flex-1 items-center gap-2 rounded-lg bg-fill px-2.5 py-1.5">
+                          <span className="flex min-w-0 flex-1 items-center gap-2 rounded-[18px] bg-fill px-3.5 py-1.5">
                             <span className="min-w-0 flex-1 break-words">{m.name} <span className="text-muted">· {m.code}</span></span>
                             {canEdit && <button type="button" className="text-[12px] font-semibold text-muted hover:text-danger disabled:opacity-50" disabled={save.isPending} onClick={() => row.label ? void askRemoveGroup(g.id, g.name) : save.mutate({ groups: { [row.key]: '' } })}>Bỏ</button>}
                           </span>
@@ -197,7 +194,7 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
             </Field>
           )}
           {(project.groups.some((g) => !project.getflyGroups?.[g.id]?.id) || project.tasks.some((t) => !t.groupId)) && (
-            <div className="mb-4 rounded-xl bg-fill p-3 text-[13px] text-muted">
+            <div className="mb-4 rounded-[20px] bg-fill px-4 py-3 text-[13px] text-muted">
               <p className="font-semibold">Các mục chưa đồng bộ:</p>
               {project.groups.filter((g) => !project.getflyGroups?.[g.id]?.id).map((g) => <p key={g.id}>Nhóm {g.name}: chưa gắn việc cha.</p>)}
               {project.tasks.filter((t) => !t.groupId).map((t) => <p key={t.id}>Việc {t.name}: chưa phân nhóm.</p>)}

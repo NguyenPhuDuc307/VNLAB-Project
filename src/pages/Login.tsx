@@ -33,7 +33,7 @@ function Shell({ children, compact }: { children: React.ReactNode; compact?: boo
 
       <main className="relative mx-auto grid w-full max-w-6xl flex-1 content-center items-center gap-7 py-7 md:grid-cols-[1.15fr_1fr] md:gap-16 md:py-12">
         <section className={compact ? 'flex items-center gap-4 md:block' : ''}>
-          <LogoTile className={compact ? 'h-14 w-14 rounded-[20px] md:hidden' : 'mb-6 h-[72px] w-[72px] rounded-[24px] md:hidden'} logoClassName={compact ? 'h-10 w-10' : 'h-12 w-12'} />
+          <LogoTile className={compact ? 'h-14 w-14 rounded-full md:hidden' : 'mb-6 h-[72px] w-[72px] rounded-full md:hidden'} logoClassName={compact ? 'h-10 w-10' : 'h-12 w-12'} />
           <div>
             <p className={compact ? 'display text-[34px] md:text-[104px]' : 'display text-[60px] md:text-[104px]'}>Project</p>
             <p className={compact ? 'mt-1 text-[15px] font-medium text-ink-2 md:mt-5 md:text-[26px]' : 'mt-3 text-[19px] font-medium leading-snug text-ink-2 md:mt-5 md:text-[26px]'}>
@@ -51,7 +51,7 @@ function Shell({ children, compact }: { children: React.ReactNode; compact?: boo
         </section>
 
         <section className="liquid-glass relative w-full rounded-[30px] p-6 sm:p-8 md:max-w-[440px] md:justify-self-end md:p-9">
-          <LogoTile className="mb-7 hidden h-20 w-20 rounded-[26px] md:flex" logoClassName="h-14 w-14" />
+          <LogoTile className="mb-7 hidden h-20 w-20 rounded-full md:flex" logoClassName="h-14 w-14" />
           {children}
         </section>
       </main>
@@ -64,7 +64,7 @@ function Shell({ children, compact }: { children: React.ReactNode; compact?: boo
   );
 }
 
-const alertCls = 'mb-4 rounded-2xl border border-danger/25 bg-danger-soft px-4 py-3 text-sm font-medium text-danger';
+const alertCls = 'mb-4 rounded-[20px] border border-danger/25 bg-danger-soft px-4 py-3 text-sm font-medium text-danger';
 const ssoUrl = () => `/api/auth/sso/start?next=${encodeURIComponent(location.pathname + location.search)}`;
 
 export function Login() {
@@ -105,7 +105,7 @@ export function Login() {
       <h1 className="mt-2 text-[26px] font-extrabold leading-tight tracking-tight">Kế hoạch dự án</h1>
       <p className="mb-6 mt-1.5 text-[15px] leading-relaxed text-muted">Lên kế hoạch, giao việc và theo dõi tiến độ cùng cả nhóm.</p>
 
-      {loggedOut && !err && <p className="mb-4 rounded-2xl border border-line bg-card px-4 py-3 text-sm text-ink-2">Đã đăng xuất.</p>}
+      {loggedOut && !err && <p className="mb-4 rounded-[20px] border border-line bg-card px-4 py-3 text-sm text-ink-2">Đã đăng xuất.</p>}
       {err && <p role="alert" className={alertCls}>{err}</p>}
 
       <Button block size="lg" onClick={() => location.assign(ssoUrl())}>Đăng nhập bằng VNLab ID</Button>

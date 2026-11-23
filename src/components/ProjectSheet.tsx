@@ -6,7 +6,7 @@ import { api, ROLE_LABEL, useAction, useCan, useMe, useProjects, type GoogleStat
 import { ColumnPicker, normalizeColumns } from './ColumnPicker';
 import { ScopesEditor } from './ScopesEditor';
 import { GetflyBox } from './GetflyBox';
-import { Avatar, Button, Chip, DateInput, Field, IconButton, Input, Segmented, Select, Sheet, Textarea, Toggle, useFeedback, cx } from './ui';
+import { Avatar, Button, Chip, DateInput, Field, IconButton, Input, Segmented, Select, Sheet, StepDots, SectionLabel, Textarea, Toggle, useFeedback, cx } from './ui';
 
 export const PROJECT_COLORS = ['#4274bc', '#6e9edc', '#0f7c8c', '#1f8a4c', '#b8860b', '#c74a1c', '#5b4bc4', '#a23b8a', '#6b5a52'];
 
@@ -22,8 +22,9 @@ export function ProjectSheet({ open, onClose, project, onImport }: { open: boole
   const nav = useNavigate();
   const [f, setF] = useState<Form>(empty);
   const [tab, setTab] = useState<SettingsTab>('info');
+  const [step, setStep] = useState(1);
   const tabId = useId();
-  useEffect(() => { if (open) setTab('info'); }, [open, project?.id]);
+  useEffect(() => { if (open) { setTab('info'); setStep(1); } }, [open, project?.id]);
   useEffect(() => {
     if (open) setF(project ? { name: project.name, code: project.code, customer: project.customer, description: project.description, startDate: project.startDate ?? '', color: project.color, satWeight: project.satWeight, sunWeight: project.sunWeight, archived: project.archived, aiContext: project.aiContext ?? '' } : empty);
   }, [open, project?.id]);
@@ -47,32 +48,34 @@ export function ProjectSheet({ open, onClose, project, onImport }: { open: boole
       wide
       open={open}
       onClose={onClose}
-      title={project ? 'Cài đặt dự án' : 'Dự án mới'}
+      title={project ? 'Cài đặt dự án' : <span className="flex items-center justify-between gap-3">Dự án mới<StepDots step={step} total={2} titles={['Thông tin', 'Kế hoạch']} /></span>}
       footer={
         <div className="flex items-center gap-2">
-          {project && owner && can('project.project.delete') && <IconButton label="Xoá dự án" onClick={del} className="text-danger hover:bg-danger-soft" disabled={busy}><Trash size={18} /></IconButton>}
-          <Button variant="secondary" className="ml-auto" onClick={onClose}>Huỷ</Button>
-          {(!project || tab === 'info' || tab === 'ai') && <Button type="submit" form="project-form" disabled={busy || !f.name.trim()}>{busy ? 'Đang lưu…' : project ? 'Lưu' : 'Tạo dự án'}</Button>}
+          {project && owner && can('project.project.delete') && <IconButton label="Xoá dự án" onClick={del} className="!h-10 !w-10 bg-danger-soft text-danger hover:brightness-95" disabled={busy}><Trash size={18} /></IconButton>}
+          <Button variant="secondary" className="ml-auto" onClick={!project && step === 2 ? () => setStep(1) : onClose}>{!project && step === 2 ? 'Quay lại' : 'Huỷ'}</Button>
+          {(!project || tab === 'info' || tab === 'ai') && <Button type="submit" form="project-form" disabled={busy || !f.name.trim()}>{busy ? 'Đang lưu…' : project ? 'Lưu' : step === 1 ? 'Tiếp tục' : 'Tạo dự án'}</Button>}
         </div>
       }
     >
       {project && (
-        <div role="tablist" aria-label="Cài đặt dự án" className="sticky top-0 z-10 mb-4 flex gap-1 overflow-x-auto border-b border-line bg-surface py-2">
+        <div role="tablist" aria-label="Cài đặt dự án" className="sticky top-0 z-10 -mx-1 mb-4 bg-surface px-1 py-1"><div className="no-scrollbar flex gap-1 overflow-x-auto rounded-full bg-fill p-1">
           {SETTINGS_TABS.map((item, i) => (
             <button key={item.value} type="button" role="tab" id={`${tabId}-tab-${item.value}`} aria-controls={`${tabId}-panel-${item.value}`} aria-selected={tab === item.value} tabIndex={tab === item.value ? 0 : -1}
-              className={cx('shrink-0 rounded-xl px-3 py-2 text-[13px] font-semibold outline-none focus-visible:ring-2 focus-visible:ring-primary', tab === item.value ? 'bg-primary-soft text-primary' : 'text-muted hover:bg-fill')}
+              className={cx('h-8 flex-1 shrink-0 whitespace-nowrap rounded-full px-3.5 text-[13px] font-semibold outline-none transition focus-visible:ring-2 focus-visible:ring-primary', tab === item.value ? 'bg-surface text-ink shadow-[var(--shadow-xs)]' : 'text-muted hover:text-ink')}
               onClick={() => setTab(item.value)} onKeyDown={(e) => {
                 const next = e.key === 'ArrowRight' ? (i + 1) % SETTINGS_TABS.length : e.key === 'ArrowLeft' ? (i + SETTINGS_TABS.length - 1) % SETTINGS_TABS.length : e.key === 'Home' ? 0 : e.key === 'End' ? SETTINGS_TABS.length - 1 : -1;
                 if (next < 0) return;
                 e.preventDefault(); setTab(SETTINGS_TABS[next].value); document.getElementById(`${tabId}-tab-${SETTINGS_TABS[next].value}`)?.focus();
               }}>{item.label}</button>
           ))}
-        </div>
+        </div></div>
       )}
-      <form id="project-form" className="pt-1" onSubmit={(e) => { e.preventDefault(); save.mutate({ ...f, name: f.name.trim() }); }}>
+      <form id="project-form" className="pt-1" onSubmit={(e) => { e.preventDefault(); if (!project && step === 1) { setStep(2); return; } save.mutate({ ...f, name: f.name.trim() }); }}>
         <div role={project ? 'tabpanel' : undefined} id={`${tabId}-panel-info`} aria-labelledby={project ? `${tabId}-tab-info` : undefined} hidden={!!project && tab !== 'info'}>
+        {!project && step === 2 && <div className="mb-4 flex min-w-0 items-center gap-2 rounded-full bg-fill px-4 py-2.5 text-sm"><span className="size-3 shrink-0 rounded-full" style={{ background: f.color }} /><span className="truncate font-semibold">{f.name}</span>{f.code && <span className="truncate text-muted">{f.code}</span>}</div>}
+        <div hidden={!project && step !== 1}>
         <Field label="Tên dự án">
-          <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required maxLength={160} autoFocus={!project} placeholder="VD: Website bán hàng" />
+          <Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} required={!!project || step === 1} maxLength={160} autoFocus={!project} placeholder="VD: Website bán hàng" />
         </Field>
         <div className="grid gap-x-3 sm:grid-cols-2">
           <Field label="Khách hàng">
@@ -81,6 +84,14 @@ export function ProjectSheet({ open, onClose, project, onImport }: { open: boole
           <Field label="Mã dự án">
             <Input value={f.code} onChange={(e) => setF({ ...f, code: e.target.value })} maxLength={40} placeholder="VD: WEB01" />
           </Field>
+        </div>
+        <Field label="Mô tả">
+          <Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} maxLength={2000} rows={2} />
+        </Field>
+        </div>
+        <div hidden={!project && step !== 2}>
+        <SectionLabel>Kế hoạch làm việc</SectionLabel>
+        <div className="grid gap-x-3 sm:grid-cols-2">
           <Field label="Ngày bắt đầu">
             <DateInput value={f.startDate} onChange={(v) => setF({ ...f, startDate: v })} optional />
           </Field>
@@ -98,9 +109,7 @@ export function ProjectSheet({ open, onClose, project, onImport }: { open: boole
             <Segmented value={String(f.sunWeight)} onChange={(v) => setF({ ...f, sunWeight: Number(v) })} options={[{ value: '0', label: 'Nghỉ' }, { value: '0.5', label: '½ ngày' }, { value: '1', label: '1 ngày' }]} />
           </Field>
         </div>
-        <Field label="Mô tả">
-          <Textarea value={f.description} onChange={(e) => setF({ ...f, description: e.target.value })} maxLength={2000} rows={2} />
-        </Field>
+        </div>
         {project && owner && <Toggle checked={f.archived} onChange={(v) => setF({ ...f, archived: v })} label="Lưu trữ dự án" desc="Ẩn khỏi Tổng quan, vẫn mở được trong danh sách Dự án" />}
         </div>
         {project && (
@@ -115,12 +124,10 @@ export function ProjectSheet({ open, onClose, project, onImport }: { open: boole
       {project && <div role="tabpanel" id={`${tabId}-panel-scopes`} aria-labelledby={`${tabId}-tab-scopes`} hidden={tab !== 'scopes'}><ScopesEditor project={project} canEdit={project.myRole !== 'viewer' && can('project.project.write')} /></div>}
 
       {project && onImport && (
-        <div hidden={tab !== 'info'} className="mt-5 rounded-2xl border border-line bg-fill/40 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-[13px] font-bold">Nhập kế hoạch</p>
-              <p className="mt-0.5 text-[12px] text-muted">Dán các dòng từ Excel hoặc Google Sheets.</p>
-            </div>
+        <div hidden={tab !== 'info'} className="mt-5">
+          <SectionLabel>Nhập kế hoạch</SectionLabel>
+          <div className="flex flex-wrap items-center justify-between gap-3 px-1">
+            <p className="text-[12.5px] text-muted">Dán các dòng từ Excel hoặc Google Sheets.</p>
             <Button variant="secondary" size="sm" onClick={onImport}><Table size={15} /> Dán từ bảng tính</Button>
           </div>
         </div>
@@ -180,15 +187,15 @@ export function MembersSheet({ open, onClose, project }: { open: boolean; onClos
                   <option value="editor">Được sửa</option>
                   <option value="viewer">Chỉ xem</option>
                 </Select>
-                <IconButton label="Gỡ thành viên" onClick={() => kick(m)} className="text-danger hover:bg-danger-soft"><X size={16} /></IconButton>
+                <IconButton label="Gỡ thành viên" onClick={() => kick(m)} className="!h-9 !w-9 text-danger hover:bg-danger-soft"><X size={16} /></IconButton>
               </>
             ) : <Chip>{ROLE_LABEL[m.role]}</Chip>}
           </li>
         ))}
       </ul>
       {owner && (
-        <form className="mt-3 rounded-2xl border border-line bg-card p-3" onSubmit={(e) => { e.preventDefault(); add.mutate({ email: email.trim(), role }); }}>
-          <p className="mb-2 text-[13px] font-semibold text-ink-2">Mời theo email VNLab ID</p>
+        <form className="mt-4" onSubmit={(e) => { e.preventDefault(); add.mutate({ email: email.trim(), role }); }}>
+          <SectionLabel>Mời theo email VNLab ID</SectionLabel>
           <div className="flex flex-col gap-2 sm:flex-row">
             <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="ten@vnlab.id.vn" required className="h-10" />
             <Select value={role} onChange={(e) => setRole(e.target.value as 'editor' | 'viewer')} className="h-10 sm:w-36">
@@ -197,7 +204,7 @@ export function MembersSheet({ open, onClose, project }: { open: boolean; onClos
             </Select>
             <Button type="submit" disabled={add.isPending || !email.trim()} className="h-10 shrink-0"><UserPlus size={16} /> Mời</Button>
           </div>
-          <p className="mt-2 text-[12px] text-muted">Người được mời cần có tài khoản VNLab ID.</p>
+          <p className="mt-2 px-1 text-[12px] text-muted">Người được mời cần có tài khoản VNLab ID.</p>
         </form>
       )}
     </Sheet>
@@ -221,8 +228,8 @@ function GoogleSheetBox({ project }: { project: ProjectDetail }) {
   const err = (link.error ?? sync.error) as Error | null;
   const email = status.data?.email;
   return (
-    <div className="mt-2 rounded-2xl border border-line bg-card p-3">
-      <p className="text-[13px] font-semibold text-ink-2">Google Sheets</p>
+    <div className="mt-5">
+      <SectionLabel>Google Sheets</SectionLabel>
       {status.data && !status.data.configured && <p className="mt-1 text-[12.5px] text-muted">Máy chủ chưa kết nối Google.</p>}
       {project.sheetUrl ? (
         <>
@@ -235,7 +242,7 @@ function GoogleSheetBox({ project }: { project: ProjectDetail }) {
             <Button size="sm" onClick={() => sync.mutate(undefined)} disabled={busy || !status.data?.configured}><ArrowsClockwise size={14} /> Đồng bộ ngay</Button>
             <Button size="sm" variant="ghost" onClick={unlink} disabled={busy} className="text-danger">Bỏ liên kết</Button>
           </div>
-          {email && <p className="mt-2 text-[12px] text-muted">Sheet phải Share quyền <b>Người chỉnh sửa</b> cho <code className="rounded bg-fill px-1 py-0.5">{email}</code> <button type="button" onClick={copyEmail} className="font-semibold text-primary hover:underline">Chép</button></p>}
+          {email && <p className="mt-2 text-[12px] text-muted">Sheet phải Share quyền <b>Người chỉnh sửa</b> cho <code className="rounded-md bg-fill px-1.5 py-0.5">{email}</code> <button type="button" onClick={copyEmail} className="font-semibold text-primary hover:underline">Chép</button></p>}
           <div className="mt-3"><Toggle checked={project.sheetAuto} onChange={(v) => link.mutate({ sheetAuto: v })} label="Tự đồng bộ" desc="Tự ghi sang sheet sau mỗi thay đổi" /></div>
           <fieldset disabled={busy}>
             <Toggle checked={project.sheetCollapseSubtasks ?? true} onChange={(v) => link.mutate({ sheetCollapseSubtasks: v })} label="Thu gọn task con khi đồng bộ" desc="Chỉ hiện việc chính, bấm +/− để xem task con" />
@@ -248,7 +255,7 @@ function GoogleSheetBox({ project }: { project: ProjectDetail }) {
           <p className="mt-1 text-[12.5px] leading-relaxed text-muted">Ghi kế hoạch sang Google Sheet. Tab <b>PLAN</b> và <b>Dữ liệu</b> sẽ bị ghi đè.</p>
           <ol className="mt-2 list-decimal space-y-1.5 pl-5 text-[12.5px] leading-relaxed text-ink-2">
             <li><a href={newSheetUrl} target="_blank" rel="noopener noreferrer" className="font-semibold text-primary hover:underline">Tạo Google Sheet mới</a> hoặc dùng sheet có sẵn.</li>
-            <li>Trong sheet bấm <b>Chia sẻ</b>, dán email {email ? <><code className="rounded bg-fill px-1 py-0.5">{email}</code> <button type="button" onClick={copyEmail} className="font-semibold text-primary hover:underline">Chép</button></> : 'service account'}, quyền <b>Người chỉnh sửa</b>.</li>
+            <li>Trong sheet bấm <b>Chia sẻ</b>, dán email {email ? <><code className="rounded-md bg-fill px-1.5 py-0.5">{email}</code> <button type="button" onClick={copyEmail} className="font-semibold text-primary hover:underline">Chép</button></> : 'service account'}, quyền <b>Người chỉnh sửa</b>.</li>
             <li>Dán link sheet vào ô dưới và bấm <b>Liên kết</b>, rồi <b>Đồng bộ ngay</b>.</li>
           </ol>
           <form className="mt-3 flex flex-col gap-2 sm:flex-row" onSubmit={(e) => { e.preventDefault(); if (url.trim()) link.mutate({ sheetUrl: url.trim() }); }}>
@@ -283,10 +290,10 @@ function GoogleCalendarBox({ project, owner }: { project: ProjectDetail; owner: 
   const copyEmail = async () => { try { await navigator.clipboard.writeText(email ?? ''); toast('Đã chép email service account'); } catch { toast('Không chép được — chọn và sao chép tay', 'error'); } };
   const busy = link.isPending || sync.isPending;
   const err = (link.error ?? sync.error) as Error | null;
-  const emailEl = email ? <><code className="break-all rounded bg-fill px-1 py-0.5">{email}</code> <button type="button" onClick={copyEmail} className="font-semibold text-primary hover:underline">Chép</button></> : 'service account';
+  const emailEl = email ? <><code className="break-all rounded-md bg-fill px-1.5 py-0.5">{email}</code> <button type="button" onClick={copyEmail} className="font-semibold text-primary hover:underline">Chép</button></> : 'service account';
   return (
-    <div className="mt-2 rounded-2xl border border-line bg-card p-3">
-      <p className="text-[13px] font-semibold text-ink-2">Google Calendar</p>
+    <div className="mt-5">
+      <SectionLabel>Google Calendar</SectionLabel>
       {status.data && !status.data.configured && <p className="mt-1 text-[12.5px] text-muted">Máy chủ chưa kết nối Google.</p>}
       {project.gcalId ? (
         <>
@@ -338,9 +345,9 @@ function MergeBox({ project }: { project: ProjectDetail }) {
     if (await confirm({ title: `Gộp “${src.name}” vào “${project.name}”?`, desc: <p>Việc của “{src.name}” chuyển sang đây thành phase <b>{f.sourcePhase.trim()}</b>. “{src.name}” sẽ được lưu trữ.</p>, ok: 'Gộp dự án' })) merge.mutate(undefined);
   };
   return (
-    <section className="mt-5 rounded-2xl border border-line p-4" aria-label="Gộp dự án thành phase">
-      <p className="text-[13px] font-bold">Gộp dự án khác vào đây thành phase</p>
-      <p className="mb-3 mt-0.5 text-[12px] text-muted">Dùng khi hai dự án thực ra là hai giai đoạn.</p>
+    <section className="mt-5" aria-label="Gộp dự án thành phase">
+      <SectionLabel>Gộp dự án khác thành phase</SectionLabel>
+      <p className="mb-3 px-1 text-[12px] text-muted">Dùng khi hai dự án thực ra là hai giai đoạn.</p>
       <div className="grid gap-x-3 sm:grid-cols-2">
         <Field label="Dự án được gộp">
           <Select value={f.sourceId} onChange={(e) => { const x = others.find((o) => o.id === e.target.value); setF({ ...f, sourceId: e.target.value, sourcePhase: f.sourcePhase || (x ? x.name.replace(project.name, '').trim() || x.name : '') }); }}>

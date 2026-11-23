@@ -1,7 +1,7 @@
 import { CalendarDots, CaretDoubleLeft, CaretDoubleRight, FolderSimple, GearSix, Robot, SquaresFour, type Icon } from '@phosphor-icons/react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
-import { useLiveEvents, useMe } from '../lib/api';
+import { useLiveEvents, useMe, useOverview } from '../lib/api';
 import { Avatar, BrandLogo, cx, IconButton, useFeedback } from './ui';
 
 const NAV: { to: string; label: string; icon: Icon; match?: (p: string) => boolean }[] = [
@@ -41,13 +41,15 @@ export function Layout() {
   useEffect(() => { try { localStorage.setItem('sidebar:collapsed', collapsed ? '1' : '0'); } catch { /* riêng tư */ } }, [collapsed]);
   useEffect(() => { window.scrollTo(0, 0); }, [pathname]);
   const user = me.data;
+  // Chấm đỏ trên nút Tổng quan khi có việc quá hạn (như chấm "node offline" bên VNLab Home).
+  const overdue = useOverview().data?.overdue.length ?? 0;
 
   return (
     <div className="flex min-h-dvh">
       {wide && (
         <aside className={cx('sidebar sticky top-0 z-10 flex h-dvh shrink-0 flex-col', collapsed ? 'w-16' : 'w-60')}>
           <div className={cx('flex items-center gap-2.5 py-5', collapsed ? 'justify-center px-2' : 'px-4')}>
-            <span className={cx('liquid-glass flex h-10 w-10 shrink-0 items-center justify-center rounded-[14px]', collapsed && 'hidden')}><BrandLogo className="h-7 w-7" alt="" /></span>
+            <span className={cx('liquid-glass flex h-10 w-10 shrink-0 items-center justify-center rounded-full', collapsed && 'hidden')}><BrandLogo className="h-6 w-6" alt="" /></span>
             <span className={cx('min-w-0 leading-tight', collapsed && 'hidden')}>
               <span className="eyebrow block text-[9.5px] text-primary">VNLab</span>
               <span className="block text-[17px] font-extrabold tracking-tight">Project</span>
@@ -58,12 +60,12 @@ export function Layout() {
               </IconButton>
             </div>
           </div>
-          <nav className="flex flex-col gap-1 px-2">
-            {NAV.map((n) => <SideLink key={n.to} {...n} collapsed={collapsed} active={n.match ? n.match(pathname) : pathname === n.to} />)}
+          <nav className={cx('flex flex-col gap-1', collapsed ? 'items-center px-2' : 'px-3')}>
+            {NAV.map((n) => <SideLink key={n.to} {...n} collapsed={collapsed} active={n.match ? n.match(pathname) : pathname === n.to} badge={n.to === '/' ? overdue : 0} />)}
           </nav>
-          <div className="mt-auto border-t border-line p-2">
+          <div className="mt-auto p-3">
             {user && (
-              <div title={user.name || user.email} className={cx('flex items-center gap-2.5 py-2', collapsed ? 'justify-center' : 'px-3')}>
+              <div title={user.name || user.email} className={cx('flex items-center gap-2.5 py-1', collapsed ? 'justify-center' : 'px-1')}>
                 <Avatar name={user.name || user.email} src={user.avatar} size={30} />
                 <span className={cx('min-w-0', collapsed && 'hidden')}>
                   <span className="block truncate text-sm font-semibold">{user.name || user.email}</span>
@@ -78,7 +80,7 @@ export function Layout() {
       <div className="flex min-w-0 flex-1 flex-col">
         {!wide && (
           <header className="topbar sticky top-0 z-30 flex items-center gap-2.5 px-4 pb-2 pt-[calc(env(safe-area-inset-top)+0.5rem)]">
-            <span className="liquid-glass flex h-9 w-9 shrink-0 items-center justify-center rounded-[12px]"><BrandLogo className="h-6 w-6" alt="" /></span>
+            <span className="liquid-glass flex h-9 w-9 shrink-0 items-center justify-center rounded-full"><BrandLogo className="h-5 w-5" alt="" /></span>
             <span className="leading-none">
               <span className="eyebrow block text-[9px] text-primary">VNLab</span>
               <span className="block text-[15px] font-extrabold tracking-tight">Project</span>
@@ -90,8 +92,11 @@ export function Layout() {
           <Outlet />
         </main>
         {!wide && (
-          <nav aria-label="Điều hướng chính" className="liquid-glass fixed bottom-[max(8px,calc(env(safe-area-inset-bottom)-14px))] left-1/2 z-40 flex max-w-[calc(100vw-16px)] -translate-x-1/2 items-center gap-0.5 rounded-[22px] border p-1.5">
-            {NAV.map((n) => <Tab key={n.to} {...n} active={n.match ? n.match(pathname) : pathname === n.to} />)}
+          // Thanh điều hướng nổi y như VNLab Home: chỉ icon trong ô tròn 48px. Bo đúng
+          // nửa chiều cao (ô 48 + 2×6 đệm + 2 viền = 62px), không dùng rounded-full:
+          // WebKit cắt sai góc 9999px khi có backdrop-filter + overflow cuộn.
+          <nav aria-label="Điều hướng chính" className="liquid-glass fixed bottom-[max(8px,calc(env(safe-area-inset-bottom)-14px))] left-1/2 z-40 flex max-w-[calc(100vw-16px)] -translate-x-1/2 items-center gap-1 overflow-x-auto rounded-[31px] border p-1.5">
+            {NAV.map((n) => <Tab key={n.to} {...n} active={n.match ? n.match(pathname) : pathname === n.to} badge={n.to === '/' ? overdue : 0} />)}
           </nav>
         )}
       </div>
@@ -99,21 +104,32 @@ export function Layout() {
   );
 }
 
-function SideLink({ to, label, icon: I, collapsed, active }: { to: string; label: string; icon: Icon; collapsed: boolean; active: boolean }) {
+/** Mục thanh bên: viên thuốc (thu gọn = ô tròn 40px chỉ icon). Đang chọn = nền pha màu chính, nét icon đậm hơn. */
+function SideLink({ to, label, icon: I, collapsed, active, badge }: { to: string; label: string; icon: Icon; collapsed: boolean; active: boolean; badge?: number }) {
   return (
-    <NavLink to={to} title={label} className={cx('relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-[14px] font-semibold transition', active ? 'side-active' : 'text-ink-2 hover:bg-fill hover:text-ink', collapsed && 'justify-center px-0')}>
-      <I size={20} weight={active ? 'fill' : 'regular'} />
+    <NavLink to={to} title={label} aria-label={badge ? `${label} (${badge} việc quá hạn)` : undefined}
+      className={cx('relative flex h-10 items-center gap-3 rounded-full text-[14px] font-semibold transition-colors', active ? 'side-active' : 'text-ink-2 hover:bg-fill hover:text-ink', collapsed ? 'w-10 justify-center' : 'px-3.5')}>
+      <span className="relative flex items-center justify-center">
+        <I size={20} weight={active ? 'bold' : 'regular'} />
+        {!!badge && <span className="absolute -right-1.5 -top-0.5 size-2.5 rounded-full bg-danger ring-2 ring-[var(--bg)]" aria-hidden="true" />}
+      </span>
       <span className={cx(collapsed && 'sr-only')}>{label}</span>
     </NavLink>
   );
 }
 
-function Tab({ to, label, icon: I, active }: { to: string; label: string; icon: Icon; active: boolean }) {
+/**
+ * Nút thanh điều hướng đáy như NavButton của VNLab Home: chỉ icon, ô tròn 48×48.
+ * Tên tab vẫn có qua aria-label (đọc màn hình) và title (tooltip). Tab đang chọn:
+ * nền tròn pha màu chính + nét icon đậm hơn. Chạm thì ô nhún nhẹ.
+ */
+function Tab({ to, label, icon: I, active, badge }: { to: string; label: string; icon: Icon; active: boolean; badge?: number }) {
   return (
-    <NavLink to={to} title={label} className="block">
-      <span className={cx('flex h-12 min-w-[72px] shrink-0 flex-col items-center justify-center gap-0.5 whitespace-nowrap rounded-2xl px-2 text-[10px] font-semibold transition-colors', active ? 'bg-primary-soft text-primary' : 'text-muted hover:text-ink')}>
-        <I size={22} weight={active ? 'fill' : 'regular'} />
-        {label}
+    <NavLink to={to} title={label} aria-label={badge ? `${label} (${badge})` : label} aria-current={active ? 'page' : undefined}
+      className={cx('relative grid size-12 shrink-0 place-items-center rounded-full transition-[background-color,color,transform] active:scale-[0.92]', active ? 'bg-primary-soft text-primary' : 'text-muted hover:bg-fill hover:text-ink')}>
+      <span className="relative flex items-center justify-center">
+        <I size={22} weight={active ? 'bold' : 'regular'} />
+        {!!badge && <span className="absolute -right-1.5 -top-0.5 size-2.5 rounded-full bg-danger ring-2 ring-[var(--bg)]" aria-hidden="true" />}
       </span>
     </NavLink>
   );
