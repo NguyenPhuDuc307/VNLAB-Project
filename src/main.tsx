@@ -31,7 +31,11 @@ const qc: QueryClient = new QueryClient({
 function App() {
   const me = useMe();
   if (me.isPending) return <Splash />;
-  if (!me.data) return <Login />;
+  if (!me.data) {
+    // Cửa sổ cầu nối của bookmarklet Getfly mở rất nhỏ — cần đăng nhập thì phóng to cho dễ thao tác.
+    if (window.opener && location.pathname.startsWith('/getfly-')) { try { window.resizeTo(480, 680); } catch { /* bỏ qua */ } }
+    return <Login />;
+  }
   if (me.data.consentRequired) return <Consent user={me.data} />;
   return (
     <Routes>

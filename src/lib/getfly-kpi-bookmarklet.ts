@@ -127,16 +127,11 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
     if (e.origin !== P || e.source !== pop || !e.data || e.data.type !== 'vnlab-getfly-kpi-draft' || draft) return;
     draft = e.data.draft;
     window.removeEventListener('message', onMsg);
-    ask();
+    /* Nút Gửi ở cửa sổ VNLab là bước xác nhận; khung nổi trên Getfly chỉ là thanh tiến độ. */
+    run();
   }
   window.addEventListener('message', onMsg);
-  show('Chọn tháng ở cửa sổ VNLab rồi bấm Gửi.', [['Huỷ', function () { window.removeEventListener('message', onMsg); hide(); }]]);
-
-  function ask() {
-    var c = draft.criteria.map(function (x) { return '<li>' + esc(x.name) + ' · ' + x.value + ' · ' + x.weight + '%</li>'; }).join('');
-    show('<b>' + esc(draft.name) + '</b><br><span style="color:#888">' + esc(draft.start) + ' – ' + esc(draft.end) + ' · ' + esc(draft.employeeName) + '</span><ul style="margin:6px 0 0 18px;padding:0">' + c + '</ul>',
-      [['Huỷ', function () { send({ type: 'vnlab-getfly-kpi-result', ok: false, cancelled: true }); hide(); }], ['Tạo', run, true]]);
-  }
+  show('Chờ bấm Gửi ở cửa sổ VNLab…', [['Huỷ', function () { window.removeEventListener('message', onMsg); try { pop.close(); } catch (e) { /* bỏ qua */ } hide(); }]]);
   function step(n, label) { show('Bước ' + n + '/6: ' + esc(label) + '…'); send({ type: 'vnlab-getfly-kpi-step', step: n, label: label }); }
 
   async function pickDate(stepNo, labelText, ddmmyyyy) {
@@ -270,7 +265,8 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
       location.hash = '#/kpi/list';
       await need(6, 'KPI mới trong danh sách', function () { return document.body.innerText.indexOf(draft.name) >= 0; }, 15000);
       send({ type: 'vnlab-getfly-kpi-result', ok: true, name: draft.name });
-      show('Đã tạo <b>' + esc(draft.name) + '</b>.', [['Đóng', hide]]);
+      show('Đã tạo <b>' + esc(draft.name) + '</b>.');
+      setTimeout(hide, 4000);
     } catch (e) {
       var st = e instanceof Fail ? e.step : cur;
       var msg = (e && e.message) || String(e);

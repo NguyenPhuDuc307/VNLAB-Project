@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Button, LogoTile, cx } from '../components/ui';
 import { useGetflyStatus } from '../components/GetflyBox';
 import { api } from '../lib/api';
-import { MSG_FINISHED, MSG_LIST, MSG_RESULT } from '../lib/getfly-bookmarklet';
+import { MSG_FINISHED, MSG_LIST, MSG_RESULT, MSG_SAVED } from '../lib/getfly-bookmarklet';
 
 export type PendingDone = { projectId: string; projectName: string; taskId: string; name: string; getflyId: number; getflyCode: string };
 type ItemState = { status: 'waiting' | 'done' | 'already' | 'error'; error?: string | null; saved?: boolean; saveError?: string };
@@ -27,10 +27,13 @@ export function GetflyDonePage() {
   // Gửi danh sách về tab Getfly (một lần, khi đã có cả danh sách lẫn origin Getfly).
   const sent = useRef(false);
   useEffect(() => {
-    if (sent.current || !opener || !origin || !list.data) return;
+    if (sent.current || !opener || !origin || (!list.data && !list.error)) return;
     sent.current = true;
-    opener.postMessage({ type: MSG_LIST, items: list.data.map(({ projectName, taskId, name, getflyId, getflyCode }) => ({ projectName, taskId, name, getflyId, getflyCode })) }, origin);
-  }, [opener, origin, list.data]);
+    if (list.error) { opener.postMessage({ type: MSG_LIST, items: [], error: (list.error as Error).message }, origin); return; }
+    opener.postMessage({ type: MSG_LIST, items: list.data!.map(({ projectName, taskId, name, getflyId, getflyCode }) => ({ projectName, taskId, name, getflyId, getflyCode })) }, origin);
+  }, [opener, origin, list.data, list.error]);
+  // Việc server không nhận (Getfly chưa hoàn thành…) — báo lại cho khung nổi trên Getfly khi xong.
+  const rejectedRef = useRef<{ getflyId: number; reason: string }[]>([]);
 
   useEffect(() => {
     if (!origin) return;
@@ -41,8 +44,11 @@ export function GetflyDonePage() {
           const r = await api<{ marked: number[]; rejected: number[]; reasons?: Record<string, string> }>('/getfly/mark-done', { method: 'POST', body: { getflyIds: [getflyId] } });
           const ok = r.marked.includes(getflyId);
           const reason = r.reasons?.[getflyId] ?? 'Server không nhận';
-          setStates((s) => ({ ...s, [getflyId]: { ...s[getflyId], saved: ok, saveError: ok ? undefined : reason === 'Getfly chưa hoàn thành' ? 'Chưa hoàn thành trên Getfly' : reason } }));
+          const saveError = reason === 'Getfly chưa hoàn thành' ? 'Chưa hoàn thành trên Getfly' : reason;
+          if (!ok) rejectedRef.current.push({ getflyId, reason: saveError });
+          setStates((s) => ({ ...s, [getflyId]: { ...s[getflyId], saved: ok, saveError: ok ? undefined : saveError } }));
         } catch (err) {
+          rejectedRef.current.push({ getflyId, reason: (err as Error).message });
           setStates((s) => ({ ...s, [getflyId]: { ...s[getflyId], saved: false, saveError: (err as Error).message } }));
         }
       });
@@ -56,7 +62,10 @@ export function GetflyDonePage() {
         setStates((s) => ({ ...s, [id]: st }));
         if (d.ok) save(id);
       } else if (d.type === MSG_FINISHED) {
-        void saving.current.then(() => setFinished({ cancelled: !!d.cancelled }));
+        void saving.current.then(() => {
+          opener.postMessage({ type: MSG_SAVED, rejected: rejectedRef.current }, origin);
+          setFinished({ cancelled: !!d.cancelled });
+        });
       }
     };
     window.addEventListener('message', onMessage);
@@ -66,10 +75,11 @@ export function GetflyDonePage() {
   // Xong hết và lưu được hết thì tự đóng sau vài giây.
   const items = list.data ?? [];
   const values = Object.values(states);
-  const allSaved = !!finished && values.every((s) => s.saved);
+  // Mở từ bookmarklet: luôn tự đóng (lỗi đã báo trên Getfly); mở thẳng thì chỉ tự đóng khi lưu được hết.
+  const allSaved = !!finished && (!!opener || values.every((s) => s.saved));
   useEffect(() => {
     if (!finished || !allSaved) return;
-    setCountdown(5);
+    setCountdown(opener ? 3 : 5);
     const t = setInterval(() => setCountdown((n) => {
       if (n === null) return n;
       if (n <= 1) { window.close(); return 0; }
@@ -80,6 +90,22 @@ export function GetflyDonePage() {
 
   const count = (k: ItemState['status']) => values.filter((s) => s.status === k && !s.saveError).length;
   const rejected = values.filter((s) => s.status !== 'error' && s.saveError).length;
+  // Mở từ bookmarklet: chỉ là cầu nối — một dòng trạng thái, giao diện thật ở khung nổi trên Getfly.
+  if (opener) {
+    const line = list.error ? `Lỗi: ${(list.error as Error).message}`
+      : finished ? `Xong${countdown !== null ? ` · đóng sau ${countdown}s` : ''}`
+        : values.length ? `Đang chạy ${values.length}/${items.length}…`
+          : 'Đang kết nối Getfly…';
+    return (
+      <div className="flex min-h-dvh items-center justify-between gap-3 px-4 text-[13px]">
+        <span className={cx('flex min-w-0 items-center gap-2', list.error ? 'text-danger' : 'text-ink-2')}>
+          {!finished && !list.error && <CircleNotch className="shrink-0 animate-spin" size={14} />}
+          <span className="truncate">{line}</span>
+        </span>
+        <button type="button" className="shrink-0 text-[12px] font-semibold text-muted hover:text-ink" onClick={() => window.close()}>Đóng</button>
+      </div>
+    );
+  }
   return (
     <div className="mx-auto flex min-h-dvh max-w-lg flex-col gap-4 px-4 py-5 text-[14px]">
       <header className="flex items-center gap-3">

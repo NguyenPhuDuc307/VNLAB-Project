@@ -16,6 +16,7 @@ export const GETFLY_DONE_PATH = '/getfly-hoan-thanh';
 export const MSG_LIST = 'vnlab-getfly-done-list';
 export const MSG_RESULT = 'vnlab-getfly-done-result';
 export const MSG_FINISHED = 'vnlab-getfly-done-finished';
+export const MSG_SAVED = 'vnlab-getfly-done-saved';
 
 /** Mã nguồn bookmarklet (dễ đọc). __PROJECT__ / __GETFLY__ được thay bằng origin thật trong getflyBookmarklet(). */
 export const BOOKMARKLET_SOURCE = String.raw`(function () {
@@ -67,7 +68,9 @@ export const BOOKMARKLET_SOURCE = String.raw`(function () {
     return null;
   }
 
-  var pop = window.open(P + PATH, 'vnlab-getfly-done', 'width=480,height=680');
+  /* Cửa sổ VNLab chỉ là cầu nối: nhỏ, nằm góc phải dưới; mọi giao diện ở khung nổi trên Getfly. */
+  var pop = window.open(P + PATH, 'vnlab-getfly', 'popup,width=320,height=150,left=' + Math.max(0, screen.availWidth - 340) + ',top=' + Math.max(0, screen.availHeight - 200));
+  try { window.focus(); } catch (e) { /* bỏ qua */ }
   if (!pop) { show('Trình duyệt chặn cửa sổ bật lên — cho phép rồi bấm lại.', [['Đóng', hide]]); return; }
   var items = null, cancelled = false, running = false;
   var send = function (msg) { try { pop.postMessage(msg, P); } catch (e) { /* cửa sổ đã đóng */ } };
@@ -79,9 +82,10 @@ export const BOOKMARKLET_SOURCE = String.raw`(function () {
   }
   function onMsg(e) {
     if (e.origin !== P || e.source !== pop || !e.data || e.data.type !== 'vnlab-getfly-done-list' || items) return;
-    items = (e.data.items || []).filter(function (it) { return it && it.getflyId; });
     clearTimeout(timer);
     window.removeEventListener('message', onMsg);
+    if (e.data.error) { show('<span style="color:#c00">Lỗi: ' + esc(e.data.error) + '</span>', [['Đóng', hide]]); return; }
+    items = (e.data.items || []).filter(function (it) { return it && it.getflyId; });
     ask();
   }
   window.addEventListener('message', onMsg);
@@ -227,12 +231,26 @@ export const BOOKMARKLET_SOURCE = String.raw`(function () {
       if (r.ok && r.error) notes.push(it.name + ': ' + r.error);
       send({ type: 'vnlab-getfly-done-result', getflyId: it.getflyId, ok: !!r.ok, already: !!r.already, error: r.error || null });
       await closeAll();
+      if (pop.closed) { failed.push('Mất kết nối Project — bấm lại nút'); break; }
     }
     await closeAll();
     location.hash = '#/tasks';
     send({ type: 'vnlab-getfly-done-finished', cancelled: cancelled });
-    var lost = pop.closed ? '<br><span style="color:#c00">Cửa sổ VNLab đã đóng — chưa ghi nhận hết.</span>' : '';
-    var list = failed.concat(notes).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('');
+    /* Project ghi nhận xong thì báo lại việc bị từ chối (Getfly chưa hoàn thành…). */
+    show('Đang ghi nhận…');
+    var saved = pop.closed ? null : await new Promise(function (res) {
+      var t = setTimeout(function () { window.removeEventListener('message', h); res(null); }, 15000);
+      function h(e) {
+        if (e.origin !== P || e.source !== pop || !e.data || e.data.type !== 'vnlab-getfly-done-saved') return;
+        clearTimeout(t); window.removeEventListener('message', h); res(e.data);
+      }
+      window.addEventListener('message', h);
+    });
+    var names = {};
+    items.forEach(function (it) { names[it.getflyId] = it.name; });
+    var rejected = saved && saved.rejected ? saved.rejected.map(function (x) { return (names[x.getflyId] || x.getflyId) + ': ' + x.reason; }) : [];
+    var lost = !saved && failed.indexOf('Mất kết nối Project — bấm lại nút') < 0 ? '<br><span style="color:#c00">Mất kết nối Project — bấm lại nút</span>' : '';
+    var list = failed.concat(rejected, notes).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('');
     show((cancelled ? 'Đã dừng' : 'Xong') + ': ' + ok + ' xong · ' + already + ' sẵn · ' + failed.length + ' lỗi' + lost + (list ? '<ul style="margin:6px 0 0 18px;padding:0;color:#a00">' + list + '</ul>' : ''), [['Đóng', hide]]);
     running = false;
     window.__vnlabGetflyDone = false;

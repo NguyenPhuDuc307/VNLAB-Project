@@ -91,10 +91,11 @@ export function GetflyKpiPage() {
                 ))}
                 {weight !== 100 && <p className="text-[12px] text-danger">Tổng trọng số {weight}% (cần 100%)</p>}
               </div>
-              <Button block disabled={!opener || !origin || sent || !!result || weight !== 100 || !draft.name.trim()} onClick={send}>{sent ? 'Đang tạo trên Getfly…' : 'Gửi sang Getfly'}</Button>
+              <Button block disabled={!opener || !origin || sent || !!result || weight !== 100 || !draft.name.trim()} onClick={send}>{sent ? 'Đã gửi' : 'Gửi sang Getfly'}</Button>
             </>
           )}
-      {sent && progress && <p className="flex items-center gap-2 text-muted"><CircleNotch className="animate-spin" size={16} /> Bước {progress.step}/6: {progress.label}</p>}
+      {/* Tiến độ từng bước hiện ở thanh nhỏ trên Getfly, ở đây chỉ ghi nhận đang chạy. */}
+      {sent && <p className="flex items-center gap-2 text-muted"><CircleNotch className="animate-spin" size={16} /> Đang tạo trên Getfly{progress ? ` · ${progress.step}/6` : '…'}</p>}
       {result && (result.ok
         ? <p className="flex items-center gap-2 font-semibold text-ok"><CheckCircle size={16} weight="fill" /> Đã tạo KPI trên Getfly</p>
         : <p className="flex items-start gap-2 text-danger"><WarningCircle size={16} className="mt-0.5 shrink-0" /> {result.cancelled ? 'Đã huỷ' : `Dừng ở bước ${result.step ?? '?'}: ${result.error ?? 'lỗi'} — bấm lại ✓ KPI để thử lại`}</p>)}
