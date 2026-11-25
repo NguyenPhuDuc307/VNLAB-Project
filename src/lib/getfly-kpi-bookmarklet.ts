@@ -156,7 +156,13 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
   /* Đặt giá trị cho ô; verify() (mặc định: đọc lại value) quyết định đã ăn chưa. Trả tên cách đã dùng, hoặc null + ghi vào tried. */
   async function setValue(getEl, value, verify, tried) {
     value = String(value);
-    var norm2 = function (v) { return String(v).replace(/[.,\s%]/g, ''); };
+    /* So theo GIÁ TRỊ: Getfly định dạng lại số ("90" → "90.00"). So chuỗi thì tưởng chưa ăn, chạy tiếp cách
+       gõ từng ký tự chồng lên số đã có ⇒ 990 / 110 (lỗi thật 25/11/2026). Không phải số thì so chuỗi đã gọn. */
+    var norm2 = function (v) {
+      var s = String(v).trim();
+      var n = Number(s.replace(/\s|%/g, '').replace(/,/g, ''));
+      return s !== '' && isFinite(n) ? 'n:' + n : 's:' + s.replace(/\s+/g, ' ');
+    };
     for (var i = 0; i < METHODS.length; i++) {
       var el = getEl();
       if (!el) return null;
