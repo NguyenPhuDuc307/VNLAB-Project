@@ -20,7 +20,7 @@ import { ALL_COLUMNS, buildPlanLayout, isColKey, normalizeColumns } from './plan
 import { parseSheetId, sheetStatus, startAutoSync, syncProject } from './sheets.ts';
 import { clearCalendar, parseCalendarId, startCalendarAutoSync, syncCalendar } from './gcal.ts';
 import { GoogleError } from './google.ts';
-import { findGetflyTask, getflyJob, getflyLinkCount, getflyStatus, getflyUsers, startGetflyJob } from './getfly.ts';
+import { findGetflyTask, getflyJob, getflyLinkCount, getflyStatus, getflyUsers, markDone, pendingDone, startGetflyJob } from './getfly.ts';
 import { renderXlsx } from './xlsx.ts';
 import type { PermissionKey, ProjectRole } from './permissions.ts';
 
@@ -398,6 +398,13 @@ auth.get('/google/status', (c) => c.json(sheetStatus()));
 // ---- Getfly CRM (đồng bộ một chiều app -> Getfly bằng nút bấm)
 auth.get('/getfly/status', (c) => c.json(getflyStatus()));
 auth.get('/getfly/users', async (c) => c.json(await getflyUsers()));
+/** Việc xong 100% có bản trên Getfly mà chưa đánh dấu "Hoàn thành" — trang /getfly-hoan-thanh gửi cho bookmarklet trên tab Getfly. */
+auth.get('/getfly/pending-done', requirePermission('project.project.write'), async (c) => c.json(await pendingDone(c.get('user'))));
+/** Bookmarklet báo đã đánh dấu xong (hoặc vốn đã "Hoàn thành") trên Getfly -> ghi nhận để lần sau không làm lại. */
+auth.post('/getfly/mark-done', requirePermission('project.project.write'), async (c) => {
+  const b = await body(c, z.object({ getflyIds: z.array(z.number().int().positive()).max(1000) }));
+  return c.json(await markDone(c.get('user'), b.getflyIds));
+});
 
 /** Cấu hình Getfly của dự án: việc cha (dán link / id / mã), tên dự án Getfly, ghép tên người phụ trách -> username Getfly. */
 auth.patch('/projects/:id/getfly', requirePermission('project.project.write'), async (c) => {

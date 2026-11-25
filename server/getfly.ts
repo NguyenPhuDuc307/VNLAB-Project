@@ -23,11 +23,15 @@ import * as D from './data.ts';
 
 const base = () => (process.env.GETFLY_BASE_URL ?? '').trim().replace(/\/+$/, '');
 const apiKey = () => (process.env.GETFLY_API_KEY ?? '').trim();
+/** Origin trang web Getfly (nơi chạy bookmarklet "Hoàn thành Getfly") — lấy từ GETFLY_BASE_URL, mặc định ACS. */
+export const getflyWebOrigin = () => {
+  try { return new URL(base()).origin; } catch { return 'https://acs.getflycrm.com'; }
+};
 export const getflyStatus = () => {
   const b = base();
   let host: string | null = null;
   try { host = b ? new URL(b).host : null; } catch { host = null; }
-  return { configured: !!(host && apiKey()), host };
+  return { configured: !!(host && apiKey()), host, webOrigin: getflyWebOrigin() };
 };
 
 export class GetflyError extends HTTPException {}
@@ -617,4 +621,44 @@ export async function unsyncGetfly(projectId: string, onProgress: Progress = () 
   } finally {
     running.delete(projectId);
   }
+}
+
+// ---------------------------------------------------------------- đánh dấu hoàn thành trên Getfly (bookmarklet)
+// API v3 không cho đổi trạng thái việc, nên bookmarklet chạy trên tab Getfly đã đăng nhập tự bấm "Hoàn thành" + 5 sao
+// (src/lib/getfly-bookmarklet.ts). Server chỉ đưa danh sách việc cần đánh dấu và ghi nhận việc đã xong (completed_at).
+
+export type PendingDone = { projectId: string; projectName: string; taskId: string; name: string; getflyId: number; getflyCode: string };
+
+/** Điều kiện chung: liên kết của việc (không phải nhóm / task con) đạt 100%, có id Getfly, ở dự án tôi được sửa. */
+const editableBy = (user: Pick<D.UserRow, 'id' | 'email'>) => sql`(
+  p.owner_id = ${user.id} or exists (
+    select 1 from project_members m where m.project_id = p.id and m.role = 'editor'
+      and (m.user_id = ${user.id} or lower(m.email) = ${user.email.toLowerCase()})
+  ))`;
+
+/** Mọi việc đã xong 100% bên Project, có bản trên Getfly mà chưa đánh dấu hoàn thành — ở mọi dự án tôi được sửa. */
+export async function pendingDone(user: Pick<D.UserRow, 'id' | 'email'>): Promise<PendingDone[]> {
+  const rows = await sql<{ projectId: string; projectName: string; taskId: string; name: string; getflyId: string; getflyCode: string }[]>`
+    select p.id as project_id, p.name as project_name, t.id as task_id, t.name, l.getfly_id, l.getfly_code
+    from getfly_links l
+    join tasks t on t.project_id = l.project_id and t.id::text = l.local_id
+    join projects p on p.id = l.project_id
+    where l.getfly_id is not null and l.completed_at is null and t.progress >= 100 and ${editableBy(user)}
+    order by p.name, t.sort, t.name`;
+  return rows.map((r) => ({ projectId: r.projectId, projectName: r.projectName, taskId: r.taskId, name: r.name, getflyId: Number(r.getflyId), getflyCode: r.getflyCode }));
+}
+
+/** Ghi nhận các việc bookmarklet đã đánh dấu xong (hoặc vốn đã "Hoàn thành") trên Getfly. Id không thuộc dự án tôi được sửa
+ *  hoặc việc chưa 100% thì bị từ chối (không ghi). Đánh dấu lại việc đã ghi nhận thì giữ thời điểm cũ. */
+export async function markDone(user: Pick<D.UserRow, 'id' | 'email'>, getflyIds: number[]) {
+  const ids = [...new Set(getflyIds)];
+  if (!ids.length) return { marked: [] as number[], rejected: [] as number[] };
+  const rows = await sql<{ getflyId: string }[]>`
+    update getfly_links l set completed_at = coalesce(l.completed_at, now())
+    from tasks t, projects p
+    where t.project_id = l.project_id and t.id::text = l.local_id and p.id = l.project_id
+      and l.getfly_id in ${sql(ids)} and t.progress >= 100 and ${editableBy(user)}
+    returning l.getfly_id`;
+  const marked = new Set(rows.map((r) => Number(r.getflyId)));
+  return { marked: [...marked], rejected: ids.filter((id) => !marked.has(id)) };
 }

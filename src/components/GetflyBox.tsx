@@ -1,11 +1,13 @@
 import { CloudArrowUp, LinkBreak } from '@phosphor-icons/react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, useAction, type ProjectDetail } from '../lib/api';
+import { getflyBookmarklet } from '../lib/getfly-bookmarklet';
+import type { PendingDone } from '../pages/GetflyDone';
 import { Button, Field, Input, SectionLabel, Sheet, useFeedback, cx } from './ui';
 
 export type GetflyResult = { created: number; adopted?: number; updated: number; deleted: number; unlinked?: number; unchanged: number; errors: string[]; warnings: string[]; syncedAt: string };
-export const useGetflyStatus = () => useQuery({ queryKey: ['getfly-status'], queryFn: () => api<{ configured: boolean; host: string | null }>('/getfly/status'), staleTime: 300_000 });
+export const useGetflyStatus = () => useQuery({ queryKey: ['getfly-status'], queryFn: () => api<{ configured: boolean; host: string | null; webOrigin: string }>('/getfly/status'), staleTime: 300_000 });
 
 /** Tóm tắt kết quả đồng bộ thành một câu cho toast. */
 export function getflySummary(r: GetflyResult) {
@@ -229,8 +231,38 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
             </button>
           )}
           {project.getflyError && <p className="mt-1 whitespace-pre-wrap text-[12px] text-danger">{project.getflyError}</p>}
+          {canEdit && <GetflyDoneLink projectId={project.id} getflyOrigin={status.data.webOrigin} />}
         </>
       )}
     </section>
+  );
+}
+
+/**
+ * Nút dấu trang (bookmarklet) đánh dấu "Hoàn thành" + 5 sao trên Getfly cho việc đã xong 100% — API Getfly không làm được,
+ * nên bookmarklet bấm hộ trên tab Getfly đã đăng nhập (src/lib/getfly-bookmarklet.ts). Tiến độ tụt dưới 100% thì bên Project
+ * quên dấu "đã đánh dấu" để lần sau làm lại; trạng thái trên Getfly KHÔNG tự mở lại.
+ */
+function GetflyDoneLink({ projectId, getflyOrigin }: { projectId: string; getflyOrigin: string }) {
+  const { toast } = useFeedback();
+  const pending = useQuery({ queryKey: ['getfly-pending-done'], queryFn: () => api<PendingDone[]>('/getfly/pending-done'), staleTime: 60_000 });
+  const here = pending.data?.filter((p) => p.projectId === projectId).length ?? 0;
+  const others = (pending.data?.length ?? 0) - here;
+  // React 19 chặn href "javascript:" khi render -> gắn bằng tay sau khi mount.
+  const ref = useRef<HTMLAnchorElement>(null);
+  useEffect(() => { ref.current?.setAttribute('href', getflyBookmarklet(window.location.origin, getflyOrigin)); }, [getflyOrigin]);
+  return (
+    <div className="mt-4 rounded-[20px] bg-fill px-4 py-3 text-[13px]">
+      <p className="font-semibold">Đánh dấu hoàn thành trên Getfly</p>
+      <p className="mt-0.5 text-muted">API Getfly không cho đổi trạng thái. Nút dưới đây chạy ngay trên tab Getfly của bạn: đánh dấu "Hoàn thành" + 5 sao cho mọi việc đã xong 100% (mọi dự án bạn được sửa).</p>
+      <div className="mt-2 flex flex-wrap items-center gap-2">
+        <a ref={ref} href="#" draggable onClick={(e) => { e.preventDefault(); toast('Kéo nút này lên thanh dấu trang, rồi bấm khi đang mở Getfly'); }}
+          className="inline-flex h-8 cursor-grab items-center gap-1.5 rounded-full bg-primary px-3 text-[13px] font-semibold text-on-primary">
+          ✓ Hoàn thành Getfly
+        </a>
+        {pending.data && <span className="text-[12px] text-muted">{here ? `${here} việc của dự án này đang chờ` : 'Dự án này không có việc chờ'}{others > 0 ? ` · ${others} việc ở dự án khác` : ''}</span>}
+      </div>
+      <p className="mt-1.5 text-[12px] text-muted">Kéo nút này lên thanh dấu trang, rồi bấm khi đang mở Getfly. Việc tụt dưới 100% sẽ được đánh dấu lại lần sau; trạng thái trên Getfly không tự mở lại.</p>
+    </div>
   );
 }

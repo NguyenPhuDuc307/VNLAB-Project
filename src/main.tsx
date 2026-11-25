@@ -13,6 +13,7 @@ import { ProjectHome } from './pages/ProjectHome';
 import { Projects } from './pages/Projects';
 import { Settings } from './pages/Settings';
 import { CalendarPage } from './pages/Calendar';
+import { GetflyDonePage } from './pages/GetflyDone';
 
 // Phiên hết hạn ở bất kỳ request nào -> hỏi lại /me, nó 401 thì hiện màn đăng nhập
 // (màn đó tự đi SSO im lặng để kiểm role lại khi server đòi `reauth`).
@@ -33,6 +34,8 @@ function App() {
   if (me.data.consentRequired) return <Consent user={me.data} />;
   return (
     <Routes>
+      {/* Cửa sổ bật lên của bookmarklet "Hoàn thành Getfly" — không có khung trang. */}
+      <Route path="getfly-hoan-thanh" element={<GetflyDonePage />} />
       <Route element={<Layout />}>
         <Route index element={<Home />} />
         <Route path="du-an" element={<Projects />} />

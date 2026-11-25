@@ -296,6 +296,17 @@ const MIGRATIONS: string[] = [
     'CVI/2026-11/009125', 'CVI/2026-11/009129', 'CVI/2026-11/009130', 'CVI/2026-11/009131'
   );
   `,
+  // 22: việc đã đánh dấu "Hoàn thành" + 5 sao trên Getfly (bằng bookmarklet chạy trên tab Getfly — API v3 không cho đổi trạng thái).
+  //     null = chưa đánh dấu; tiến độ bên Project tụt dưới 100% thì xoá về null (Getfly KHÔNG tự mở lại).
+  // 21 + 6 việc AMMS đã đánh dấu tay ngày 25/11/2026 — ghi nhận theo danh sách getfly_id cố định.
+  `
+  alter table getfly_links add column completed_at timestamptz;
+  update getfly_links set completed_at = now()
+  where project_id = 'ed9e4fda-856b-48eb-8227-664d01f7502d' and getfly_id in (
+    9180, 9181, 9182, 9183, 9184, 9185, 9186, 9190, 9191, 9192, 9193, 9194, 9195, 9196,
+    9197, 9198, 9199, 9203, 9204, 9205, 9206, 9088, 9089, 9115, 9137, 9138, 9142
+  );
+  `,
 ];
 
 export async function migrate() {

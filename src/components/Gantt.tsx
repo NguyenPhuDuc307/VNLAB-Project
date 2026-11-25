@@ -575,8 +575,8 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
                 <span className="num group-hover:hidden">{r.index}</span>
                 <DotsSixVertical size={16} weight="bold" className="hidden group-hover:block" />
               </button>
-              <div className={cx('flex min-w-0 items-center gap-1.5 px-2', r.child && 'pl-5', canEdit && 'cursor-text')} data-field="name" onDoubleClick={startEdit(t, 'name')}>
-                {r.child && <span className="shrink-0 self-start text-[12px] leading-5 text-muted" aria-hidden>└</span>}
+              {/* Việc con: thụt vào + một vạch dọc mảnh nối về việc cha (không dùng ký tự └). */}
+              <div className={cx('flex min-w-0 items-center gap-1.5 px-2', r.child && 'ml-3 border-l-2 border-line pl-3', canEdit && 'cursor-text')} data-field="name" onDoubleClick={startEdit(t, 'name')}>
                 {!!t.subtasks?.length && <button type="button" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-primary hover:bg-fill"
                   aria-label={collapsedTasks.includes(t.id) ? 'Mở rộng task con' : 'Thu gọn task con'} aria-expanded={!collapsedTasks.includes(t.id)}
                   onClick={(e) => { e.stopPropagation(); onToggleTask(t.id); }} onDoubleClick={(e) => e.stopPropagation()}>

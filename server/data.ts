@@ -461,6 +461,9 @@ export async function updateTask(projectId: string, taskId: string, b: TaskPatch
     if (b.subtasks !== undefined) patch.subtasks = tx.json(subtasks);
     if (!cur.baselineStart && !cur.baselineEnd && next.startDate && next.endDate) { patch.baselineStart = next.startDate; patch.baselineEnd = next.endDate; }
     const [row] = await tx`update tasks set ${tx(patch)} where id = ${taskId} returning *`;
+    // Tiến độ tụt dưới 100%: bỏ dấu "đã hoàn thành trên Getfly" để lần sau bookmarklet đánh dấu lại.
+    // Trạng thái bên Getfly KHÔNG tự mở lại — ai cần thì sửa tay trên Getfly.
+    if (Number(row.progress) < 100) await tx`update getfly_links set completed_at = null where project_id = ${projectId} and local_id = ${taskId} and completed_at is not null`;
     // Việc cha chuyển nhóm: các việc con ở lại nhóm cũ và thôi là việc con.
     if (groupChanged) await clearBrokenParents(tx, [projectId]);
     for (const k of changes) {
