@@ -18,7 +18,7 @@ type Props = {
   canEdit: boolean;
 };
 
-const empty = (groupId: string | null, phaseId: string | null = null): TaskInput => ({ subtasks: [], name: '', groupId, phaseId, scopeId: null, assignee: '', support: '', progress: 0, startDate: null, endDate: null, days: null, note: '' });
+const empty = (groupId: string | null, phaseId: string | null = null): TaskInput => ({ subtasks: [], name: '', groupId, phaseId, scopeId: null, parentTaskId: null, assignee: '', support: '', progress: 0, startDate: null, endDate: null, days: null, note: '' });
 
 export function TaskSheet({ open, onClose, project, task, groupId = null, phaseId = null, canEdit }: Props) {
   const { toast, confirm } = useFeedback();
@@ -69,6 +69,9 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, phaseI
     [siblings[i], siblings[j]] = [siblings[j], siblings[i]];
     reorder.mutate({ groupId: task.groupId ?? null, ids: siblings });
   };
+  // Việc cha: việc khác cùng nhóm, bản thân không có cha (chỉ một cấp).
+  const parentOptions = project.tasks.filter((t) => t.id !== task?.id && (t.groupId ?? null) === (f.groupId ?? null) && !t.parentTaskId);
+  const hasChildren = !!task && project.tasks.some((t) => t.parentTaskId === task.id);
   const children = f.subtasks ?? [];
   const progress = children.length ? Math.round(children.reduce((sum, item) => sum + item.progress, 0) / children.length) : f.progress ?? 0;
   const setChildren = (subtasks: NonNullable<Task['subtasks']>) => setF({ ...f, subtasks });
@@ -129,9 +132,16 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, phaseI
               </Select>
             </Field>
             <Field label="Nhóm">
-              <Select value={f.groupId ?? ''} onChange={(e) => setF({ ...f, groupId: e.target.value || null })}>
+              {/* Việc cha phải cùng nhóm: đổi nhóm thì bỏ việc cha. */}
+              <Select value={f.groupId ?? ''} onChange={(e) => setF({ ...f, groupId: e.target.value || null, parentTaskId: null })}>
                 <option value="">Chưa phân nhóm</option>
                 {project.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+              </Select>
+            </Field>
+            <Field label="Việc cha" hint={hasChildren ? 'Việc này đang có việc con' : undefined}>
+              <Select value={f.parentTaskId ?? ''} disabled={hasChildren} onChange={(e) => setF({ ...f, parentTaskId: e.target.value || null })}>
+                <option value="">— Không —</option>
+                {parentOptions.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
               </Select>
             </Field>
             <Field label="Tiến độ" hint={<span className="num">{progress}%{children.length ? " · Tự tổng hợp" : ""}</span>}>

@@ -42,6 +42,8 @@ export type Task = {
   id: string; projectId: string; groupId: string | null; name: string; assignee: string; support: string; progress: number;
   scopeId?: string | null;
   phaseId?: string | null;
+  /** Việc cha cùng nhóm (một cấp); trên Getfly việc này nằm dưới việc cha. */
+  parentTaskId?: string | null;
   startDate: string | null; endDate: string | null;
   /** Ngày công ước tính; null = tự tính từ khoảng ngày. */
   days: number | null; note: string; sort: number;

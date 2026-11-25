@@ -282,6 +282,20 @@ const MIGRATIONS: string[] = [
   `,
   // 19: ghi chú của việc mặc định là nội bộ; chỉ việc được tích mới gửi ghi chú lên mô tả việc Getfly.
   `alter table tasks add column getfly_note boolean not null default false;`,
+  // 20: việc cha của việc (một cấp, cùng nhóm) — trên Getfly việc con nằm dưới việc cha thay vì dưới việc cha của nhóm.
+  `
+  alter table tasks add column parent_task_id uuid references tasks(id) on delete set null;
+  create index on tasks (parent_task_id);
+  `,
+  // 21: đánh dấu liên kết "nhận việc có sẵn" (việc người dùng tự tạo trên Getfly) — app không bao giờ xoá các việc này.
+  // Các liên kết do lượt nhận việc AMMS 25/11/2026 tạo ra trước khi có cột: đánh dấu theo danh sách mã cố định.
+  `
+  alter table getfly_links add column adopted boolean not null default false;
+  update getfly_links set adopted = true where getfly_code in (
+    'CVI/2026-11/009102', 'CVI/2026-11/009121', 'CVI/2026-11/009122', 'CVI/2026-11/009124',
+    'CVI/2026-11/009125', 'CVI/2026-11/009129', 'CVI/2026-11/009130', 'CVI/2026-11/009131'
+  );
+  `,
 ];
 
 export async function migrate() {

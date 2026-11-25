@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { ArrowDown, ArrowSquareOut, ArrowUp, ArrowsClockwise, ArrowsDownUp, ArrowsInLineVertical, ArrowsOutLineVertical, CalendarBlank, CaretLeft, CheckCircle, CircleNotch, ClockCounterClockwise, CloudArrowUp, Copy, CornersIn, CornersOut, CrosshairSimple, DownloadSimple, Flag, FolderPlus, FolderSimple, GearSix, ListPlus, Minus, PencilSimple, Percent, Plus, SortAscending, TableIcon, Tag, Trash, Users } from '@phosphor-icons/react';
+import { ArrowDown, ArrowSquareOut, ArrowUp, ArrowsClockwise, ArrowsDownUp, ArrowsInLineVertical, ArrowsOutLineVertical, CalendarBlank, CaretLeft, CheckCircle, CircleNotch, ClockCounterClockwise, CloudArrowUp, Copy, CornersIn, CornersOut, CrosshairSimple, LinkBreak, DownloadSimple, Flag, FolderPlus, FolderSimple, GearSix, ListPlus, Minus, PencilSimple, Percent, Plus, SortAscending, TableIcon, Tag, Trash, Users } from '@phosphor-icons/react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Gantt, spanOf, UNGROUPED, type GanttView, type MenuTarget } from '../components/Gantt';
@@ -218,7 +218,7 @@ export function ProjectPage() {
   const scopeTools = (<>
         {!!p.scopes?.length && (
           <select aria-label="Lọc theo phạm vi" value={activeScope} onChange={(e) => setScopeFilter(e.target.value)}
-            className={cx('select-chevron h-7 max-w-[180px] appearance-none rounded-full pl-3 pr-8 text-[12px] font-semibold outline-none transition [background-position:right_0.5rem_center] focus-visible:ring-2 focus-visible:ring-primary', activeScope ? 'bg-primary-soft text-primary' : 'bg-fill text-ink-2')}>
+            className={cx('select-chevron h-7 max-w-[180px] appearance-none rounded-full pl-3 pr-8 text-[12px] font-semibold outline-none transition [background-position:right_0.5rem_center] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary', activeScope ? 'bg-primary-soft text-primary' : 'bg-fill text-ink-2')}>
             <option value="">Mọi phạm vi</option>
             {p.scopes.map((s) => <option key={s.id} value={s.id}>{s.name}{s.owner ? ` · ${s.owner}` : ''}</option>)}
             <option value="none">Chưa gắn phạm vi</option>
@@ -325,8 +325,8 @@ export function ProjectPage() {
         if (!ready) { toast('Cần chọn người tạo và gắn việc cha cho nhóm trước', 'error'); setGetflyOpen(true); return; }
         getflyJob.syncScope(scope);
       } },
-      { label: 'Xoá khỏi Getfly…', icon: <Trash size={14} />, danger: true, disabled: getflyJob.running, onSelect: async () => {
-        if (await confirm({ title: 'Xoá khỏi Getfly?', desc: <p>Xoá việc app đã tạo trên Getfly cho <b>{label}</b>. Dữ liệu ở đây vẫn còn.</p>, ok: 'Xoá khỏi Getfly', danger: true })) getflyJob.unsyncScope(scope);
+      { label: 'Gỡ khỏi Getfly…', icon: <LinkBreak size={14} />, danger: true, disabled: getflyJob.running, onSelect: async () => {
+        if (await confirm({ title: 'Gỡ khỏi Getfly?', desc: <p>Xoá việc app đã tạo trên Getfly cho <b>{label}</b>. Việc có sẵn (nhận theo tên) và việc cha được giữ nguyên, chỉ gỡ liên kết. Dữ liệu ở đây vẫn còn.</p>, ok: 'Gỡ khỏi Getfly', danger: true })) getflyJob.unsyncScope(scope);
       } },
     ];
   };

@@ -89,7 +89,21 @@ async function scopeByName(perms: Set<PermissionKey>, projectId: string, name: s
   return (await D.createScope(projectId, { name: name.trim() })).id;
 }
 /** Tên phạm vi + phase theo id (id là uuid nên không trùng giữa hai bảng). */
-const namesOf = (b: { scopes: D.ScopeRow[]; phases: D.PhaseRow[] }) => new Map([...b.scopes.map((s) => [s.id, s.name] as const), ...b.phases.map((x) => [x.id, x.name] as const)]);
+/** id -> tên cho phạm vi, phase và việc (để in tên việc cha). */
+const namesOf = (b: { scopes: D.ScopeRow[]; phases: D.PhaseRow[]; tasks?: { id: string; name: string }[] }) => new Map([...b.scopes.map((s) => [s.id, s.name] as const), ...b.phases.map((x) => [x.id, x.name] as const), ...(b.tasks ?? []).map((t) => [t.id, t.name] as const)]);
+const parentTaskInput = z.string().trim().max(300).optional().describe('Việc cha (tên việc trong cùng nhóm, hoặc id); "" = bỏ việc cha. Chỉ một cấp: việc cha không được có cha. Trên Getfly việc con nằm dưới việc cha');
+/** Tìm việc cha theo id hoặc tên trong cùng nhóm. undefined = không đổi, null = bỏ. */
+async function parentTaskByRef(projectId: string, groupId: string | null, ref: string | undefined): Promise<string | null | undefined> {
+  if (ref === undefined) return undefined;
+  const q = ref.trim();
+  if (!q) return null;
+  const { tasks } = await D.projectBundle(projectId);
+  const byId = tasks.find((t) => t.id === q);
+  if (byId) return byId.id;
+  const hits = tasks.filter((t) => (t.groupId ?? null) === (groupId ?? null) && t.name.trim().toLowerCase() === q.toLowerCase());
+  if (hits.length === 1) return hits[0].id;
+  throw new ToolError(hits.length ? `Có ${hits.length} việc tên "${q}" trong nhóm — dùng id` : `Không thấy việc cha "${q}" trong cùng nhóm`);
+}
 /** Phase theo tên; "" = bỏ phase; chưa có thì tạo (cần quyền sửa dự án). undefined = không đổi. */
 async function phaseByName(perms: Set<PermissionKey>, projectId: string, name: string | undefined): Promise<string | null | undefined> {
   if (name === undefined) return undefined;
@@ -105,6 +119,7 @@ const taskOut = (t: ReturnType<typeof D.taskView>, p: { satWeight: number; sunWe
   id: t.id, name: t.name, group: t.groupId ? groups.get(t.groupId) ?? null : null, groupId: t.groupId,
   scope: t.scopeId ? scopes.get(t.scopeId) ?? null : null, scopeId: t.scopeId,
   phase: t.phaseId ? scopes.get(t.phaseId) ?? null : null, phaseId: t.phaseId,
+  parentTask: t.parentTaskId ? scopes.get(t.parentTaskId) ?? null : null, parentTaskId: t.parentTaskId,
   assignee: t.assignee, support: t.support, progress: t.progress, startDate: t.startDate, endDate: t.endDate,
   days: D.effortOf(t, p), daysManual: t.days != null, note: t.note, getflyNote: t.getflyNote,
   status: t.progress >= 100 ? 'done' : t.endDate && t.endDate < t0 ? 'overdue' : 'open',
@@ -249,8 +264,8 @@ export const TOOLS: Record<string, Tool> = {
   },
   create_task: {
     title: 'Tạo việc',
-    description: 'Thêm một việc vào dự án. `group` là tên nhóm (chưa có thì tạo); không có thì việc nằm ở "Chưa phân nhóm". Không tự bịa ngày: chỉ đặt ngày khi người dùng nói.',
-    input: z.object({ ...projectRef, name: z.string().trim().min(1).max(300), group: z.string().trim().max(160).optional().describe('Tên nhóm việc'), groupId: z.uuid().optional(), ...taskBody }),
+    description: 'Thêm một việc vào dự án. `group` là tên nhóm (chưa có thì tạo); không có thì việc nằm ở "Chưa phân nhóm". `parentTask` = việc cha cùng nhóm (một cấp). Không tự bịa ngày: chỉ đặt ngày khi người dùng nói.',
+    input: z.object({ ...projectRef, name: z.string().trim().min(1).max(300), group: z.string().trim().max(160).optional().describe('Tên nhóm việc'), groupId: z.uuid().optional(), parentTask: parentTaskInput, ...taskBody }),
     write: true, destructive: false, perm: 'project.task.write',
     run: async (user, a: { projectId?: string; project?: string; name: string; group?: string; groupId?: string } & Record<string, unknown>) => {
       const p = await editableProject(user, a);
@@ -258,7 +273,8 @@ export const TOOLS: Record<string, Tool> = {
       const groupId = a.groupId ?? (await groupByName(user, perms, p.id, a.group));
       const scopeId = await scopeByName(perms, p.id, a.scope as string | undefined);
       const phaseId = await phaseByName(perms, p.id, a.phase as string | undefined);
-      const t = await D.insertTask(p.id, D.taskCreate.parse({ groupId: groupId ?? null, scopeId: scopeId ?? null, phaseId: phaseId ?? null, name: a.name, assignee: a.assignee, support: a.support, progress: a.progress, startDate: date(a.startDate as string), endDate: date(a.endDate as string), days: a.days ?? null, note: a.note, getflyNote: a.getflyNote, subtasks: a.subtasks }));
+      const parentTaskId = await parentTaskByRef(p.id, groupId ?? null, a.parentTask as string | undefined);
+      const t = await D.insertTask(p.id, D.taskCreate.parse({ groupId: groupId ?? null, scopeId: scopeId ?? null, phaseId: phaseId ?? null, parentTaskId: parentTaskId ?? null, name: a.name, assignee: a.assignee, support: a.support, progress: a.progress, startDate: date(a.startDate as string), endDate: date(a.endDate as string), days: a.days ?? null, note: a.note, getflyNote: a.getflyNote, subtasks: a.subtasks }));
       const bundle = await D.projectBundle(p.id);
       const groups = new Map(bundle.groups.map((g) => [g.id, g.name]));
       return { project: p.name, task: taskOut(t, p, groups, today(), namesOf(bundle)), url: `https://project.vnlab.id.vn/du-an/${p.id}?task=${t.id}` };
@@ -291,11 +307,12 @@ export const TOOLS: Record<string, Tool> = {
   },
   update_task: {
     title: 'Sửa việc',
-    description: 'Đổi tên, tiến độ, người phụ trách/hỗ trợ, ngày, ngày công, ghi chú, phạm vi (scope) hoặc chuyển nhóm của một việc (theo taskId từ get_project / find_tasks). Chỉ gửi trường cần đổi.',
+    description: 'Đổi tên, tiến độ, người phụ trách/hỗ trợ, ngày, ngày công, ghi chú, phạm vi (scope), việc cha (parentTask) hoặc chuyển nhóm của một việc (theo taskId từ get_project / find_tasks). Chuyển nhóm thì bỏ việc cha. Chỉ gửi trường cần đổi.',
     input: z.object({
       taskId: z.uuid(),
       name: z.string().trim().min(1).max(300).optional(),
       group: z.string().trim().max(160).optional().describe('Tên nhóm mới (chưa có thì tạo); chuỗi rỗng = bỏ nhóm'),
+      parentTask: parentTaskInput,
       ...taskBody,
     }),
     write: true, destructive: false, perm: 'project.task.write',
@@ -319,6 +336,7 @@ export const TOOLS: Record<string, Tool> = {
         if (a.group !== undefined) patch.groupId = a.group.trim() ? await groupByName(user, perms, p.id, a.group) : null;
         if (a.scope !== undefined) patch.scopeId = await scopeByName(perms, p.id, a.scope as string);
       }
+      if (a.parentTask !== undefined) patch.parentTaskId = await parentTaskByRef(p.id, patch.groupId !== undefined ? patch.groupId : task.groupId, a.parentTask as string);
       const t = await D.updateTask(p.id, task.id, D.taskFields.partial().parse(patch), user.id);
       const bundle = await D.projectBundle(p.id);
       const groups = new Map(bundle.groups.map((g) => [g.id, g.name]));
@@ -860,8 +878,8 @@ TOOLS.get_getfly_job = {
 };
 
 TOOLS.unsync_getfly = {
-  title: 'Gỡ dự án khỏi Getfly',
-  description: 'Xoá mọi việc app đã tạo trên Getfly cho dự án (không đụng việc cha hay việc có sẵn đã gắn cho nhóm). Chỉ gọi khi người dùng nói rõ.',
+  title: 'Gỡ khỏi Getfly',
+  description: 'Gỡ dự án khỏi Getfly: xoá trên Getfly các việc lá app đã tạo (đếm ở `deleted`); KHÔNG BAO GIỜ xoá việc có sẵn (nhận theo tên), việc cha của nhóm / dự án hay việc đang có việc con — các việc này chỉ bị gỡ liên kết, giữ nguyên trên Getfly (đếm ở `unlinked`, báo trong warnings). Chỉ gọi khi người dùng nói rõ.',
   input: z.object({ ...projectRef }),
   write: true, destructive: true, perm: 'project.project.write',
   run: async (user, a: { projectId?: string; project?: string }) => {
@@ -873,7 +891,7 @@ TOOLS.unsync_getfly = {
 
 TOOLS.sync_getfly = {
   title: 'Đồng bộ sang Getfly',
-  description: 'Đẩy việc của dự án sang Getfly CRM: tạo việc mới, sửa việc đã đổi, xoá việc đã xoá. Không đồng bộ tiến độ hay trạng thái hoàn thành (API Getfly không cho). Task con thành việc con dưới việc tương ứng. Như bấm nút "Đồng bộ Getfly".',
+  description: 'Đẩy việc của dự án sang Getfly CRM: tạo việc mới, sửa việc đã đổi (kể cả chuyển việc cha), xoá việc lá app đã tạo nếu việc đó đã xoá ở đây (`deleted`). KHÔNG BAO GIỜ xoá việc có sẵn (nhận theo tên), việc cha hay việc đang có việc con: chỉ gỡ liên kết (`unlinked`, báo trong warnings). Việc có việc cha (parentTask) nằm dưới việc cha trên Getfly. Không đồng bộ tiến độ hay trạng thái hoàn thành (API Getfly không cho). Task con chỉ ghi thành danh sách trong mô tả. Trước khi tạo việc mới, tìm việc cùng tên (bỏ số thứ tự đầu như "03. ") đã có trên Getfly, cùng người nhận, cùng dự án, ngày lệch không quá 45 ngày và chưa liên kết: chắc chắn thì nhận việc đó (gắn và ghi đè tên/ngày/cha/người nhận theo VNLab, đếm ở `adopted`), trùng nhiều việc thì bỏ qua và báo trong warnings để gắn tay. Như bấm nút "Đồng bộ Getfly".',
   input: z.object({ ...projectRef }),
   write: true, destructive: false, perm: 'project.project.write',
   run: async (user, a: { projectId?: string; project?: string }) => {
@@ -927,7 +945,7 @@ function describeTool(name: string, a: Record<string, unknown> | null): string {
     case 'merge_project_into_phase': return `Gộp ${q(a?.sourceProject)} thành phase ${q(a?.sourcePhase)}`;
     case 'set_getfly': return 'Cấu hình Getfly';
     case 'sync_getfly': return 'Đồng bộ Getfly';
-    case 'unsync_getfly': return 'Gỡ dự án khỏi Getfly';
+    case 'unsync_getfly': return 'Gỡ khỏi Getfly';
     case 'delete_project': return 'Xoá dự án';
     case 'set_member': return `Mời / đổi quyền ${typeof a?.email === 'string' ? a.email : ''}`.trim();
     case 'remove_member': return `Gỡ thành viên ${typeof a?.email === 'string' ? a.email : ''}`.trim();

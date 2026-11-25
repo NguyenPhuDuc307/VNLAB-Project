@@ -7,6 +7,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { EventEmitter } from 'node:events';
 import { HTTPException } from 'hono/http-exception';
 import { z } from 'zod';
+import type postgres from 'postgres';
 import { sql } from './db.ts';
 import { dayNumber, isDate, today, workDays } from './dates.ts';
 
@@ -35,6 +36,8 @@ export type TaskRow = {
   baselineStart: string | null; baselineEnd: string | null;
   scopeId: string | null;
   phaseId: string | null;
+  /** Việc cha (cùng dự án, cùng nhóm, chỉ một cấp). */
+  parentTaskId: string | null;
 };
 export type PhaseRow = { id: string; name: string; startDate: string | null; endDate: string | null; note: string; sort: number };
 export type ScopeRow = { id: string; name: string; color: string; owner: string; note: string; sort: number };
@@ -116,6 +119,8 @@ export const taskView = (t: Record<string, unknown>) => ({
   id: t.id as string, projectId: t.projectId as string, groupId: (t.groupId as string | null) ?? null, name: t.name as string,
   scopeId: (t.scopeId as string | null) ?? null,
   phaseId: (t.phaseId as string | null) ?? null,
+  /** Việc cha cùng nhóm (một cấp); null = việc gốc của nhóm. */
+  parentTaskId: (t.parentTaskId as string | null) ?? null,
   subtasks: (t.subtasks ?? []) as Subtask[],
   assignee: t.assignee as string, support: t.support as string, progress: t.progress as number,
   startDate: (t.startDate as string | null) ?? null, endDate: (t.endDate as string | null) ?? null,
@@ -316,6 +321,7 @@ export const taskFields = z.object({
   groupId: zId.nullable(),
   scopeId: zId.nullable(),
   phaseId: zId.nullable(),
+  parentTaskId: zId.nullable(),
   name: zText(300).min(1, 'Nhập tên việc'),
   assignee: zText(160),
   support: zText(300),
@@ -326,9 +332,31 @@ export const taskFields = z.object({
   note: zText(4000),
   getflyNote: z.boolean(),
 });
-export const taskCreate = taskFields.partial({ phaseId: true, scopeId: true, groupId: true, assignee: true, support: true, progress: true, startDate: true, endDate: true, days: true, note: true, getflyNote: true });
+export const taskCreate = taskFields.partial({ phaseId: true, scopeId: true, groupId: true, parentTaskId: true, assignee: true, support: true, progress: true, startDate: true, endDate: true, days: true, note: true, getflyNote: true });
 export type TaskCreate = z.infer<typeof taskCreate>;
 export type TaskPatch = Partial<z.infer<typeof taskFields>>;
+
+/** Việc cha hợp lệ: cùng dự án, cùng nhóm, không phải chính nó, bản thân không có cha, và việc này chưa có việc con (chỉ một cấp). */
+type Tx = postgres.TransactionSql<{ numeric: number; date: string }>;
+async function checkParent(db: Tx, projectId: string, taskId: string | null, groupId: string | null, parentId: string | null | undefined) {
+  if (!parentId) return;
+  if (parentId === taskId) throw bad('Việc không thể là việc cha của chính nó');
+  const [parent] = await db<{ groupId: string | null; parentTaskId: string | null }[]>`select group_id, parent_task_id from tasks where id = ${parentId} and project_id = ${projectId}`;
+  if (!parent) throw bad('Việc cha không thuộc dự án này');
+  if ((parent.groupId ?? null) !== (groupId ?? null)) throw bad('Việc cha phải cùng nhóm');
+  if (parent.parentTaskId) throw bad('Việc cha đã là việc con của việc khác (chỉ một cấp)');
+  if (taskId) {
+    const [child] = await db`select id from tasks where parent_task_id = ${taskId} limit 1`;
+    if (child) throw bad('Việc này đang có việc con nên không gắn làm việc con được (chỉ một cấp)');
+  }
+}
+/** Bỏ việc cha khi việc con và việc cha không còn cùng dự án / cùng nhóm (đổi nhóm, chuyển dự án…). */
+export async function clearBrokenParents(db: Tx, projectIds: string[]) {
+  await db`
+    update tasks c set parent_task_id = null from tasks p
+    where c.parent_task_id = p.id and c.project_id in ${db(projectIds)}
+      and (c.project_id <> p.project_id or c.group_id is distinct from p.group_id or p.parent_task_id is not null)`;
+}
 
 export const checkDates = (t: { startDate?: string | null; endDate?: string | null }) => {
   if (t.startDate && t.endDate && t.endDate < t.startDate) throw bad('Ngày kết thúc phải từ ngày bắt đầu trở đi');
@@ -340,11 +368,12 @@ export async function insertTask(projectId: string, b: TaskCreate) {
   await scopeBelongs(projectId, b.scopeId);
   await phaseBelongs(projectId, b.phaseId);
   const groupId = b.groupId ?? null;
+  if (b.parentTaskId) await sql.begin((tx) => checkParent(tx, projectId, null, groupId, b.parentTaskId));
   const both = !!(b.startDate && b.endDate);
   const subtasks = normalizeSubtasks(b.subtasks ?? []);
   const [t] = await sql`
-    insert into tasks (project_id, group_id, scope_id, phase_id, name, assignee, support, progress, start_date, end_date, days, note, getfly_note, subtasks, baseline_start, baseline_end, sort)
-    values (${projectId}, ${groupId}, ${b.scopeId ?? null}, ${b.phaseId ?? null}, ${b.name}, ${b.assignee ?? ''}, ${b.support ?? ''}, ${subtaskProgress(subtasks, b.progress ?? 0)}, ${b.startDate ?? null}, ${b.endDate ?? null}, ${b.days ?? null}, ${b.note ?? ''}, ${b.getflyNote ?? false}, ${sql.json(subtasks)},
+    insert into tasks (project_id, group_id, scope_id, phase_id, parent_task_id, name, assignee, support, progress, start_date, end_date, days, note, getfly_note, subtasks, baseline_start, baseline_end, sort)
+    values (${projectId}, ${groupId}, ${b.scopeId ?? null}, ${b.phaseId ?? null}, ${b.parentTaskId ?? null}, ${b.name}, ${b.assignee ?? ''}, ${b.support ?? ''}, ${subtaskProgress(subtasks, b.progress ?? 0)}, ${b.startDate ?? null}, ${b.endDate ?? null}, ${b.days ?? null}, ${b.note ?? ''}, ${b.getflyNote ?? false}, ${sql.json(subtasks)},
       ${both ? b.startDate! : null}, ${both ? b.endDate! : null},
       (select coalesce(max(sort), -1) + 1 from tasks where project_id = ${projectId} and group_id is not distinct from ${groupId}))
     returning *`;
@@ -397,6 +426,7 @@ export async function transferTasks(source: ProjectRow, target: ProjectRow, ids:
     const moving = new Set(tasks.flatMap((t) => [t.id, ...(t.subtasks ?? []).map((child) => child.id)]));
     for (let added = true; added;) { added = false; for (const link of links) if (link.parentLocal && moving.has(link.parentLocal) && !moving.has(link.localId)) { moving.add(link.localId); added = true; } }
     if (moving.size) await tx`update getfly_links set project_id = ${target.id} where project_id = ${source.id} and local_id in ${tx([...moving])}`;
+    await clearBrokenParents(tx, [source.id, target.id]);
     for (const row of result) await tx`update getfly_links set parent_local = ${row.groupId ? `g:${row.groupId}` : null} where project_id = ${target.id} and local_id = ${String(row.id)}`;
     await tx`update projects set getfly_groups = ${tx.json(targetParents)}, updated_at = now() where id = ${target.id}`;
     await tx`update projects set updated_at = now() where id = ${source.id}`;
@@ -407,7 +437,7 @@ export async function transferTasks(source: ProjectRow, target: ProjectRow, ids:
 }
 
 /** Trường được ghi lịch sử khi đổi. */
-const TRACKED: (keyof TaskPatch)[] = ['name', 'groupId', 'scopeId', 'phaseId', 'assignee', 'support', 'progress', 'startDate', 'endDate', 'days', 'note', 'getflyNote', 'subtasks'];
+const TRACKED: (keyof TaskPatch)[] = ['name', 'groupId', 'scopeId', 'phaseId', 'parentTaskId', 'assignee', 'support', 'progress', 'startDate', 'endDate', 'days', 'note', 'getflyNote', 'subtasks'];
 const asText = (v: unknown) => (v === null || v === undefined || v === '' ? null : typeof v === 'object' ? JSON.stringify(v) : String(v));
 
 export async function updateTask(projectId: string, taskId: string, b: TaskPatch, actorId: string | null = null) {
@@ -419,6 +449,10 @@ export async function updateTask(projectId: string, taskId: string, b: TaskPatch
     const [cur] = await tx<TaskRow[]>`select * from tasks where id = ${taskId} and project_id = ${projectId} for update`;
     if (!cur) throw notFound();
     const subtasks = normalizeSubtasks(b.subtasks ?? cur.subtasks ?? []);
+    // Đổi nhóm mà không chọn việc cha mới -> bỏ việc cha cũ (việc cha phải cùng nhóm).
+    const groupChanged = b.groupId !== undefined && (b.groupId ?? null) !== (cur.groupId ?? null);
+    if (groupChanged && b.parentTaskId === undefined && cur.parentTaskId) b = { ...b, parentTaskId: null };
+    if (b.parentTaskId) await checkParent(tx, projectId, taskId, b.groupId !== undefined ? b.groupId : cur.groupId, b.parentTaskId);
     const update = { ...b, progress: subtaskProgress(subtasks, b.progress ?? cur.progress), ...(b.subtasks !== undefined ? { subtasks } : {}) };
     const next = { ...cur, ...update };
     checkDates(next);
@@ -427,6 +461,8 @@ export async function updateTask(projectId: string, taskId: string, b: TaskPatch
     if (b.subtasks !== undefined) patch.subtasks = tx.json(subtasks);
     if (!cur.baselineStart && !cur.baselineEnd && next.startDate && next.endDate) { patch.baselineStart = next.startDate; patch.baselineEnd = next.endDate; }
     const [row] = await tx`update tasks set ${tx(patch)} where id = ${taskId} returning *`;
+    // Việc cha chuyển nhóm: các việc con ở lại nhóm cũ và thôi là việc con.
+    if (groupChanged) await clearBrokenParents(tx, [projectId]);
     for (const k of changes) {
       await tx`insert into task_history (task_id, project_id, user_id, field, old_value, new_value) values (${taskId}, ${projectId}, ${actorId}, ${k}, ${asText((cur as Record<string, unknown>)[k])}, ${asText(update[k])})`;
     }
@@ -471,6 +507,7 @@ export async function reorderTasks(projectId: string, groupId: string | null, id
   await groupBelongs(projectId, groupId);
   await sql.begin(async (tx) => {
     for (const [i, id] of ids.entries()) await tx`update tasks set group_id = ${groupId}, sort = ${i} where id = ${id} and project_id = ${projectId}`;
+    await clearBrokenParents(tx, [projectId]);
   });
   await touch(projectId);
 }

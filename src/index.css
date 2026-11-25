@@ -433,9 +433,13 @@ body::before {
 .gantt-bar .fill {
   position: absolute;
   inset: 0 auto 0 0;
-  border-radius: inherit;
+  /* Không bo riêng: thanh cha đã overflow:hidden + bo tròn nên phần tô tự ăn theo
+     mép trái, còn mép phải thẳng. Bo riêng (inherit 999px) thì thanh ngắn 1 ngày
+     ở 33% chỉ còn một mẩu bán nguyệt lệch, trông như thanh bị khuyết. */
+  border-radius: 0;
   background: color-mix(in srgb, var(--bar) 62%, var(--surface));
 }
+.gantt-bar.done .fill { border-radius: inherit; }
 .gantt-bar.done .fill { background: color-mix(in srgb, var(--bar) 55%, var(--surface)); }
 .gantt-bar .label {
   position: relative;

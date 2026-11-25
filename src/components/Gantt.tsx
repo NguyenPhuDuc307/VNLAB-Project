@@ -56,7 +56,7 @@ type Props = {
 export type EditField = 'name' | 'assignee' | 'support' | 'progress' | 'startDate' | 'endDate' | 'days';
 const FIELD_ORDER: EditField[] = ['name', 'assignee', 'support', 'progress', 'startDate', 'endDate', 'days'];
 
-type Row = { kind: 'group'; group: Group | null; tasks: Task[] } | { kind: 'task'; task: Task; index: number } | { kind: 'subtask'; task: Task; subtask: Subtask; index: string };
+type Row = { kind: 'group'; group: Group | null; tasks: Task[] } | { kind: 'task'; task: Task; index: number; child?: boolean } | { kind: 'subtask'; task: Task; subtask: Subtask; index: string };
 
 export const UNGROUPED = '__none__';
 
@@ -64,8 +64,8 @@ export const UNGROUPED = '__none__';
 export function buildRows(project: ProjectDetail, collapsedTasks: string[] = [], collapsedUngrouped = false): Row[] {
   const rows: Row[] = [];
   let index = 0;
-  const pushTask = (task: Task) => {
-    rows.push({ kind: 'task', task, index: ++index });
+  const pushTask = (task: Task, child = false) => {
+    rows.push({ kind: 'task', task, index: ++index, child });
     if (!collapsedTasks.includes(task.id)) for (const [i, subtask] of (task.subtasks ?? []).entries()) rows.push({ kind: 'subtask', task, subtask, index: `${index}.${i + 1}` });
   };
   const byGroup = new Map<string, Task[]>();
@@ -73,15 +73,25 @@ export function buildRows(project: ProjectDetail, collapsedTasks: string[] = [],
     const k = t.groupId ?? UNGROUPED;
     byGroup.set(k, [...(byGroup.get(k) ?? []), t]);
   }
+  // Việc con (có việc cha cùng nhóm) xếp ngay sau việc cha, giữ thứ tự trong nhóm.
+  const pushTree = (tasks: Task[]) => {
+    const ids = new Set(tasks.map((t) => t.id));
+    const isChild = (t: Task) => !!t.parentTaskId && ids.has(t.parentTaskId);
+    for (const t of tasks) {
+      if (isChild(t)) continue;
+      pushTask(t);
+      for (const c of tasks) if (c.parentTaskId === t.id) pushTask(c, true);
+    }
+  };
   for (const g of project.groups) {
     const tasks = byGroup.get(g.id) ?? [];
     rows.push({ kind: 'group', group: g, tasks });
-    if (!g.collapsed) for (const t of tasks) pushTask(t);
+    if (!g.collapsed) pushTree(tasks);
   }
   const loose = byGroup.get(UNGROUPED) ?? [];
   if (loose.length) {
     rows.push({ kind: 'group', group: null, tasks: loose });
-    if (!collapsedUngrouped) for (const t of loose) pushTask(t);
+    if (!collapsedUngrouped) pushTree(loose);
   }
   return rows;
 }
@@ -565,7 +575,8 @@ export function Gantt({ project, today, view, dayWidth, canEdit, focus, onEditTa
                 <span className="num group-hover:hidden">{r.index}</span>
                 <DotsSixVertical size={16} weight="bold" className="hidden group-hover:block" />
               </button>
-              <div className={cx('flex min-w-0 items-center gap-1.5 px-2', canEdit && 'cursor-text')} data-field="name" onDoubleClick={startEdit(t, 'name')}>
+              <div className={cx('flex min-w-0 items-center gap-1.5 px-2', r.child && 'pl-5', canEdit && 'cursor-text')} data-field="name" onDoubleClick={startEdit(t, 'name')}>
+                {r.child && <span className="shrink-0 self-start text-[12px] leading-5 text-muted" aria-hidden>└</span>}
                 {!!t.subtasks?.length && <button type="button" className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-primary hover:bg-fill"
                   aria-label={collapsedTasks.includes(t.id) ? 'Mở rộng task con' : 'Thu gọn task con'} aria-expanded={!collapsedTasks.includes(t.id)}
                   onClick={(e) => { e.stopPropagation(); onToggleTask(t.id); }} onDoubleClick={(e) => e.stopPropagation()}>

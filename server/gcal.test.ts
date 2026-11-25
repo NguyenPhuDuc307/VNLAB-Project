@@ -23,7 +23,7 @@ test('parseCalendarId: mã lịch, email, link src= / cid= / ical', () => {
 
 test('eventFor: sự kiện cả ngày, kết thúc là ngày sau, việc xong có ✓, thiếu ngày thì bỏ', () => {
   const p = { id: 'p1', name: 'Web', code: 'WEB', groups: [{ id: 'g1', name: 'Thiết kế', sort: 0, collapsed: false }], scopes: [], phases: [] };
-  const base = { id: '0b8c2f5e-1111-4222-8333-444455556666', projectId: 'p1', groupId: 'g1', name: 'Màn đăng nhập', scopeId: null, phaseId: null, subtasks: [], assignee: 'An', support: '', progress: 40, startDate: '2026-11-02', endDate: '2026-11-07', days: null, note: '', getflyNote: false, sort: 0, baselineStart: null, baselineEnd: null };
+  const base = { id: '0b8c2f5e-1111-4222-8333-444455556666', projectId: 'p1', groupId: 'g1', name: 'Màn đăng nhập', scopeId: null, phaseId: null, parentTaskId: null, subtasks: [], assignee: 'An', support: '', progress: 40, startDate: '2026-11-02', endDate: '2026-11-07', days: null, note: '', getflyNote: false, sort: 0, baselineStart: null, baselineEnd: null };
   const ev = eventFor(p, base)!;
   assert.equal(ev.id, 'vpj0b8c2f5e111142228333444455556666');
   assert.match(ev.id, /^[a-v0-9]{5,1024}$/);

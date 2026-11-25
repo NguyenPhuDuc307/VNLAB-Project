@@ -455,14 +455,14 @@ async function readGetflyScope(c: Parameters<typeof body>[0], projectId: string)
   return scope;
 }
 
-/** Bấm "Đồng bộ Getfly": tạo / sửa / hoàn thành / xoá việc bên Getfly cho khớp dự án. */
+/** Bấm "Đồng bộ Getfly": tạo / sửa việc bên Getfly cho khớp dự án; chỉ xoá việc lá app tự tạo (không xoá việc có sẵn / việc cha). */
 auth.post('/projects/:id/getfly/sync', requirePermission('project.project.write'), async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
   D.editable(p);
   const scope = await readGetflyScope(c, p.id);
   return c.json(startGetflyJob(p.id, 'sync', scope), 202);
 });
-/** Gỡ khỏi Getfly: xoá các việc app đã tạo trên Getfly cho dự án này. */
+/** Gỡ khỏi Getfly: xoá việc lá app đã tạo; việc có sẵn / việc cha chỉ gỡ liên kết. */
 auth.post('/projects/:id/getfly/unsync', requirePermission('project.project.write'), async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
   D.editable(p);
