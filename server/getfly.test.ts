@@ -513,3 +513,116 @@ test('Việc cha: kiểm tra cùng nhóm / một cấp, đổi nhóm bỏ cha, G
     assert.ok(gf.tasks.has(Number(parentRemote.task_id)) && gf.tasks.has(8689));
   } finally { await srv.stop(); await mem.close(); gf.close(); }
 });
+
+test('Mã Getfly gắn tay: link / id / mã, chặn trùng & việc cha, bỏ gắn không xoá, đồng bộ PUT và hết báo trùng tên', { timeout: 90_000 }, async () => {
+  const gf = await fakeGetfly(), mem = await memoryDb();
+  const srv = await startServer({ PROJECT_DATABASE_URL: mem.url, PROJECT_DEV_LOGIN: '1', GETFLY_BASE_URL: gf.base, GETFLY_API_KEY: 'khoa-getfly' });
+  try {
+    const login = await fetch(`${srv.base}/api/auth/dev-login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'link@x.vn', name: 'Link' }) });
+    const session = cookieOf(login, 'prj_session');
+    const R = async (method: string, path: string, body?: unknown) => {
+      const r = await fetch(`${srv.base}/api${path}`, { method, headers: { cookie: `prj_session=${session}`, 'content-type': 'application/json' }, body: body === undefined ? undefined : JSON.stringify(body) });
+      return { status: r.status, body: await r.json().catch(() => null) as any };
+    };
+    const sync = async (pid: string) => {
+      assert.equal((await R('POST', `/projects/${pid}/getfly/sync`, {})).status, 202);
+      for (let i = 0; i < 300; i++) {
+        const j = (await R('GET', `/projects/${pid}/getfly/job`)).body;
+        if (j.status !== 'running') { assert.equal(j.status, 'done', JSON.stringify(j)); return j.result; }
+        await new Promise((r) => setTimeout(r, 50));
+      }
+      throw Error('Job chưa xong');
+    };
+    const hand = (id: number, name: string, start: string) => gf.tasks.set(id, {
+      task_id: String(id), task_code: `CVI/2026-11/00${id}`, task_name: name, project_id: '1', project_name: 'R&D', task_status: '1',
+      task_receiver: '25', task_start_date: `${start} 08:00:00`, task_end_date: `${start} 17:30:00`, task_description: '<p>Nhập tay</p>',
+    });
+    hand(8843, 'HPG - Giao hàng', '2026-11-01');
+    hand(8844, 'HPG - Kho', '2026-11-01');
+    hand(9936, '01. Tiếp nhận yêu cầu và lập kế hoạch', '2026-11-02');
+    hand(9950, 'Việc tay A', '2026-11-05');
+    hand(9951, 'Việc tay B', '2026-11-05');
+    const p = (await R('POST', '/projects', { name: 'Gắn tay' })).body;
+    await R('PATCH', `/projects/${p.id}/getfly`, { creatorId: '25', users: { 'Đức': '25' } });
+    const giao = (await R('POST', `/projects/${p.id}/groups`, { name: 'Giao hàng', getflyParent: '8843' })).body;
+    const kho = (await R('POST', `/projects/${p.id}/groups`, { name: 'Kho', getflyParent: '8844' })).body;
+    const add = async (groupId: string | null, name: string, extra = {}) =>
+      (await R('POST', `/projects/${p.id}/tasks`, { groupId, name, assignee: 'Đức', startDate: '2026-11-02', endDate: '2026-11-02', ...extra })).body;
+    const a1 = await add(giao.id, '01. Tiếp nhận yêu cầu và lập kế hoạch');
+    const b1 = await add(kho.id, '01. Tiếp nhận yêu cầu và lập kế hoạch');
+    const c1 = await add(giao.id, 'Việc C');
+    const c2 = await add(giao.id, 'Việc con của C', { parentTaskId: c1.id });
+    const loose = await add(null, 'Chưa phân nhóm');
+    const link = (taskId: string, ref: string) => R('PUT', `/projects/${p.id}/tasks/${taskId}/getfly-link`, { ref });
+    const linkRow = async (taskId: string) => (await mem.db.query(`select * from getfly_links where project_id = $1 and local_id = $2`, [p.id, taskId]) as any).rows[0];
+
+    // Gắn theo mã.
+    const l1 = await link(a1.id, 'CVI/2026-11/009936');
+    assert.equal(l1.status, 200, JSON.stringify(l1.body));
+    assert.deepEqual(l1.body.getfly, { code: 'CVI/2026-11/009936', id: 9936, adopted: true });
+    const row = await linkRow(a1.id);
+    assert.deepEqual([row.parent_local, row.hash, row.adopted, row.completed_at], [`g:${giao.id}`, '', true, null]);
+    assert.deepEqual((await R('GET', `/projects/${p.id}`)).body.tasks.find((t: any) => t.id === a1.id).getfly, { code: 'CVI/2026-11/009936', id: 9936, adopted: true });
+    assert.equal((await R('GET', `/projects/${p.id}`)).body.tasks.find((t: any) => t.id === b1.id).getfly, null);
+    // Đã gắn với việc khác (cùng dự án hoặc dự án khác) -> 409, nói rõ việc nào.
+    const dup = await link(b1.id, '9936');
+    assert.equal(dup.status, 409);
+    assert.match(dup.body.error, /đã gắn với việc "01\. Tiếp nhận yêu cầu và lập kế hoạch" \(dự án Gắn tay\)/);
+    const p2 = (await R('POST', '/projects', { name: 'Dự án khác' })).body;
+    const g2 = (await R('POST', `/projects/${p2.id}/groups`, { name: 'Nhóm' })).body;
+    const x = (await R('POST', `/projects/${p2.id}/tasks`, { groupId: g2.id, name: 'X' })).body;
+    assert.equal((await R('PUT', `/projects/${p2.id}/tasks/${x.id}/getfly-link`, { ref: 'https://acs.getflycrm.com/#/tasks/?task_id=9936' })).status, 409);
+    // Việc cha của nhóm / dự án, việc chưa phân nhóm, việc không có trên Getfly -> từ chối.
+    assert.equal((await link(b1.id, '8843')).status, 400);
+    assert.equal((await link(b1.id, 'CVI/2026-11/008844')).status, 400);
+    assert.equal((await link(loose.id, '9950')).status, 400);
+    assert.equal((await link(b1.id, '123456')).status, 404);
+    // Gắn theo link, việc con: parent_local theo việc cha như lúc đồng bộ; đổi sang việc khác = thay liên kết.
+    assert.equal((await link(c2.id, 'https://acs.getflycrm.com/#/tasks/?task_id=9950')).body.getfly.id, 9950);
+    assert.equal((await linkRow(c2.id)).parent_local, `t:${c1.id}`);
+    const changed = await link(c2.id, '9951');
+    assert.deepEqual([changed.body.getfly.code, changed.body.unlinked?.code], ['CVI/2026-11/009951', 'CVI/2026-11/009950']);
+    assert.equal((await mem.db.query(`select count(*)::int as n from getfly_links where getfly_id = 9950`) as any).rows[0].n, 0);
+    // Bỏ gắn: chỉ quên liên kết, không gọi DELETE.
+    const un = await link(c2.id, '');
+    assert.equal(un.status, 200);
+    assert.deepEqual([un.body.getfly, un.body.unlinked?.code], [null, 'CVI/2026-11/009951']);
+    assert.equal(await linkRow(c2.id), undefined);
+    assert.ok(gf.tasks.has(9950) && gf.tasks.has(9951));
+    assert.ok(!gf.calls.some((c) => c.method === 'DELETE'));
+    // Không có quyền sửa: người khác không thấy dự án -> 404.
+    const other = cookieOf(await fetch(`${srv.base}/api/auth/dev-login`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: 'la@x.vn', name: 'Lạ' }) }), 'prj_session');
+    const stranger = await fetch(`${srv.base}/api/projects/${p.id}/tasks/${b1.id}/getfly-link`, { method: 'PUT', headers: { cookie: `prj_session=${other}`, 'content-type': 'application/json' }, body: JSON.stringify({ ref: '9950' }) });
+    assert.ok([403, 404].includes(stranger.status));
+
+    // Đồng bộ: việc gắn tay được PUT (không POST) theo giá trị Project; việc cùng tên ở nhóm kia được tạo mới, hết báo trùng.
+    await R('PATCH', `/projects/${p.id}/tasks/${a1.id}`, { endDate: '2026-11-03' });
+    const before = gf.calls.length;
+    const r1 = await sync(p.id);
+    assert.deepEqual([r1.adopted, r1.errors], [0, []]);
+    assert.ok(!r1.warnings.some((w: string) => /gắn tay/.test(w)), JSON.stringify(r1.warnings));
+    const writes = gf.calls.slice(before).filter((c) => c.method !== 'GET');
+    const puts = writes.filter((c) => c.method === 'PUT');
+    assert.deepEqual(puts.map((c) => c.body.task_code), ['CVI/2026-11/009936']);
+    assert.deepEqual([puts[0].body.task_info.task_parent, puts[0].body.task_info.task_end_date, puts[0].body.task_info.task_receiver], ['8843', '2026-11-03 17:30', '25']);
+    const posted = writes.filter((c) => c.method === 'POST').map((c) => c.body.task_info);
+    assert.ok(posted.some((i) => i.task_name === '01. Tiếp nhận yêu cầu và lập kế hoạch' && i.task_parent === '8844'));
+    assert.ok(!writes.some((c) => c.method === 'POST' && c.body.task_info.task_parent === '8843' && c.body.task_info.task_name.startsWith('01.')));
+    assert.ok(!writes.some((c) => c.method === 'DELETE'));
+    assert.equal(gf.tasks.get(9936).task_end_date, '2026-11-03 17:30');
+    // Lần sau: không gửi lại gì cho việc gắn tay.
+    const n = gf.calls.filter((c) => c.method !== 'GET').length;
+    const r2 = await sync(p.id);
+    assert.deepEqual([r2.created, r2.updated, r2.errors], [0, 0, []]);
+    assert.equal(gf.calls.filter((c) => c.method !== 'GET').length, n);
+    // Xoá việc đã gắn tay bên Project -> chỉ gỡ liên kết, không bao giờ DELETE trên Getfly.
+    await R('DELETE', `/projects/${p.id}/tasks/${a1.id}`);
+    const r3 = await sync(p.id);
+    assert.deepEqual([r3.deleted, r3.unlinked, r3.errors], [0, 1, []]);
+    assert.ok(gf.tasks.has(9936));
+    assert.ok(!gf.calls.some((c) => c.method === 'DELETE' && c.body?.task_code === 'CVI/2026-11/009936'));
+    assert.ok(r3.warnings.some((w: string) => /CVI\/2026-11\/009936: .*giữ nguyên trên Getfly \(việc có sẵn/.test(w)));
+    // Công cụ MCP có mặt.
+    assert.ok((await R('GET', '/mcp/tools')).body.tools.some((t: any) => t.name === 'link_getfly_task'));
+  } finally { await srv.stop(); await mem.close(); gf.close(); }
+});

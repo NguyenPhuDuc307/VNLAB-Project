@@ -2,7 +2,8 @@ import { SubtasksEditor } from './SubtasksEditor';
 import { ArrowDown, ArrowUp, ClockCounterClockwise, Trash } from '@phosphor-icons/react';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-import { api, planShift, useAction, useCan, type ProjectDetail, type Task, type TaskHistory, type TaskInput } from '../lib/api';
+import { api, planShift, useAction, useCan, type GetflyTaskLink, type ProjectDetail, type Task, type TaskHistory, type TaskInput } from '../lib/api';
+import { useGetflyStatus } from './GetflyBox';
 import { fmtNum, fmtShort, workDays } from '../lib/dates';
 import { Button, DateInput, Field, IconButton, Input, MoreButton, Select, Sheet, SectionLabel, Textarea, useFeedback } from './ui';
 
@@ -27,7 +28,7 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, phaseI
   const [daysText, setDaysText] = useState('');
   useEffect(() => {
     if (!open) return;
-    const init = task ? { ...task } : empty(groupId, phaseId);
+    const { getfly: _getfly, ...init } = task ? { ...task } : { ...empty(groupId, phaseId), getfly: undefined };
     setF(init);
     setDaysText(init.days == null ? '' : String(init.days).replace('.', ','));
   }, [open, task, groupId, phaseId]);
@@ -178,6 +179,7 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, phaseI
               <span>Gửi ghi chú lên Getfly <span className="text-muted">— bỏ tích thì chỉ lưu ở đây</span></span>
             </label>
           )}
+          {task && <GetflyLinkField project={project} task={task} readOnly={readOnly} />}
           {task && (
             <div className="mb-3 text-[13px]">
               <SectionLabel>Kế hoạch gốc</SectionLabel>
@@ -206,6 +208,43 @@ export function TaskSheet({ open, onClose, project, task, groupId = null, phaseI
         </fieldset>
       </form>
     </Sheet>
+  );
+}
+
+/** "Mã Getfly": việc tương ứng trên Getfly; gắn tay bằng link / id / mã khi đồng bộ báo trùng tên. Không xoá gì trên Getfly. */
+function GetflyLinkField({ project, task, readOnly }: { project: ProjectDetail; task: Task; readOnly: boolean }) {
+  const status = useGetflyStatus();
+  // Sheet giữ bản chụp của việc lúc mở: kết quả gắn / bỏ gắn lưu ở đây để hiện ngay.
+  const [link, setLink] = useState<GetflyTaskLink | null>(task.getfly ?? null);
+  const [ref, setRef] = useState('');
+  const [error, setError] = useState('');
+  useEffect(() => { setLink(task.getfly ?? null); setRef(''); setError(''); }, [task]);
+  const act = useAction((r: string) => api<{ getfly: GetflyTaskLink | null }>(`/projects/${project.id}/tasks/${task.id}/getfly-link`, { method: 'PUT', body: { ref: r } }), {
+    onSuccess: (r) => { setLink(r.getfly); setRef(''); setError(''); },
+  });
+  if (!status.data?.configured || (!project.getflyCreatorId && !link)) return null;
+  if (readOnly && !link) return null;
+  const submit = () => { const v = ref.trim(); if (!v || act.isPending) return; setError(''); act.mutate(v, { onError: (e) => setError((e as Error).message) }); };
+  const unlink = () => { if (act.isPending) return; setError(''); act.mutate('', { onError: (e) => setError((e as Error).message) }); };
+  return (
+    <Field group label="Mã Getfly" error={error || undefined} hint={readOnly ? undefined : link ? 'Bỏ gắn chỉ quên liên kết, việc trên Getfly giữ nguyên.' : 'Dán link / id / mã việc có sẵn trên Getfly để gắn tay (khi đồng bộ báo trùng tên).'}>
+      {link && (
+        <div className="mb-1.5 flex min-w-0 items-center gap-2 rounded-[18px] bg-fill px-3.5 py-1.5 text-[13px]">
+          {link.id ? <a href={`${status.data.webOrigin}/#/tasks/?task_id=${link.id}`} target="_blank" rel="noreferrer" className="num min-w-0 break-words font-semibold text-primary hover:underline">{link.code || `id ${link.id}`}</a>
+            : <span className="num min-w-0 break-words font-semibold">{link.code}</span>}
+          {link.adopted && <span className="shrink-0 rounded-full bg-ok-soft px-2 py-0.5 text-[11.5px] font-semibold text-ok">có sẵn</span>}
+          {!readOnly && <button type="button" className="ml-auto shrink-0 text-[12px] font-semibold text-muted hover:text-danger disabled:opacity-50" disabled={act.isPending} onClick={unlink}>Bỏ gắn</button>}
+        </div>
+      )}
+      {!readOnly && (
+        <div className="flex min-w-0 gap-1.5">
+          <Input aria-label="Link, id hoặc mã việc Getfly" className="!h-9 min-w-0 flex-1 !text-[13px]" value={ref} maxLength={500}
+            onChange={(e) => setRef(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submit(); } }}
+            placeholder={link ? 'Đổi sang việc khác: dán link / id / mã' : 'VD #/tasks/?task_id=9136 hoặc CVI/2026-11/009123'} />
+          <Button type="button" size="sm" variant="secondary" className="!h-9" disabled={act.isPending || !ref.trim()} onClick={submit}>{act.isPending ? 'Đang gắn…' : 'Gắn'}</Button>
+        </div>
+      )}
+    </Field>
   );
 }
 

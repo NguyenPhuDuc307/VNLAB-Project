@@ -129,6 +129,8 @@ export const taskView = (t: Record<string, unknown>) => ({
   getflyNote: t.getflyNote === true,
   /** Kế hoạch gốc (ngày lúc lập); khác ngày hiện tại = việc đã được dời / gia hạn. */
   baselineStart: (t.baselineStart as string | null) ?? null, baselineEnd: (t.baselineEnd as string | null) ?? null,
+  /** Việc tương ứng trên Getfly (chỉ có khi đọc cả dự án — projectBundle); adopted = việc có sẵn / gắn tay, không bao giờ bị xoá. */
+  ...('gfCode' in t ? { getfly: t.gfCode != null ? { code: t.gfCode as string, id: t.gfId == null ? null : Number(t.gfId), adopted: t.gfAdopted === true } : null } : {}),
 });
 
 /** Chênh lệch kế hoạch so với gốc (ngày): dương = gia hạn / lùi, âm = rút ngắn / sớm hơn. */
@@ -180,7 +182,9 @@ export async function projectBundle(id: string) {
   const groups = await sql<{ id: string; name: string; sort: number; collapsed: boolean }[]>`select id, name, sort, collapsed from task_groups where project_id = ${id} order by sort, created_at`;
   // Thứ tự hiển thị: theo nhóm (nhóm chưa phân xếp cuối), rồi thứ tự trong nhóm — cột STT khi xuất CSV cũng theo đây.
   const tasks = await sql`
-    select t.* from tasks t left join task_groups g on g.id = t.group_id
+    select t.*, l.getfly_code as gf_code, l.getfly_id as gf_id, l.adopted as gf_adopted
+    from tasks t left join task_groups g on g.id = t.group_id
+    left join getfly_links l on l.project_id = t.project_id and l.local_id = t.id::text
     where t.project_id = ${id}
     order by (t.group_id is null), g.sort, g.created_at, t.sort, t.created_at`;
   const scopes = await sql<ScopeRow[]>`select id, name, color, owner, note, sort from scopes where project_id = ${id} order by sort, created_at`;

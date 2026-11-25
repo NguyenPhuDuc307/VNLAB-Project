@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { api, useAction, type ProjectDetail } from '../lib/api';
 import { getflyBookmarklet } from '../lib/getfly-bookmarklet';
+import { getflyKpiBookmarklet } from '../lib/getfly-kpi-bookmarklet';
 import type { PendingDone } from '../pages/GetflyDone';
 import { Button, Field, Input, SectionLabel, Sheet, useFeedback, cx } from './ui';
 
@@ -244,25 +245,34 @@ export function GetflyBox({ project, canEdit }: { project: ProjectDetail; canEdi
  * quên dấu "đã đánh dấu" để lần sau làm lại; trạng thái trên Getfly KHÔNG tự mở lại.
  */
 function GetflyDoneLink({ projectId, getflyOrigin }: { projectId: string; getflyOrigin: string }) {
-  const { toast } = useFeedback();
   const pending = useQuery({ queryKey: ['getfly-pending-done'], queryFn: () => api<PendingDone[]>('/getfly/pending-done'), staleTime: 60_000 });
   const here = pending.data?.filter((p) => p.projectId === projectId).length ?? 0;
-  const others = (pending.data?.length ?? 0) - here;
-  // React 19 chặn href "javascript:" khi render -> gắn bằng tay sau khi mount.
-  const ref = useRef<HTMLAnchorElement>(null);
-  useEffect(() => { ref.current?.setAttribute('href', getflyBookmarklet(window.location.origin, getflyOrigin)); }, [getflyOrigin]);
   return (
-    <div className="mt-4 rounded-[20px] bg-fill px-4 py-3 text-[13px]">
-      <p className="font-semibold">Đánh dấu hoàn thành trên Getfly</p>
-      <p className="mt-0.5 text-muted">API Getfly không cho đổi trạng thái. Nút dưới đây chạy ngay trên tab Getfly của bạn: đánh dấu "Hoàn thành" + 5 sao cho mọi việc đã xong 100% (mọi dự án bạn được sửa).</p>
-      <div className="mt-2 flex flex-wrap items-center gap-2">
-        <a ref={ref} href="#" draggable onClick={(e) => { e.preventDefault(); toast('Kéo nút này lên thanh dấu trang, rồi bấm khi đang mở Getfly'); }}
-          className="inline-flex h-8 cursor-grab items-center gap-1.5 rounded-full bg-primary px-3 text-[13px] font-semibold text-on-primary">
-          ✓ Hoàn thành Getfly
-        </a>
-        {pending.data && <span className="text-[12px] text-muted">{here ? `${here} việc của dự án này đang chờ` : 'Dự án này không có việc chờ'}{others > 0 ? ` · ${others} việc ở dự án khác` : ''}</span>}
+    <div className="mt-4">
+      <SectionLabel>Nút trên Getfly</SectionLabel>
+      <div className="space-y-2 rounded-[20px] bg-fill px-4 py-3 text-[13px]"
+        title="API Getfly không đổi được trạng thái / tạo KPI, nên các nút này chạy ngay trên tab Getfly đã đăng nhập. Việc tụt dưới 100% sẽ được đánh dấu lại lần sau (trạng thái trên Getfly không tự mở lại). Đã kéo nút cũ thì chuột phải → Sửa để đổi tên, hoặc kéo lại.">
+        <BookmarkletRow label="✓ Getfly" url={(o) => getflyBookmarklet(o, getflyOrigin)} title="Đánh dấu Hoàn thành + 5 sao mọi việc đã xong 100%">
+          Hoàn thành + 5★ việc 100%{here > 0 && <span className="ml-1.5 rounded-full bg-primary/15 px-2 py-0.5 text-[11px] font-semibold text-primary">{here} việc chờ</span>}
+        </BookmarkletRow>
+        <BookmarkletRow label="✓ KPI" url={(o) => getflyKpiBookmarklet(o, getflyOrigin)} title="Tạo KPI tháng của bạn trên Getfly theo mẫu">Tạo KPI tháng</BookmarkletRow>
+        <p className="text-[12px] text-muted">Kéo nút lên thanh dấu trang, bấm khi đang mở Getfly.</p>
       </div>
-      <p className="mt-1.5 text-[12px] text-muted">Kéo nút này lên thanh dấu trang, rồi bấm khi đang mở Getfly. Việc tụt dưới 100% sẽ được đánh dấu lại lần sau; trạng thái trên Getfly không tự mở lại.</p>
+    </div>
+  );
+}
+
+/** Một nút bookmarklet kéo được. React 19 chặn href "javascript:" khi render -> gắn bằng tay sau khi mount. */
+function BookmarkletRow({ label, url, title, children }: { label: string; url: (projectOrigin: string) => string; title: string; children: React.ReactNode }) {
+  const { toast } = useFeedback();
+  const ref = useRef<HTMLAnchorElement>(null);
+  const href = url(window.location.origin);
+  useEffect(() => { ref.current?.setAttribute('href', href); }, [href]);
+  return (
+    <div className="flex items-center gap-2.5">
+      <a ref={ref} href="#" draggable title={title} onClick={(e) => { e.preventDefault(); toast('Kéo nút lên thanh dấu trang, bấm khi đang mở Getfly'); }}
+        className="inline-flex h-8 w-[88px] shrink-0 cursor-grab items-center justify-center rounded-full bg-primary text-[13px] font-semibold text-on-primary">{label}</a>
+      <span className="min-w-0">{children}</span>
     </div>
   );
 }

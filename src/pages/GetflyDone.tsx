@@ -10,7 +10,7 @@ export type PendingDone = { projectId: string; projectName: string; taskId: stri
 type ItemState = { status: 'waiting' | 'done' | 'already' | 'error'; error?: string | null; saved?: boolean; saveError?: string };
 
 /**
- * Cửa sổ bật lên do bookmarklet "✓ Hoàn thành Getfly" mở từ tab Getfly (src/lib/getfly-bookmarklet.ts):
+ * Cửa sổ bật lên do bookmarklet "✓ Getfly" mở từ tab Getfly (src/lib/getfly-bookmarklet.ts):
  * lấy danh sách việc xong 100% chưa đánh dấu, gửi về tab Getfly (postMessage, chỉ origin Getfly), nhận kết quả từng việc
  * và ghi nhận ở server (POST /api/getfly/mark-done). Cùng origin với Project nên dùng luôn phiên đăng nhập.
  */
@@ -37,9 +37,11 @@ export function GetflyDonePage() {
     const save = (getflyId: number) => {
       saving.current = saving.current.then(async () => {
         try {
-          const r = await api<{ marked: number[]; rejected: number[] }>('/getfly/mark-done', { method: 'POST', body: { getflyIds: [getflyId] } });
+          // Server tra lại trạng thái thật trên Getfly; chỉ nhận khi Getfly đã "Hoàn thành".
+          const r = await api<{ marked: number[]; rejected: number[]; reasons?: Record<string, string> }>('/getfly/mark-done', { method: 'POST', body: { getflyIds: [getflyId] } });
           const ok = r.marked.includes(getflyId);
-          setStates((s) => ({ ...s, [getflyId]: { ...s[getflyId], saved: ok, saveError: ok ? undefined : 'Server không nhận (việc chưa 100% hoặc không thuộc dự án bạn được sửa)' } }));
+          const reason = r.reasons?.[getflyId] ?? 'Server không nhận';
+          setStates((s) => ({ ...s, [getflyId]: { ...s[getflyId], saved: ok, saveError: ok ? undefined : reason === 'Getfly chưa hoàn thành' ? 'Chưa hoàn thành trên Getfly' : reason } }));
         } catch (err) {
           setStates((s) => ({ ...s, [getflyId]: { ...s[getflyId], saved: false, saveError: (err as Error).message } }));
         }
@@ -64,7 +66,7 @@ export function GetflyDonePage() {
   // Xong hết và lưu được hết thì tự đóng sau vài giây.
   const items = list.data ?? [];
   const values = Object.values(states);
-  const allSaved = !!finished && values.every((s) => s.status === 'error' || s.saved);
+  const allSaved = !!finished && values.every((s) => s.saved);
   useEffect(() => {
     if (!finished || !allSaved) return;
     setCountdown(5);
@@ -76,15 +78,13 @@ export function GetflyDonePage() {
     return () => clearInterval(t);
   }, [finished, allSaved]);
 
-  const count = (k: ItemState['status']) => values.filter((s) => s.status === k).length;
+  const count = (k: ItemState['status']) => values.filter((s) => s.status === k && !s.saveError).length;
+  const rejected = values.filter((s) => s.status !== 'error' && s.saveError).length;
   return (
     <div className="mx-auto flex min-h-dvh max-w-lg flex-col gap-4 px-4 py-5 text-[14px]">
       <header className="flex items-center gap-3">
         <LogoTile className="h-10 w-10 rounded-full" logoClassName="h-7 w-7" />
-        <div>
-          <h1 className="text-[17px] font-bold">Hoàn thành trên Getfly</h1>
-          <p className="text-[12px] text-muted">Đánh dấu "Hoàn thành" + 5 sao cho việc đã xong 100%</p>
-        </div>
+        <h1 className="text-[17px] font-bold">Hoàn thành + 5★ trên Getfly</h1>
       </header>
 
       {list.isPending || status.isPending ? (
@@ -94,13 +94,11 @@ export function GetflyDonePage() {
       ) : (
         <>
           {!opener && (
-            <p className="rounded-[18px] bg-fill px-4 py-3 text-muted">
-              Trang này mở từ nút <b>✓ Hoàn thành Getfly</b> trên thanh dấu trang khi đang ở Getfly ({status.data?.host ?? origin}). Mở thẳng thì chỉ xem được danh sách.
-            </p>
+            <p className="text-[12px] text-muted">Mở bằng nút ✓ Getfly trên Getfly.</p>
           )}
           <p>
-            <b>{items.length}</b> việc cần đánh dấu.
-            {values.length > 0 && <span className="text-muted"> Đã xong {count('done')} · hoàn thành sẵn {count('already')} · lỗi {count('error')}</span>}
+            <b>{items.length}</b> việc chờ
+            {values.length > 0 && <span className="text-muted"> · xong {count('done')} · sẵn {count('already')} · lỗi {count('error')}{rejected ? ` · ${rejected} chưa hoàn thành trên Getfly` : ''}</span>}
           </p>
           <ul className="space-y-1.5">
             {items.map((it) => {
@@ -115,7 +113,7 @@ export function GetflyDonePage() {
                     </span>
                     <span className="min-w-0 flex-1 break-words">
                       {it.name}
-                      <span className="block text-[12px] text-muted">{it.projectName} · {it.getflyCode || it.getflyId}{s?.status === 'already' ? ' · đã hoàn thành sẵn' : ''}{s && s.status !== 'error' && !s.saved && !s.saveError ? ' · đang ghi nhận…' : ''}</span>
+                      <span className="block text-[12px] text-muted">{it.projectName} · {it.getflyCode || it.getflyId}{s?.status === 'already' ? ' · sẵn' : ''}{s && s.status !== 'error' && !s.saved && !s.saveError ? ' · đang ghi nhận…' : ''}</span>
                       {(s?.error || s?.saveError) && <span className="block text-[12px] text-danger">{s.saveError ?? s.error}</span>}
                     </span>
                   </div>
@@ -126,8 +124,8 @@ export function GetflyDonePage() {
           {finished && (
             <div className="sticky bottom-3 rounded-[20px] bg-card p-4 shadow-[var(--shadow-xs)]">
               <p className="mb-3 font-semibold">
-                {finished.cancelled ? 'Đã dừng.' : 'Xong.'} Đánh dấu {count('done')} việc, {count('already')} việc đã hoàn thành sẵn, {count('error')} lỗi.
-                {countdown !== null && <span className="font-normal text-muted"> Tự đóng sau {countdown} giây.</span>}
+                {finished.cancelled ? 'Đã dừng' : 'Xong'}: {count('done')} xong · {count('already')} sẵn · {count('error')} lỗi{rejected ? ` · ${rejected} chưa hoàn thành trên Getfly` : ''}
+                {countdown !== null && <span className="font-normal text-muted"> · đóng sau {countdown}s</span>}
               </p>
               <Button block onClick={() => window.close()}>Đóng</Button>
             </div>

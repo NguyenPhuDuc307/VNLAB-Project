@@ -51,7 +51,10 @@ export type Task = {
   getflyNote?: boolean;
   /** Kế hoạch gốc (ngày lúc lập); khác ngày hiện tại = đã dời / gia hạn. */
   baselineStart: string | null; baselineEnd: string | null;
+  /** Việc tương ứng trên Getfly (có khi đọc cả dự án); adopted = việc có sẵn / gắn tay, không bao giờ bị xoá trên Getfly. */
+  getfly?: GetflyTaskLink | null;
 };
+export type GetflyTaskLink = { code: string; id: number | null; adopted: boolean };
 export type TaskHistory = { id: number; at: string; field: string; oldValue: string | null; newValue: string | null; user: string | null };
 export type Member = { email: string; role: 'editor' | 'viewer'; userId: string | null; name: string; avatar: string | null; createdAt: string };
 export type ProjectDetail = Project & {
@@ -59,7 +62,7 @@ export type ProjectDetail = Project & {
 };
 export type OverviewTask = Task & { projectName: string; projectColor: string };
 export type Overview = { today: string; projects: ProjectSummary[]; overdue: OverviewTask[]; upcoming: OverviewTask[] };
-export type TaskInput = Partial<Omit<Task, 'id' | 'projectId' | 'sort' | 'baselineStart' | 'baselineEnd'>> & { name: string };
+export type TaskInput = Partial<Omit<Task, 'id' | 'projectId' | 'sort' | 'baselineStart' | 'baselineEnd' | 'getfly'>> & { name: string };
 
 /** Chênh lệch so với kế hoạch gốc (ngày): dương = gia hạn / lùi. */
 export function planShift(t: Pick<Task, 'startDate' | 'endDate' | 'baselineStart' | 'baselineEnd'>) {

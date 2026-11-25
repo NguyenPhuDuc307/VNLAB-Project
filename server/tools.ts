@@ -10,7 +10,7 @@ import { effectivePermissions, rolesOf } from './rbac.ts';
 import { parseSheetId, syncProject } from './sheets.ts';
 import { clearCalendar, parseCalendarId, syncCalendar } from './gcal.ts';
 import { sql } from './db.ts';
-import { findGetflyTask, getflyJob, getflyUsers, startGetflyJob, waitGetflyJob, withGetflyProjectsLocked } from './getfly.ts';
+import { findGetflyTask, getflyJob, getflyUsers, linkGetflyTask, startGetflyJob, waitGetflyJob, withGetflyProjectsLocked } from './getfly.ts';
 import { ALL_COLUMNS, normalizeColumns } from './plan-layout.ts';
 import type { PermissionKey } from './permissions.ts';
 
@@ -122,6 +122,7 @@ const taskOut = (t: ReturnType<typeof D.taskView>, p: { satWeight: number; sunWe
   parentTask: t.parentTaskId ? scopes.get(t.parentTaskId) ?? null : null, parentTaskId: t.parentTaskId,
   assignee: t.assignee, support: t.support, progress: t.progress, startDate: t.startDate, endDate: t.endDate,
   days: D.effortOf(t, p), daysManual: t.days != null, note: t.note, getflyNote: t.getflyNote,
+  ...(t.getfly !== undefined ? { getfly: t.getfly } : {}),
   status: t.progress >= 100 ? 'done' : t.endDate && t.endDate < t0 ? 'overdue' : 'open',
   baseline: t.baselineStart && t.baselineEnd ? { startDate: t.baselineStart, endDate: t.baselineEnd, shiftDays: D.planShift(t)?.end ?? 0 } : null,
 });
@@ -901,6 +902,18 @@ TOOLS.sync_getfly = {
   },
 };
 
+TOOLS.link_getfly_task = {
+  title: 'Gắn việc với Getfly',
+  description: 'Gắn tay việc với một việc có sẵn trên Getfly (link / id / mã); "" = bỏ gắn. Không xoá gì trên Getfly. Dùng khi sync_getfly báo "trùng tên … — gắn tay". Việc Getfly đã gắn với việc khác (ở bất kỳ dự án nào) hoặc là việc cha của dự án / nhóm thì bị từ chối. Việc gắn tay được coi là việc có sẵn: không bao giờ bị xoá trên Getfly; lần đồng bộ sau ghi tên / ngày / cha / người nhận theo Project lên việc đó.',
+  input: z.object({ ...projectRef, taskId: z.uuid().describe('Id việc (lấy từ get_project)'), ref: z.string().trim().max(500).describe('Link #/tasks/?task_id=…, id hoặc mã việc Getfly (VD CVI/2026-11/009123); "" = bỏ gắn') }),
+  write: true, destructive: false, perm: 'project.task.write',
+  run: async (user, a: { projectId?: string; project?: string; taskId: string; ref: string }) => {
+    const p = await editableProject(user, a);
+    const r = await linkGetflyTask(p.id, a.taskId, a.ref);
+    return { project: p.name, taskId: a.taskId, ...r, note: r.getfly ? 'Đã gắn. Gọi sync_getfly để ghi giá trị của Project lên việc này.' : 'Đã bỏ gắn, việc trên Getfly giữ nguyên.' };
+  },
+};
+
 TOOLS.sync_google_sheet = {
   title: 'Đồng bộ Google Sheet',
   description: 'Ghi kế hoạch của dự án (bảng việc + lưới Gantt) sang Google Sheet đã liên kết trong Cài đặt dự án. Trả về link sheet.',
@@ -946,6 +959,7 @@ function describeTool(name: string, a: Record<string, unknown> | null): string {
     case 'set_getfly': return 'Cấu hình Getfly';
     case 'sync_getfly': return 'Đồng bộ Getfly';
     case 'unsync_getfly': return 'Gỡ khỏi Getfly';
+    case 'link_getfly_task': return typeof a?.ref === 'string' && !a.ref.trim() ? 'Bỏ gắn việc Getfly' : 'Gắn việc Getfly';
     case 'delete_project': return 'Xoá dự án';
     case 'set_member': return `Mời / đổi quyền ${typeof a?.email === 'string' ? a.email : ''}`.trim();
     case 'remove_member': return `Gỡ thành viên ${typeof a?.email === 'string' ? a.email : ''}`.trim();

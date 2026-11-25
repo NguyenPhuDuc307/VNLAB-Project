@@ -185,6 +185,23 @@ async function resolveLinkCodes(projectId: string, links: Link[]) {
   for (const l of resolved) await sql`update getfly_links set getfly_code = ${l.getflyCode} where project_id = ${projectId} and local_id = ${l.localId} and getfly_id = ${l.getflyId}`;
 }
 
+type TaskPos = Pick<D.TaskRow, 'id' | 'groupId' | 'parentTaskId'> & { phaseId?: string | null };
+type GroupParents = D.ProjectRow['getflyGroups'];
+/** Khoá việc cha của nhóm: "phaseId:groupId" (gắn riêng cho phase) ưu tiên, không có thì "groupId" (chung mọi phase). */
+function groupKeyOf(t: { groupId: string | null; phaseId?: string | null }, mapped: GroupParents) {
+  if (!t.groupId) return null;
+  const own = t.phaseId ? `${t.phaseId}:${t.groupId}` : null;
+  return own && mapped[own]?.id ? own : t.groupId;
+}
+/** parent_local của liên kết như lúc đồng bộ: "t:<việc cha>" khi việc cha cùng nhóm và là việc gốc, không thì
+ *  "g:<khoá nhóm>". null = việc chưa phân nhóm. Dùng chung cho đồng bộ và gắn tay. */
+function parentLocalOf(t: TaskPos, byTask: Map<string, TaskPos>, mapped: GroupParents) {
+  const key = groupKeyOf(t, mapped);
+  if (!key) return null;
+  const up = t.parentTaskId ? byTask.get(t.parentTaskId) : undefined;
+  return up && up.groupId === t.groupId && !up.parentTaskId ? `t:${up.id}` : `g:${key}`;
+}
+
 type Item = { localId: string; parentLocal: string | null; info: Json; label: string; people: string[] };
 export type GetflyResult = { created: number; adopted: number; updated: number; deleted: number; unlinked: number; unchanged: number; errors: string[]; warnings: string[]; syncedAt: string };
 
@@ -334,11 +351,7 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
     // Việc cha theo phase: khoá "phaseId:groupId" (gắn riêng cho phase) ưu tiên, không có thì dùng khoá "groupId" (chung mọi phase).
     const phaseName = new Map(bundle.phases.map((x) => [x.id, x.name]));
     const groupName = new Map(bundle.groups.map((g) => [g.id, g.name]));
-    const keyOf = (t: { groupId: string | null; phaseId?: string | null }) => {
-      if (!t.groupId) return null;
-      const own = t.phaseId ? `${t.phaseId}:${t.groupId}` : null;
-      return own && mapped[own]?.id ? own : t.groupId;
-    };
+    const keyOf = (t: { groupId: string | null; phaseId?: string | null }) => groupKeyOf(t, mapped);
     const labelOf = (key: string) => {
       const [a, b] = key.includes(':') ? key.split(':') : [null, key];
       return `nhóm ${groupName.get(b!) ?? b}${a ? ` (${phaseName.get(a) ?? 'phase'})` : ''}`;
@@ -360,7 +373,6 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
         } catch (err) { unavailable.add(key); warnings.push(`Bỏ qua ${labelOf(key)}: ${(err as Error).message}`); }
       }
     }
-    const gKey = (id: string) => `g:${id}`;
     const byTask = new Map(bundle.tasks.map((t) => [t.id, t]));
     for (const t of selected) {
       if (!t.groupId) { warnings.push(`Bỏ qua việc ${t.name}: chưa phân nhóm.`); continue; }
@@ -372,10 +384,10 @@ export async function syncGetfly(projectId: string, onProgress: Progress = () =>
       if (!t.startDate && !t.endDate) { warnings.push(`Bỏ qua ${t.name}: chưa có ngày bắt đầu, kết thúc.`); continue; }
       const projectInfo = { project_id: parent.projectId || undefined };
       // Việc có việc cha cùng nhóm: nằm dưới việc cha trên Getfly (task_parent tra từ liên kết của việc cha ở bước 2).
-      const up = t.parentTaskId ? byTask.get(t.parentTaskId) : undefined;
-      const underTask = !!up && up.groupId === t.groupId && !up.parentTaskId;
+      const parentLocal = parentLocalOf(t, byTask, mapped)!;
+      const underTask = parentLocal.startsWith('t:');
       items.push({
-        localId: t.id, parentLocal: underTask ? `t:${up!.id}` : gKey(key), label: t.name,
+        localId: t.id, parentLocal, label: t.name,
         people: peopleOf(t.assignee, t.support),
         info: {
           ...common,
@@ -572,6 +584,56 @@ export async function getflyLinkCount(projectId: string) {
   return n;
 }
 
+// ---------------------------------------------------------------- gắn tay
+// Khi đồng bộ không tự nhận được (trùng tên ở nhiều nhóm — API v3 không trả việc cha), người dùng dán link / id / mã
+// việc Getfly cho từng việc. Liên kết gắn tay luôn tính là "việc có sẵn" (adopted): không bao giờ bị xoá trên Getfly.
+// hash rỗng: lần đồng bộ sau PUT giá trị của Project (tên, ngày, cha, người nhận, mô tả) lên việc đó.
+// Bỏ gắn / đổi sang việc khác chỉ quên liên kết cũ, không gọi DELETE.
+export type GetflyTaskLink = { code: string; id: number | null; adopted: boolean };
+
+export async function linkGetflyTask(projectId: string, taskId: string, ref: string): Promise<{ getfly: GetflyTaskLink | null; unlinked?: GetflyTaskLink }> {
+  return withGetflyProjectsLocked([projectId], async () => {
+    const [task] = await sql<Pick<D.TaskRow, 'id' | 'name' | 'groupId' | 'phaseId' | 'parentTaskId'>[]>`
+      select id, name, group_id, phase_id, parent_task_id from tasks where id = ${taskId} and project_id = ${projectId}`;
+    if (!task) throw new GetflyError(404, { message: 'Không thấy việc trong dự án' });
+    const [old] = await sql<{ getflyCode: string; getflyId: string | null; adopted: boolean }[]>`
+      select getfly_code, getfly_id, adopted from getfly_links where project_id = ${projectId} and local_id = ${taskId}`;
+    const oldLink = old ? { code: old.getflyCode, id: old.getflyId == null ? null : Number(old.getflyId), adopted: old.adopted === true } : undefined;
+    if (!ref.trim()) {
+      // Chỉ quên liên kết; việc trên Getfly giữ nguyên.
+      await sql`delete from getfly_links where project_id = ${projectId} and local_id = ${taskId}`;
+      return { getfly: null, unlinked: oldLink };
+    }
+    if (!task.groupId) throw new GetflyError(400, { message: 'Việc chưa phân nhóm — chọn nhóm trước khi gắn Getfly' });
+    const g = await findGetflyTask(ref);
+    const { ids, codes } = await protectedParents();
+    if (ids.has(g.id) || codes.has(g.code)) throw new GetflyError(400, { message: `${g.code} "${g.name}" là việc cha của dự án / nhóm trên Getfly — không gắn vào một việc được` });
+    const [taken] = await sql<{ projectId: string; localId: string; projectName: string | null; taskName: string | null }[]>`
+      select l.project_id, l.local_id, p.name as project_name, t.name as task_name
+      from getfly_links l
+      left join projects p on p.id = l.project_id
+      left join tasks t on t.project_id = l.project_id and t.id::text = l.local_id
+      where (l.getfly_id = ${g.id} or l.getfly_code = ${g.code}) and not (l.project_id = ${projectId} and l.local_id = ${taskId})
+      limit 1`;
+    if (taken) {
+      throw new GetflyError(409, { message: `${g.code} "${g.name}" đã gắn với việc "${taken.taskName ?? taken.localId}" (dự án ${taken.projectName ?? taken.projectId}) — bỏ gắn ở đó trước` });
+    }
+    // parent_local tính đúng như lúc đồng bộ (việc cha cùng nhóm / việc cha của nhóm theo phase).
+    const [p] = await sql<Pick<D.ProjectRow, 'getflyGroups'>[]>`select getfly_groups from projects where id = ${projectId}`;
+    const up = task.parentTaskId
+      ? (await sql<Pick<D.TaskRow, 'id' | 'groupId' | 'parentTaskId'>[]>`select id, group_id, parent_task_id from tasks where id = ${task.parentTaskId} and project_id = ${projectId}`)[0]
+      : undefined;
+    const parentLocal = parentLocalOf(task, new Map(up ? [[up.id, up]] : []), (p?.getflyGroups ?? {}) as GroupParents);
+    await sql`
+      insert into getfly_links (project_id, local_id, parent_local, getfly_code, getfly_id, hash, adopted, completed_at, synced_at)
+      values (${projectId}, ${taskId}, ${parentLocal}, ${g.code}, ${g.id}, '', true, null, now())
+      on conflict (project_id, local_id) do update set parent_local = excluded.parent_local, getfly_code = excluded.getfly_code,
+        getfly_id = excluded.getfly_id, hash = '', adopted = true, completed_at = null, synced_at = now()`;
+    const replaced = oldLink && oldLink.id !== g.id && oldLink.code !== g.code ? oldLink : undefined;
+    return { getfly: { code: g.code, id: g.id, adopted: true }, ...(replaced ? { unlinked: replaced } : {}) };
+  });
+}
+
 /** Gỡ khỏi Getfly trong phạm vi: xoá việc lá app đã tạo (việc con trước); việc nhận có sẵn / việc cha /
  *  việc được bảo vệ chỉ quên liên kết, giữ nguyên trên Getfly. */
 export async function unsyncGetfly(projectId: string, onProgress: Progress = () => {}, scope: GetflyScope = {}): Promise<GetflyUnsyncResult> {
@@ -636,29 +698,99 @@ const editableBy = (user: Pick<D.UserRow, 'id' | 'email'>) => sql`(
       and (m.user_id = ${user.id} or lower(m.email) = ${user.email.toLowerCase()})
   ))`;
 
-/** Mọi việc đã xong 100% bên Project, có bản trên Getfly mà chưa đánh dấu hoàn thành — ở mọi dự án tôi được sửa. */
+/** task_status của việc Getfly đã hoàn thành (API v3; đang tiến hành = '11'). */
+export const GETFLY_DONE_STATUS = '6';
+
+/** Trạng thái các việc Getfly theo id: lật danh sách (mới -> cũ) tới khi thấy đủ hoặc đã qua id nhỏ nhất, tối đa 30 trang.
+ *  fresh = false thì dùng cache ~60 giây của scanTasks; id không thấy thì không có trong Map. */
+async function getflyTaskStatuses(ids: number[], fresh: boolean): Promise<Map<number, string>> {
+  const out = new Map<number, string>();
+  const want = new Set(ids);
+  if (!fresh) {
+    for (const id of ids) {
+      const c = taskCache.get(String(id));
+      if (c && c.until > Date.now()) { out.set(id, String(c.task.task_status)); want.delete(id); }
+    }
+  }
+  if (!want.size) return out;
+  const min = Math.min(...want);
+  await scanTasks((t) => {
+    const id = Number(t.task_id);
+    if (want.has(id)) { out.set(id, String(t.task_status)); want.delete(id); }
+    return want.size === 0;
+  }, 30, (rows) => rows.length > 0 && rows.every((t) => Number(t.task_id) < min));
+  return out;
+}
+
+/**
+ * Việc xong 100% bên Project, có bản trên Getfly mà trên Getfly CHƯA "Hoàn thành" — ở mọi dự án tôi được sửa.
+ * Lấy trạng thái thật từ Getfly (một lượt quét, cache ~60 giây): đã hoàn thành thì ghi nhận completed_at và bỏ khỏi danh sách;
+ * completed_at có mà Getfly chưa hoàn thành (bookmarklet báo nhầm) thì xoá completed_at và đưa lại vào danh sách.
+ * Không tra được Getfly (chưa cấu hình / lỗi / không thấy việc) thì dựa vào completed_at.
+ */
 export async function pendingDone(user: Pick<D.UserRow, 'id' | 'email'>): Promise<PendingDone[]> {
-  const rows = await sql<{ projectId: string; projectName: string; taskId: string; name: string; getflyId: string; getflyCode: string }[]>`
-    select p.id as project_id, p.name as project_name, t.id as task_id, t.name, l.getfly_id, l.getfly_code
+  const rows = await sql<{ projectId: string; projectName: string; taskId: string; name: string; getflyId: string; getflyCode: string; completedAt: Date | null }[]>`
+    select p.id as project_id, p.name as project_name, t.id as task_id, t.name, l.getfly_id, l.getfly_code, l.completed_at
     from getfly_links l
     join tasks t on t.project_id = l.project_id and t.id::text = l.local_id
     join projects p on p.id = l.project_id
-    where l.getfly_id is not null and l.completed_at is null and t.progress >= 100 and ${editableBy(user)}
+    where l.getfly_id is not null and t.progress >= 100 and ${editableBy(user)}
     order by p.name, t.sort, t.name`;
-  return rows.map((r) => ({ projectId: r.projectId, projectName: r.projectName, taskId: r.taskId, name: r.name, getflyId: Number(r.getflyId), getflyCode: r.getflyCode }));
+  let statuses: Map<number, string> | null = null;
+  if (rows.length && getflyStatus().configured) {
+    try { statuses = await getflyTaskStatuses(rows.map((r) => Number(r.getflyId)), false); } catch (err) {
+      console.warn('[getfly] không tra được trạng thái việc:', (err as Error).message);
+    }
+  }
+  const out: PendingDone[] = [];
+  for (const r of rows) {
+    const status = statuses?.get(Number(r.getflyId));
+    if (status === GETFLY_DONE_STATUS) {
+      if (!r.completedAt) await sql`update getfly_links set completed_at = now() where project_id = ${r.projectId} and local_id = ${r.taskId}`;
+      continue;
+    }
+    if (status === undefined && r.completedAt) continue;
+    if (r.completedAt) await sql`update getfly_links set completed_at = null where project_id = ${r.projectId} and local_id = ${r.taskId}`;
+    out.push({ projectId: r.projectId, projectName: r.projectName, taskId: r.taskId, name: r.name, getflyId: Number(r.getflyId), getflyCode: r.getflyCode });
+  }
+  return out;
 }
 
-/** Ghi nhận các việc bookmarklet đã đánh dấu xong (hoặc vốn đã "Hoàn thành") trên Getfly. Id không thuộc dự án tôi được sửa
- *  hoặc việc chưa 100% thì bị từ chối (không ghi). Đánh dấu lại việc đã ghi nhận thì giữ thời điểm cũ. */
+/** Ghi nhận việc bookmarklet báo đã xong trên Getfly — chỉ tin Getfly: tra lại trạng thái thật (không dùng cache) và chỉ ghi
+ *  completed_at khi task_status = '6'. Id không thuộc dự án tôi được sửa, việc chưa 100%, hay Getfly chưa hoàn thành thì
+ *  nằm trong `rejected` kèm lý do. Đánh dấu lại việc đã ghi nhận thì giữ thời điểm cũ. */
 export async function markDone(user: Pick<D.UserRow, 'id' | 'email'>, getflyIds: number[]) {
   const ids = [...new Set(getflyIds)];
-  if (!ids.length) return { marked: [] as number[], rejected: [] as number[] };
-  const rows = await sql<{ getflyId: string }[]>`
-    update getfly_links l set completed_at = coalesce(l.completed_at, now())
-    from tasks t, projects p
-    where t.project_id = l.project_id and t.id::text = l.local_id and p.id = l.project_id
-      and l.getfly_id in ${sql(ids)} and t.progress >= 100 and ${editableBy(user)}
-    returning l.getfly_id`;
-  const marked = new Set(rows.map((r) => Number(r.getflyId)));
-  return { marked: [...marked], rejected: ids.filter((id) => !marked.has(id)) };
+  const reasons: Record<number, string> = {};
+  if (!ids.length) return { marked: [] as number[], rejected: [] as number[], reasons };
+  const eligible = new Set((await sql<{ getflyId: string }[]>`
+    select l.getfly_id from getfly_links l
+    join tasks t on t.project_id = l.project_id and t.id::text = l.local_id
+    join projects p on p.id = l.project_id
+    where l.getfly_id in ${sql(ids)} and t.progress >= 100 and ${editableBy(user)}`).map((r) => Number(r.getflyId)));
+  for (const id of ids) if (!eligible.has(id)) reasons[id] = 'Không thuộc dự án bạn được sửa hoặc việc chưa xong 100%';
+  let done: number[] = [];
+  if (eligible.size) {
+    if (!getflyStatus().configured) for (const id of eligible) reasons[id] = 'Máy chủ chưa kết nối Getfly';
+    else {
+      try {
+        const statuses = await getflyTaskStatuses([...eligible], true);
+        for (const id of eligible) {
+          const st = statuses.get(id);
+          if (st === GETFLY_DONE_STATUS) done.push(id);
+          else reasons[id] = st === undefined ? 'Không thấy việc trên Getfly' : 'Getfly chưa hoàn thành';
+        }
+      } catch (err) { for (const id of eligible) reasons[id] = `Không tra được Getfly: ${(err as Error).message}`; }
+    }
+  }
+  if (done.length) {
+    const rows = await sql<{ getflyId: string }[]>`
+      update getfly_links l set completed_at = coalesce(l.completed_at, now())
+      from tasks t, projects p
+      where t.project_id = l.project_id and t.id::text = l.local_id and p.id = l.project_id
+        and l.getfly_id in ${sql(done)} and t.progress >= 100 and ${editableBy(user)}
+      returning l.getfly_id`;
+    done = [...new Set(rows.map((r) => Number(r.getflyId)))];
+  }
+  return { marked: done, rejected: ids.filter((id) => !done.includes(id)), reasons };
 }

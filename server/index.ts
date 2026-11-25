@@ -20,8 +20,9 @@ import { ALL_COLUMNS, buildPlanLayout, isColKey, normalizeColumns } from './plan
 import { parseSheetId, sheetStatus, startAutoSync, syncProject } from './sheets.ts';
 import { clearCalendar, parseCalendarId, startCalendarAutoSync, syncCalendar } from './gcal.ts';
 import { GoogleError } from './google.ts';
-import { findGetflyTask, getflyJob, getflyLinkCount, getflyStatus, getflyUsers, markDone, pendingDone, startGetflyJob } from './getfly.ts';
+import { findGetflyTask, getflyJob, getflyLinkCount, getflyStatus, getflyUsers, linkGetflyTask, markDone, pendingDone, startGetflyJob } from './getfly.ts';
 import { renderXlsx } from './xlsx.ts';
+import { buildKpiDraft } from './kpi.ts';
 import type { PermissionKey, ProjectRole } from './permissions.ts';
 
 const PORT = Number(process.env.PORT ?? 3400);
@@ -400,6 +401,27 @@ auth.get('/getfly/status', (c) => c.json(getflyStatus()));
 auth.get('/getfly/users', async (c) => c.json(await getflyUsers()));
 /** Việc xong 100% có bản trên Getfly mà chưa đánh dấu "Hoàn thành" — trang /getfly-hoan-thanh gửi cho bookmarklet trên tab Getfly. */
 auth.get('/getfly/pending-done', requirePermission('project.project.write'), async (c) => c.json(await pendingDone(c.get('user'))));
+/** Bản nháp KPI tháng của chính người đang đăng nhập (trang /getfly-kpi gửi cho bookmarklet "✓ KPI" trên tab Getfly). */
+auth.get('/getfly/kpi-draft', requirePermission('project.project.write'), async (c) => {
+  const month = c.req.query('month') ?? '';
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) throw new HTTPException(400, { message: 'Tháng phải dạng YYYY-MM' });
+  const p = await D.projectOf(c.get('user'), c.req.query('projectId') ?? '');
+  const u = c.get('user');
+  const bundle = await D.projectBundle(p.id);
+  // Người dùng Getfly của tôi: theo email, rồi theo họ tên, rồi người tạo việc của dự án (nếu tôi là chủ dự án).
+  let gfUsers: { id: string; name: string; email: string }[] = [];
+  if (getflyStatus().configured) gfUsers = await getflyUsers().catch(() => []);
+  const low = (s: string) => s.trim().toLowerCase();
+  const me = gfUsers.find((x) => x.email && low(x.email) === low(u.email)) ?? gfUsers.find((x) => low(x.name) === low(u.name ?? ''))
+    ?? (p.myRole === 'owner' && p.getflyCreatorId ? gfUsers.find((x) => x.id === p.getflyCreatorId) ?? { id: p.getflyCreatorId, name: '', email: '' } : undefined);
+  const employeeName = me?.name || u.name || u.email;
+  let shortNames = Object.entries((p.getflyUsers ?? {}) as Record<string, string>).filter(([, v]) => me && String(v) === me.id).map(([k]) => k);
+  if (!shortNames.length) shortNames = [employeeName, employeeName.split(' ').pop() ?? ''];
+  return c.json({
+    projectId: p.id, projectName: p.name, shortNames,
+    ...buildKpiDraft({ month, employeeName, shortNames, groups: bundle.groups, tasks: bundle.tasks, satWeight: Number(p.satWeight), sunWeight: Number(p.sunWeight) }),
+  });
+});
 /** Bookmarklet báo đã đánh dấu xong (hoặc vốn đã "Hoàn thành") trên Getfly -> ghi nhận để lần sau không làm lại. */
 auth.post('/getfly/mark-done', requirePermission('project.project.write'), async (c) => {
   const b = await body(c, z.object({ getflyIds: z.array(z.number().int().positive()).max(1000) }));
@@ -480,6 +502,13 @@ auth.post('/projects/:id/getfly/unsync', requirePermission('project.project.writ
 auth.get('/projects/:id/getfly/job', async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
   return c.json(getflyJob(p.id));
+});
+/** Gắn tay việc với một việc có sẵn trên Getfly (link / id / mã); ref "" = bỏ gắn. Không xoá gì trên Getfly. */
+auth.put('/projects/:id/tasks/:tid/getfly-link', requirePermission('project.task.write'), async (c) => {
+  const p = await D.projectOf(c.get('user'), param(c));
+  D.editable(p);
+  const b = await body(c, z.object({ ref: z.string().trim().max(500) }));
+  return c.json(await linkGetflyTask(p.id, param(c, 'tid'), b.ref));
 });
 auth.get('/projects/:id/getfly', async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
