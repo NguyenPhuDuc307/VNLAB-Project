@@ -285,8 +285,40 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
       }, 20000);
       await sleep(500);
       var key = function (x) { return norm(x).normalize('NFC').toLowerCase(); };
-      if (key(document.body.innerText).indexOf(key(draft.name)) >= 0) throw new Fail(1, 'Đã có KPI "' + draft.name + '"');
+      /* Đã có phiếu cùng tên ⇒ chế độ SỬA: hỏi rồi mở #/kpi/edit/list/<id>, cập nhật mô tả + giá trị/trọng số,
+         giữ nguyên tên, ngày, nhân viên; không thêm/xoá chỉ tiêu. */
+      var editing = false;
+      if (key(document.body.innerText).indexOf(key(draft.name)) >= 0) {
+        var row0 = arr(document.querySelectorAll('table tbody tr')).filter(function (tr) { return key(tr.innerText).indexOf(key(draft.name)) >= 0; })[0];
+        var link = row0 && arr(row0.querySelectorAll('a[href]')).map(function (a) { return a.getAttribute('href'); }).filter(function (h) { return /kpi\/edit\/list\/\d+/.test(h); })[0];
+        if (!link) throw new Fail(1, 'Đã có KPI "' + draft.name + '" nhưng không thấy nút sửa');
+        var go = await new Promise(function (resolve) {
+          show('Đã có <b>' + esc(draft.name) + '</b>. Cập nhật mô tả và trọng số theo Project?', [['Huỷ', function () { resolve(false); }], ['Cập nhật', function () { resolve(true); }]]);
+        });
+        if (!go) { send({ type: 'vnlab-getfly-kpi-result', ok: false, step: 1, error: 'Đã huỷ' }); hide(); return; }
+        editing = true;
+        location.hash = link.slice(link.indexOf('#'));
+      }
 
+      if (editing) {
+        cur = 3; step(3, 'Cập nhật chỉ tiêu');
+        await need(3, 'trang sửa KPI', function () { return location.hash.indexOf('#/kpi/edit/') === 0 && !!(btn('+ Thêm chỉ tiêu') || btn('Thêm chỉ tiêu')); }, 15000);
+        await sleep(800);
+        for (var ei = 0; ei < draft.criteria.length; ei++) {
+          var ec = draft.criteria[ei];
+          if (!ec.description) continue;
+          var erow = await need(3, 'dòng chỉ tiêu "' + ec.name + '"', function () {
+            var c3 = arr(document.querySelectorAll('tr, li, .row, div')).filter(function (el) { return vis(el) && el.textContent.indexOf(ec.name) >= 0 && el.querySelector('.fa-pencil'); });
+            return c3.filter(function (a) { return !c3.some(function (b) { return b !== a && a.contains(b); }); })[0];
+          });
+          erow.querySelector('.fa-pencil').click();
+          var emodal = await need(3, 'hộp "Thiết lập chỉ tiêu KPI"', function () { return modalWith('Thiết lập chỉ tiêu KPI'); });
+          var eta = await need(3, 'ô mô tả chỉ tiêu', function () { return arr(emodal.querySelectorAll('textarea')).filter(vis)[0]; });
+          await typeInto(eta, ec.description);
+          (await need(3, 'nút "Cập nhật"', function () { return btn('Cập nhật', emodal); })).click();
+          await need(3, 'hộp chỉ tiêu đóng lại', function () { return !vis(emodal) && !modalWith('Thiết lập chỉ tiêu KPI'); }, 6000);
+        }
+      } else {
       cur = 2; step(2, 'Tên KPI');
       location.hash = '#/kpi/create/list';
       var nameLabel = await need(2, 'ô "Tên KPI (*)"', function () { return startsText('Tên KPI'); }, 15000);
@@ -313,6 +345,7 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
         }
         (await need(3, 'nút "Thêm mới"', function () { return btn('Thêm mới', modal); })).click();
         await need(3, 'hộp chỉ tiêu đóng lại', function () { return !vis(modal) && !modalWith('Thiết lập chỉ tiêu KPI'); }, 6000);
+      }
       }
       var rowOf = function (name) {
         var c2 = arr(document.querySelectorAll('tr, li, .row, div')).filter(function (el) {
@@ -353,6 +386,8 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
 
       cur = 5; step(5, 'Nhân viên áp dụng');
       var empLabel = await need(5, 'nhãn "Danh sách nhân viên áp dụng"', function () { return startsText('Danh sách nhân viên áp dụng'); });
+      var hasEmp = function () { for (var el = empLabel; el && el !== document.body; el = el.parentElement) if (el.querySelector('table, tbody, ul') && el.textContent.indexOf(draft.employeeName) >= 0) return true; return false; };
+      if (!(editing && hasEmp())) {
       var plus = await need(5, 'nút "+" thêm nhân viên', function () {
         for (var el = empLabel; el && el !== document.body; el = el.parentElement) {
           var b = arr(el.querySelectorAll('button, a, i, span')).filter(function (x) { return vis(x) && (norm(x.textContent) === '+' || /\bfa-plus\b|\bplus\b/.test(x.className && x.className.baseVal !== undefined ? x.className.baseVal : x.className)); })[0];
@@ -384,6 +419,7 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
         for (var el = empLabel; el && el !== document.body; el = el.parentElement) if (el.querySelector('table, tbody, ul') && el.textContent.indexOf(draft.employeeName) >= 0) return true;
         return false;
       }, 5000);
+      }
       (await need(5, 'nút "Tiếp theo"', function () { return btn('Tiếp theo'); })).click();
 
       cur = 6; step(6, 'Hoàn tất');
@@ -393,8 +429,8 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
       await sleep(2000);
       location.hash = '#/kpi/list';
       await need(6, 'KPI mới trong danh sách', function () { return document.body.innerText.indexOf(draft.name) >= 0; }, 15000);
-      send({ type: 'vnlab-getfly-kpi-result', ok: true, name: draft.name });
-      show('Đã tạo <b>' + esc(draft.name) + '</b>.');
+      send({ type: 'vnlab-getfly-kpi-result', ok: true, name: draft.name, updated: editing });
+      show((editing ? 'Đã cập nhật <b>' : 'Đã tạo <b>') + esc(draft.name) + '</b>.');
       setTimeout(hide, 4000);
     } catch (e) {
       var st = e instanceof Fail ? e.step : cur;
