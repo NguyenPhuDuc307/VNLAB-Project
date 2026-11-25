@@ -3,12 +3,16 @@ import assert from 'node:assert/strict';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { once } from 'node:events';
 import { cookieOf, memoryDb, startServer } from './test-helpers.ts';
-import { GETFLY_DONE_PATH, getflyBookmarklet } from '../src/lib/getfly-bookmarklet.ts';
+import { GETFLY_DONE_PATH, getflyBookmarklet, getflyBookmarkletScript } from '../src/lib/getfly-bookmarklet.ts';
 
 test('Bookmarklet Hoàn thành Getfly: URL javascript:, chứa trang popup và là JS hợp lệ', () => {
+  // Dấu trang chỉ là bộ nạp /bm/getfly.js (luôn bản mới nhất); mã thật do server phục vụ.
   const url = getflyBookmarklet('https://project.vnlab.id.vn', 'https://acs.getflycrm.com');
   assert.ok(url.startsWith('javascript:'));
-  const src = decodeURIComponent(url.slice('javascript:'.length));
+  const loader = decodeURIComponent(url.slice('javascript:'.length));
+  assert.ok(loader.includes('"https://project.vnlab.id.vn/bm/getfly.js"'));
+  assert.doesNotThrow(() => new Function(loader));
+  const src = getflyBookmarkletScript('https://project.vnlab.id.vn', 'https://acs.getflycrm.com');
   assert.ok(src.includes(JSON.stringify(GETFLY_DONE_PATH)));
   assert.ok(src.includes('"https://project.vnlab.id.vn"'));
   assert.ok(src.includes('"https://acs.getflycrm.com"'));

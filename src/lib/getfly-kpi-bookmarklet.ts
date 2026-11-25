@@ -358,10 +358,18 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
 const minify = (src: string) => src.split('\n').map((l) => l.trim()).filter(Boolean).join('\n');
 
 /** URL `javascript:` của nút "✓ KPI". */
-export function getflyKpiBookmarklet(projectOrigin: string, getflyOrigin: string) {
-  const src = KPI_BOOKMARKLET_SOURCE
+/** Mã chạy trên Getfly (đã điền origin), phục vụ ở /bm/kpi.js. */
+export function getflyKpiBookmarkletScript(projectOrigin: string, getflyOrigin: string) {
+  return minify(KPI_BOOKMARKLET_SOURCE
     .replace('__PROJECT__', JSON.stringify(projectOrigin))
     .replace('__GETFLY__', JSON.stringify(getflyOrigin))
-    .replace('__PATH__', JSON.stringify(GETFLY_KPI_PATH));
-  return `javascript:${encodeURIComponent(minify(src))}`;
+    .replace('__PATH__', JSON.stringify(GETFLY_KPI_PATH)));
+}
+
+/** URL `javascript:` kéo lên thanh dấu trang: chỉ là bộ nạp, mỗi lần bấm tải mã mới nhất từ Project
+ *  (/bm/kpi.js) — sửa bookmarklet không bắt người dùng kéo lại (dấu trang cũ chứa nguyên mã cũ, lỗi 25/11/2026).
+ *  Getfly không đặt CSP nên chèn <script src> từ Project được. getflyOrigin giữ trong chữ ký cho tương thích. */
+export function getflyKpiBookmarklet(projectOrigin: string, _getflyOrigin?: string) {
+  const loader = `(function(){var s=document.createElement('script');s.src=${JSON.stringify(projectOrigin + '/bm/kpi.js')}+'?t='+Date.now();s.onerror=function(){var d=document.createElement('div');d.textContent='Không tải được mã từ VNLab Project';d.style.cssText='position:fixed;right:16px;bottom:16px;z-index:2147483647;background:#fff;color:#c00;padding:10px 14px;border-radius:12px;box-shadow:0 4px 20px rgba(0,0,0,.2);font:13px system-ui';document.body.appendChild(d);setTimeout(function(){d.remove()},5000)};document.body.appendChild(s)})()`;
+  return `javascript:${encodeURIComponent(loader)}`;
 }

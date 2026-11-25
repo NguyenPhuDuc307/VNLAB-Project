@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildKpiDraft, type KpiTask } from './kpi.ts';
-import { GETFLY_KPI_PATH, getflyKpiBookmarklet } from '../src/lib/getfly-kpi-bookmarklet.ts';
+import { GETFLY_KPI_PATH, getflyKpiBookmarklet, getflyKpiBookmarkletScript } from '../src/lib/getfly-kpi-bookmarklet.ts';
 
 const groups = [{ id: 'g1', name: 'HPG - Giao hàng' }, { id: 'g2', name: 'HPG - Kho' }];
 let n = 0;
@@ -53,7 +53,10 @@ test('KPI: gộp theo nhóm, cắt theo tháng, một ngày ghi gọn, giữ ch�
 test('Bookmarklet KPI: URL javascript:, chứa trang popup và là JS hợp lệ', () => {
   const url = getflyKpiBookmarklet('https://project.vnlab.id.vn', 'https://acs.getflycrm.com');
   assert.ok(url.startsWith('javascript:'));
-  const src = decodeURIComponent(url.slice('javascript:'.length));
+  const loader = decodeURIComponent(url.slice('javascript:'.length));
+  assert.ok(loader.includes('"https://project.vnlab.id.vn/bm/kpi.js"'));
+  assert.doesNotThrow(() => new Function(loader));
+  const src = getflyKpiBookmarkletScript('https://project.vnlab.id.vn', 'https://acs.getflycrm.com');
   assert.ok(src.includes(JSON.stringify(GETFLY_KPI_PATH)));
   assert.ok(!/__(PROJECT|GETFLY|PATH)__/.test(src));
   assert.ok(!/\balert\(|\bconfirm\(/.test(src));

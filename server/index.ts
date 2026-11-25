@@ -1,6 +1,8 @@
 // VNLab Project — API + MCP + SPA trong một tiến trình (Hono trên Node).
 import { serve } from '@hono/node-server';
 import { serveStatic } from '@hono/node-server/serve-static';
+import { getflyBookmarkletScript } from '../src/lib/getfly-bookmarklet.ts';
+import { getflyKpiBookmarkletScript } from '../src/lib/getfly-kpi-bookmarklet.ts';
 import { Hono, type Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { HTTPException } from 'hono/http-exception';
@@ -20,7 +22,7 @@ import { ALL_COLUMNS, buildPlanLayout, isColKey, normalizeColumns } from './plan
 import { parseSheetId, sheetStatus, startAutoSync, syncProject } from './sheets.ts';
 import { clearCalendar, parseCalendarId, startCalendarAutoSync, syncCalendar } from './gcal.ts';
 import { GoogleError } from './google.ts';
-import { findGetflyTask, getflyJob, getflyLinkCount, getflyStatus, getflyUsers, linkGetflyTask, markDone, pendingDone, startGetflyJob } from './getfly.ts';
+import { findGetflyTask, getflyJob, getflyLinkCount, getflyStatus, getflyUsers, getflyWebOrigin, linkGetflyTask, markDone, pendingDone, startGetflyJob } from './getfly.ts';
 import { renderXlsx } from './xlsx.ts';
 import { buildKpiDraft } from './kpi.ts';
 import type { PermissionKey, ProjectRole } from './permissions.ts';
@@ -833,6 +835,15 @@ app.use('/assets/*', async (c, next) => {
 app.use('/*', async (c, next) => {
   await next();
   if (!c.req.path.startsWith('/assets/') && !c.res.headers.has('Cache-Control')) c.header('Cache-Control', 'no-cache');
+});
+// Mã bookmarklet Getfly: dấu trang chỉ là bộ nạp, tải bản mới nhất ở đây mỗi lần bấm (không cache).
+app.get('/bm/:name{(getfly|kpi)\\.js}', (c) => {
+  const origin = new URL(c.req.url).origin.replace(/^http:/, c.req.header('x-forwarded-proto') === 'https' ? 'https:' : 'http:');
+  const name = c.req.param('name');
+  const js = name === 'kpi.js' ? getflyKpiBookmarkletScript(origin, getflyWebOrigin()) : getflyBookmarkletScript(origin, getflyWebOrigin());
+  c.header('Content-Type', 'application/javascript; charset=utf-8');
+  c.header('Cache-Control', 'no-store');
+  return c.body(js);
 });
 app.use('/*', serveStatic({ root: './dist' }));
 app.get('/assets/*', (c) => c.text('Not found', 404));

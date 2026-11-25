@@ -14,6 +14,8 @@ ENV NODE_ENV=production
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 COPY server ./server
+# Mã bookmarklet Getfly do server phục vụ ở /bm/*.js (tệp TS thuần, không import gì).
+COPY src/lib/getfly-bookmarklet.ts src/lib/getfly-kpi-bookmarklet.ts ./src/lib/
 COPY --from=build /app/dist ./dist
 USER node
 EXPOSE 3400
