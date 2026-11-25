@@ -122,7 +122,25 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
     }
     return null;
   }
+  /* Props của component Numeric (react-numeric): có outputFormat / decimalPlaces / viewType và onChange. */
+  function numericProps(el) {
+    var fk = Object.keys(el).filter(function (k) { return k.indexOf('__reactFiber$') === 0 || k.indexOf('__reactInternalInstance$') === 0; })[0];
+    for (var f = fk ? el[fk].return : null, n = 0; f && n < 4; f = f.return, n++) {
+      var mp = f.memoizedProps;
+      if (mp && typeof mp.onChange === 'function' && ('outputFormat' in mp || 'decimalPlaces' in mp || 'viewType' in mp)) return mp;
+    }
+    return null;
+  }
   var METHODS = [
+    /* Soi thật 25/11/2026: stateNode của Numeric KHÔNG có .autonumeric (found:false). Gọi thẳng onChange(event, số)
+       mà Getfly truyền cho Numeric (= handler của InputNumeric → state trang KPI); React vẽ lại, Numeric tự hiện số. */
+    ['numeric onChange', function (el, value) {
+      var num = Number(String(value).replace(/,/g, ''));
+      if (!isFinite(num)) throw new Error('không phải số');
+      var props = numericProps(el);
+      if (!props) throw new Error('không phải ô Numeric');
+      props.onChange(fakeEvent(el, 'change'), num);
+    }],
     ['autonumeric', function (el, value) {
       var inst = numericInstance(el);
       if (!inst) throw new Error('không phải ô AutoNumeric');
@@ -130,7 +148,6 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
       if (!isFinite(num)) throw new Error('không phải số');
       inst.autonumeric.set(num);
       if (typeof inst.props.onChange === 'function') inst.props.onChange(fakeEvent(el, 'change'), num);
-      if (typeof inst.props.onBlur === 'function') inst.props.onBlur(fakeEvent(el, 'blur'), num);
     }],
     ['setter+tracker', function (el, value) {
       el.focus();
@@ -158,7 +175,7 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
       blurAll(el);
     }],
     ['gõ từng ký tự', function (el, value) {
-      if (numericInstance(el)) throw new Error('ô AutoNumeric: không gõ chồng');
+      if (numericInstance(el) || numericProps(el)) throw new Error('ô số Getfly: không gõ chồng');
       el.focus();
       nativeSet(el, '');
       el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -254,7 +271,9 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
     try {
       cur = 1; step(1, 'Kiểm tra danh sách KPI');
       location.hash = '#/kpi/list';
-      await need(1, 'trang "Danh Sách KPI"', function () { return document.body.innerText.indexOf('Danh Sách KPI') >= 0 || document.body.innerText.indexOf('Danh sách KPI') >= 0; }, 15000);
+      /* "Danh Sách KPI" cũng nằm trên breadcrumb của trang Thêm mới ⇒ phải chờ đúng bảng danh sách (cột "Tên phiếu KPI")
+         và hash đã là #/kpi/list — trước đây đọc nhầm trang tạo nên lọt phiếu trùng (25/11/2026). */
+      await need(1, 'bảng "Danh Sách KPI"', function () { return location.hash.indexOf('#/kpi/list') === 0 && document.body.innerText.indexOf('Tên phiếu KPI') >= 0 && !btn('Tiếp theo'); }, 15000);
       /* Chờ bảng tải xong (hết "Đang tải dữ liệu", có dòng hoặc "Chưa có dữ liệu") rồi mới so tên — trước đây so
          lúc bảng còn đang tải nên lọt phiếu trùng (25/11/2026). So sau khi gộp khoảng trắng + NFC. */
       await need(1, 'danh sách KPI tải xong', function () {
