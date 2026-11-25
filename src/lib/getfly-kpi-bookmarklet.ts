@@ -118,7 +118,7 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
     var fk = Object.keys(el).filter(function (k) { return k.indexOf('__reactFiber$') === 0 || k.indexOf('__reactInternalInstance$') === 0; })[0];
     for (var f = fk ? el[fk] : null, n = 0; f && n < 6; f = f.return, n++) {
       var inst = f.stateNode;
-      if (inst && inst.autonumeric && inst.props) return inst;
+      if (inst && (inst.autoNumeric || inst.autonumeric) && inst.props) { inst.autonumeric = inst.autoNumeric || inst.autonumeric; return inst; }
     }
     return null;
   }
@@ -276,6 +276,9 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
       await need(1, 'bảng "Danh Sách KPI"', function () { return location.hash.indexOf('#/kpi/list') === 0 && document.body.innerText.indexOf('Tên phiếu KPI') >= 0 && !btn('Tiếp theo'); }, 15000);
       /* Chờ bảng tải xong (hết "Đang tải dữ liệu", có dòng hoặc "Chưa có dữ liệu") rồi mới so tên — trước đây so
          lúc bảng còn đang tải nên lọt phiếu trùng (25/11/2026). So sau khi gộp khoảng trắng + NFC. */
+      /* Tab mặc định "Đang áp dụng" có thể không hiện phiếu của tháng chưa tới ⇒ chuyển "Tất cả" rồi mới so tên. */
+      var allTab = arr(document.querySelectorAll('button, a, span, div')).filter(function (b) { return vis(b) && norm(b.textContent) === 'Tất cả'; })[0];
+      if (allTab) { allTab.click(); await sleep(800); }
       await need(1, 'danh sách KPI tải xong', function () {
         var t = document.body.innerText;
         return t.indexOf('Đang tải dữ liệu') < 0 && (document.querySelectorAll('table tbody tr').length > 0 || t.indexOf('Chưa có dữ liệu') >= 0);
