@@ -57,6 +57,6 @@ test('Bookmarklet KPI: URL javascript:, chứa trang popup và là JS hợp lệ
   assert.ok(src.includes(JSON.stringify(GETFLY_KPI_PATH)));
   assert.ok(!/__(PROJECT|GETFLY|PATH)__/.test(src));
   assert.ok(!/\balert\(|\bconfirm\(/.test(src));
-  for (const s of ['#/kpi/list', '#/kpi/create/list', 'Thiết lập chỉ tiêu KPI', 'Hoàn tất thiết lập', 'Next Month', "execCommand('insertText'"]) assert.ok(src.includes(s), s);
+  for (const s of ['#/kpi/list', '#/kpi/create/list', 'Thiết lập chỉ tiêu KPI', 'Hoàn tất thiết lập', 'Next Month', '_valueTracker', '__reactProps$', 'onValueChange', 'Nhập tay trọng số rồi bấm Tiếp theo']) assert.ok(src.includes(s), s);
   assert.doesNotThrow(() => new Function(src));
 });

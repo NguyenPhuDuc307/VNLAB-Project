@@ -8,8 +8,8 @@
 //   -> ngày hiệu lực (vue-datepicker: nút aria-label "Choose …, ngày D tháng M năm Y", "Next Month" / "Previous Month")
 //   -> "+" cạnh "Danh sách nhân viên áp dụng (*)" -> modal "Người liên quan": gõ tên, tích, "Thêm mới", đóng -> "Tiếp theo"
 //   -> "Hoàn tất thiết lập" -> kiểm lại ở #/kpi/list.
-// Đã làm tay thành công 25/11/2026 (KPI 2026_12). Ô số của Getfly không nhận gán value trực tiếp: nhập bằng
-// execCommand('insertText') (sự kiện input thật), không được thì $emit('input') qua instance Vue.
+// Đã làm tay thành công 25/11/2026 (KPI 2026_12). Getfly web là React: ô số không nhận gán value trần — xem setValue()
+// (setter + _valueTracker, props React, gõ từng ký tự). Không nhập được trọng số thì chờ người dùng nhập tay rồi chạy tiếp.
 
 export const GETFLY_KPI_PATH = '/getfly-kpi';
 export const MSG_KPI_DRAFT = 'vnlab-getfly-kpi-draft';
@@ -92,31 +92,98 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
     return m.filter(function (a) { return !m.some(function (b) { return b !== a && a.contains(b); }); }).pop() || null;
   }
 
-  /* Gõ như người: chọn hết rồi insertText (sinh sự kiện input thật); không ăn thì gán + phát sự kiện; cuối cùng $emit Vue. */
-  async function typeInto(el, value) {
-    value = String(value);
-    el.scrollIntoView({ block: 'center' });
-    el.focus();
-    if (el.select) el.select();
-    document.execCommand('selectAll', false);
-    var ok = document.execCommand('insertText', false, value);
-    if (!ok || el.value !== value) {
-      var proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-      Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-    }
-    el.dispatchEvent(new Event('change', { bubbles: true }));
-    el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, key: 'Enter' }));
-    el.blur();
-    el.dispatchEvent(new Event('blur'));
-    await sleep(150);
+  /* Getfly web là React (không phải Vue): gán value trần không vào state. Thử lần lượt 3 cách, mỗi cách đọc lại để kiểm:
+     1. setter gốc + đặt lại _valueTracker của React + input/change/focusout;
+     2. gọi thẳng props.onChange / onBlur của React (khoá __reactProps$), hoặc onValueChange của ô định dạng số (đi ngược __reactFiber$);
+     3. gõ từng ký tự (keydown/keypress/input/keyup). getEl() tra lại ô sau mỗi lần vì React có thể vẽ lại. */
+  function fakeEvent(el, type) {
+    return { type: type, target: el, currentTarget: el, nativeEvent: new Event(type), persist: function () {}, preventDefault: function () {}, stopPropagation: function () {}, isDefaultPrevented: function () { return false; }, isPropagationStopped: function () { return false; } };
   }
-  function vueEmit(el, value) {
-    for (var n = el, k = 0; n && k < 4; n = n.parentElement, k++) {
-      var vm = n.__vue__;
-      if (vm && vm.$emit) { vm.$emit('input', value); vm.$emit('change', value); return true; }
+  function nativeSet(el, value) {
+    var proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    var prev = el.value;
+    Object.getOwnPropertyDescriptor(proto, 'value').set.call(el, value);
+    var tracker = el._valueTracker;
+    if (tracker) tracker.setValue(String(prev) === String(value) ? '' : String(prev));
+  }
+  function blurAll(el) {
+    el.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+    el.dispatchEvent(new FocusEvent('blur'));
+    el.blur();
+  }
+  var METHODS = [
+    ['setter+tracker', function (el, value) {
+      el.focus();
+      nativeSet(el, value);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      blurAll(el);
+    }],
+    ['react props', function (el, value) {
+      el.focus();
+      nativeSet(el, value);
+      var pk = Object.keys(el).filter(function (k) { return k.indexOf('__reactProps$') === 0 || k.indexOf('__reactEventHandlers$') === 0; })[0];
+      var props = pk ? el[pk] : null;
+      if (props && props.onChange) props.onChange(fakeEvent(el, 'change'));
+      var fk = Object.keys(el).filter(function (k) { return k.indexOf('__reactFiber$') === 0 || k.indexOf('__reactInternalInstance$') === 0; })[0];
+      for (var f = fk ? el[fk].return : null, n = 0; f && n < 15; f = f.return, n++) {
+        var mp = f.memoizedProps;
+        if (!mp) continue;
+        if (typeof mp.onValueChange === 'function') {
+          mp.onValueChange({ floatValue: Number(value), formattedValue: String(value), value: String(value) }, { source: 'event', event: fakeEvent(el, 'change') });
+          break;
+        }
+      }
+      if (props && props.onBlur) props.onBlur(fakeEvent(el, 'blur'));
+      blurAll(el);
+    }],
+    ['gõ từng ký tự', function (el, value) {
+      el.focus();
+      nativeSet(el, '');
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      String(value).split('').forEach(function (ch) {
+        var code = ch.charCodeAt(0);
+        el.dispatchEvent(new KeyboardEvent('keydown', { key: ch, keyCode: code, which: code, bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keypress', { key: ch, keyCode: code, charCode: code, which: code, bubbles: true }));
+        nativeSet(el, el.value + ch);
+        el.dispatchEvent(new InputEvent('input', { data: ch, inputType: 'insertText', bubbles: true }));
+        el.dispatchEvent(new KeyboardEvent('keyup', { key: ch, keyCode: code, which: code, bubbles: true }));
+      });
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      blurAll(el);
+    }],
+  ];
+  /* Đặt giá trị cho ô; verify() (mặc định: đọc lại value) quyết định đã ăn chưa. Trả tên cách đã dùng, hoặc null + ghi vào tried. */
+  async function setValue(getEl, value, verify, tried) {
+    value = String(value);
+    var norm2 = function (v) { return String(v).replace(/[.,\s%]/g, ''); };
+    for (var i = 0; i < METHODS.length; i++) {
+      var el = getEl();
+      if (!el) return null;
+      el.scrollIntoView({ block: 'center' });
+      try { METHODS[i][1](el, value); } catch (e) { /* thử cách sau */ }
+      await sleep(200);
+      var now = getEl();
+      var ok = now && norm2(now.value) === norm2(value) && (!verify || verify());
+      if (ok) return METHODS[i][0];
+      if (tried && tried.indexOf(METHODS[i][0]) < 0) tried.push(METHODS[i][0]);
     }
-    return false;
+    return null;
+  }
+  async function typeInto(el, value) {
+    await setValue(function () { return el.isConnected ? el : null; }, value);
+    await sleep(100);
+  }
+  /* Dừng chờ người dùng làm tay rồi chạy tiếp khi ready() đúng (tối đa 15 phút). */
+  async function manualContinue(stepNo, msg, ready) {
+    var stopped = false;
+    show('<span style="color:#b26a00">' + esc(msg) + '</span>', [['Huỷ', function () { stopped = true; }]]);
+    var end = Date.now() + 15 * 60000;
+    while (Date.now() < end && !stopped) {
+      try { if (ready()) return; } catch (e) { /* chờ tiếp */ }
+      await sleep(500);
+    }
+    throw new Fail(stepNo, stopped ? 'Đã huỷ' : 'Quá 15 phút chờ nhập tay');
   }
 
   var pop = window.open(P + PATH, 'vnlab-getfly-kpi', 'width=560,height=760');
@@ -191,34 +258,37 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
         (await need(3, 'nút "Thêm mới"', function () { return btn('Thêm mới', modal); })).click();
         await need(3, 'hộp chỉ tiêu đóng lại', function () { return !vis(modal) && !modalWith('Thiết lập chỉ tiêu KPI'); }, 6000);
       }
-      for (var r = 0; r < draft.criteria.length; r++) {
-        var cr = draft.criteria[r];
-        var row = await need(3, 'dòng chỉ tiêu "' + cr.name + '"', function () {
-          var c2 = arr(document.querySelectorAll('tr, li, .row, div')).filter(function (el) {
-            return vis(el) && el.textContent.indexOf(cr.name) >= 0 && textInputs(el).filter(function (x) { return x.tagName === 'INPUT'; }).length >= 3;
-          });
-          return c2.filter(function (a) { return !c2.some(function (b) { return b !== a && a.contains(b); }); })[0];
+      var rowOf = function (name) {
+        var c2 = arr(document.querySelectorAll('tr, li, .row, div')).filter(function (el) {
+          return vis(el) && el.textContent.indexOf(name) >= 0 && textInputs(el).filter(function (x) { return x.tagName === 'INPUT'; }).length >= 3;
         });
-        var ins = textInputs(row).filter(function (x) { return x.tagName === 'INPUT'; });
-        var vals = [cr.value, cr.unit, cr.weight];
-        for (var k = 0; k < 3; k++) {
-          if (vals[k] === '' || vals[k] == null) continue;
-          await typeInto(ins[k], vals[k]);
-          if (ins[k].value !== String(vals[k])) vueEmit(ins[k], vals[k]);
-        }
-      }
+        return c2.filter(function (a) { return !c2.some(function (b) { return b !== a && a.contains(b); }); })[0] || null;
+      };
       var total = function () {
         return arr(document.querySelectorAll('th, td, div, span, label')).some(function (el) { return vis(el) && /Trọng số/.test(el.textContent) && /\b100\s*%/.test(el.textContent) && el.textContent.length < 80; });
       };
-      if (!(await poll(total, 3000))) {
-        /* Thử lại bằng $emit Vue cho trọng số. */
-        for (var r2 = 0; r2 < draft.criteria.length; r2++) {
-          var row2 = arr(document.querySelectorAll('tr, li, .row, div')).filter(function (el) { return vis(el) && el.textContent.indexOf(draft.criteria[r2].name) >= 0 && textInputs(el).length >= 3; }).pop();
-          if (row2) vueEmit(textInputs(row2).filter(function (x) { return x.tagName === 'INPUT'; })[2], draft.criteria[r2].weight);
+      var tried = [], failedCells = [];
+      for (var r = 0; r < draft.criteria.length; r++) {
+        var cr = draft.criteria[r];
+        await need(3, 'dòng chỉ tiêu "' + cr.name + '"', function () { return rowOf(cr.name); });
+        var vals = [cr.value, cr.unit, cr.weight];
+        for (var k = 0; k < 3; k++) {
+          if (vals[k] === '' || vals[k] == null) continue;
+          var kk = k, nm = cr.name;
+          /* Tra lại ô mỗi lần: React có thể vẽ lại dòng sau khi đổi giá trị. */
+          var used = await setValue(function () { var row = rowOf(nm); return row ? textInputs(row).filter(function (x) { return x.tagName === 'INPUT'; })[kk] : null; }, vals[k], null, tried);
+          if (!used) failedCells.push(cr.name + ' / ' + ['giá trị', 'đơn vị', 'trọng số'][k]);
+          await sleep(150);
         }
-        if (!(await poll(total, 3000))) throw new Fail(3, 'Tổng trọng số chưa thành 100% — nhập tay rồi bấm Tiếp theo');
       }
-      (await need(3, 'nút "Tiếp theo"', function () { return btn('Tiếp theo'); })).click();
+      if (!(await poll(total, 3000))) {
+        var why = 'Chưa nhập được ' + (failedCells.length ? failedCells.join(', ') : 'trọng số (tổng chưa 100%)') + (tried.length ? ' · đã thử: ' + tried.join(', ') : '');
+        send({ type: 'vnlab-getfly-kpi-step', step: 3, label: 'Chờ nhập tay trọng số' });
+        await manualContinue(3, why + '. Nhập tay trọng số rồi bấm Tiếp theo — bookmarklet sẽ chạy tiếp.', function () { return !!startsText('Ngày có hiệu lực'); });
+        show('Bước 4/6: Ngày hiệu lực…');
+      } else {
+        (await need(3, 'nút "Tiếp theo"', function () { return btn('Tiếp theo'); })).click();
+      }
 
       cur = 4; step(4, 'Ngày hiệu lực');
       await need(4, 'bước "Áp dụng"', function () { return startsText('Ngày có hiệu lực'); }, 10000);
@@ -239,8 +309,11 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
       var search = await need(5, 'ô tìm "Người tham gia"', function () { return textInputs(pm).filter(function (x) { return x.tagName === 'INPUT'; })[0]; });
       search.click();
       search.focus();
-      document.execCommand('insertText', false, draft.employeeName);
+      /* Ô tìm kiểu react-select: không blur (blur là đóng danh sách); setter + _valueTracker rồi input, thêm execCommand phòng hờ. */
+      nativeSet(search, draft.employeeName);
       search.dispatchEvent(new Event('input', { bubbles: true }));
+      await sleep(300);
+      if (search.value !== draft.employeeName) { search.focus(); document.execCommand('insertText', false, draft.employeeName); }
       var opt = await need(5, 'người dùng "' + draft.employeeName + '" trong danh sách', function () {
         var o = arr(pm.querySelectorAll('li, label, .option, [role=option], .multiselect__option, .vs__dropdown-option, div, span')).filter(function (x) { return vis(x) && norm(x.textContent).indexOf(draft.employeeName) >= 0 && x.textContent.length < draft.employeeName.length + 60; });
         return o.filter(function (a) { return !o.some(function (b) { return b !== a && a.contains(b); }); })[0];
