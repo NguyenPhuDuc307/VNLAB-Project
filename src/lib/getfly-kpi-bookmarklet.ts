@@ -111,7 +111,27 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
     el.dispatchEvent(new FocusEvent('blur'));
     el.blur();
   }
+  /* Ô số của Getfly là react-numeric (AutoNumeric) — đã soi thật 25/11/2026: input > Numeric > InputNumeric.
+     AutoNumeric giữ giá trị riêng; react-numeric gọi props.onChange(event, autonumeric.getNumber()). Cách đúng:
+     đặt qua chính AutoNumeric rồi gọi onChange(event, số) của Numeric (handler của InputNumeric → state Getfly). */
+  function numericInstance(el) {
+    var fk = Object.keys(el).filter(function (k) { return k.indexOf('__reactFiber$') === 0 || k.indexOf('__reactInternalInstance$') === 0; })[0];
+    for (var f = fk ? el[fk] : null, n = 0; f && n < 6; f = f.return, n++) {
+      var inst = f.stateNode;
+      if (inst && inst.autonumeric && inst.props) return inst;
+    }
+    return null;
+  }
   var METHODS = [
+    ['autonumeric', function (el, value) {
+      var inst = numericInstance(el);
+      if (!inst) throw new Error('không phải ô AutoNumeric');
+      var num = Number(String(value).replace(/,/g, ''));
+      if (!isFinite(num)) throw new Error('không phải số');
+      inst.autonumeric.set(num);
+      if (typeof inst.props.onChange === 'function') inst.props.onChange(fakeEvent(el, 'change'), num);
+      if (typeof inst.props.onBlur === 'function') inst.props.onBlur(fakeEvent(el, 'blur'), num);
+    }],
     ['setter+tracker', function (el, value) {
       el.focus();
       nativeSet(el, value);
@@ -138,6 +158,7 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
       blurAll(el);
     }],
     ['gõ từng ký tự', function (el, value) {
+      if (numericInstance(el)) throw new Error('ô AutoNumeric: không gõ chồng');
       el.focus();
       nativeSet(el, '');
       el.dispatchEvent(new Event('input', { bubbles: true }));
@@ -234,8 +255,15 @@ export const KPI_BOOKMARKLET_SOURCE = String.raw`(function () {
       cur = 1; step(1, 'Kiểm tra danh sách KPI');
       location.hash = '#/kpi/list';
       await need(1, 'trang "Danh Sách KPI"', function () { return document.body.innerText.indexOf('Danh Sách KPI') >= 0 || document.body.innerText.indexOf('Danh sách KPI') >= 0; }, 15000);
-      await sleep(1500);
-      if (document.body.innerText.indexOf(draft.name) >= 0) throw new Fail(1, 'Đã có KPI "' + draft.name + '"');
+      /* Chờ bảng tải xong (hết "Đang tải dữ liệu", có dòng hoặc "Chưa có dữ liệu") rồi mới so tên — trước đây so
+         lúc bảng còn đang tải nên lọt phiếu trùng (25/11/2026). So sau khi gộp khoảng trắng + NFC. */
+      await need(1, 'danh sách KPI tải xong', function () {
+        var t = document.body.innerText;
+        return t.indexOf('Đang tải dữ liệu') < 0 && (document.querySelectorAll('table tbody tr').length > 0 || t.indexOf('Chưa có dữ liệu') >= 0);
+      }, 20000);
+      await sleep(500);
+      var key = function (x) { return norm(x).normalize('NFC').toLowerCase(); };
+      if (key(document.body.innerText).indexOf(key(draft.name)) >= 0) throw new Fail(1, 'Đã có KPI "' + draft.name + '"');
 
       cur = 2; step(2, 'Tên KPI');
       location.hash = '#/kpi/create/list';
