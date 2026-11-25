@@ -25,20 +25,15 @@ test('KPI tháng 12/2026: tái tạo đúng lịch dự kiến đã tạo tay tr
   const d = buildKpiDraft({ month: '2026-12', employeeName: 'Nguyễn Phú Đức', shortNames: ['Đức'], groups, tasks });
   assert.equal(d.name, '2026_12_PM_ Nguyễn Phú Đức');
   assert.equal(d.description, [
-    'Lịch dự kiến:',
-    '1. HPG - Giao hàng: Xử lý cảnh báo giao hàng - 1-3/12 - 8%',
-    '2. HPG - Giao hàng: Xử lý giao không thành công - 5-12/12 - 16%',
-    '3. HPG - Kho: Xếp lót tự động - 7-10/12 - 9%',
-    '4. HPG - Kho: Cập nhật tồn Bravo - 8-13/12 - 12%',
-    '5. HPG - Kho: Xuất hàng bằng quét mã - 14-19/12 - 15%',
-    '6. HPG - Giao hàng: App tài xế Flutter - 14-31/12 - 40%',
+    '1. HPG - Giao hàng: Xử lý cảnh báo giao hàng, xử lý giao không thành công, app tài xế Flutter - 1-31/12 - 64%',
+    '2. HPG - Kho: Xếp lót tự động, cập nhật tồn Bravo, xuất hàng bằng quét mã - 7-19/12 - 36%',
   ].join('\n'));
   assert.deepEqual([d.start, d.end], ['01/12/2026', '31/12/2026']);
   assert.deepEqual(d.criteria.map((c) => [c.name, c.value, c.weight]), [['Triển khai', 1, 90], ['Bám sát deadline', 0, 10], ['Báo cáo định kỳ', 0, 0]]);
   assert.equal(d.criteria[0].description, d.description);
 });
 
-test('KPI: cắt theo tháng, một ngày ghi gọn, tổng luôn 100%', () => {
+test('KPI: gộp theo nhóm, cắt theo tháng, một ngày ghi gọn, giữ chữ hoa viết tắt, tổng luôn 100%', () => {
   const tasks = [
     t('g1', 'Vắt qua tháng', '2026-11-23', '2026-12-02', 10), // 10 ngày lịch, 2 ngày trong tháng 12 -> 2 công
     t('g2', 'Một ngày', '2026-12-09', '2026-12-09', 1),
@@ -46,12 +41,13 @@ test('KPI: cắt theo tháng, một ngày ghi gọn, tổng luôn 100%', () => {
     t('g2', 'Ba phần nữa', '2026-12-15', '2026-12-17', 1),
   ];
   const d = buildKpiDraft({ month: '2026-12', employeeName: 'Nguyễn Phú Đức', shortNames: ['Đức'], groups, tasks });
-  const lines = d.description.split('\n').slice(1);
-  assert.equal(lines[0], '1. HPG - Giao hàng: Vắt qua tháng - 1-2/12 - 40%');
-  assert.equal(lines[1], '2. HPG - Kho: Một ngày - 9/12 - 20%');
+  const lines = d.description.split('\n');
+  assert.deepEqual(lines, ['1. HPG - Giao hàng: Vắt qua tháng - 1-2/12 - 40%', '2. HPG - Kho: Một ngày, ba phần, ba phần nữa - 9-17/12 - 60%']);
+  const one = buildKpiDraft({ month: '2026-12', employeeName: 'A', shortNames: ['Đức'], groups, tasks: [t('g2', 'Một ngày', '2026-12-09', '2026-12-09', 1), t('g2', 'GPS tracking', '2026-12-09', '2026-12-09', 1)] });
+  assert.equal(one.description.split('\n')[0], '1. HPG - Kho: GPS tracking, một ngày - 9/12 - 100%');
   assert.equal(lines.map((l) => Number(/(\d+)%$/.exec(l)![1])).reduce((a, b) => a + b, 0), 100);
   const feb = buildKpiDraft({ month: '2027-02', employeeName: 'A', shortNames: [], groups, tasks: [] });
-  assert.deepEqual([feb.end, feb.description, feb.name], ['28/02/2027', 'Lịch dự kiến:', '2027_02_PM_ A']);
+  assert.deepEqual([feb.end, feb.description, feb.name], ['28/02/2027', '', '2027_02_PM_ A']);
 });
 
 test('Bookmarklet KPI: URL javascript:, chứa trang popup và là JS hợp lệ', () => {
