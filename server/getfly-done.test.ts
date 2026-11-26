@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { once } from 'node:events';
+import { runInNewContext } from 'node:vm';
 import { cookieOf, memoryDb, startServer } from './test-helpers.ts';
 import { GETFLY_DONE_PATH, getflyBookmarklet, getflyBookmarkletScript } from '../src/lib/getfly-bookmarklet.ts';
 
@@ -21,6 +22,39 @@ test('Bookmarklet Hoàn thành Getfly: URL javascript:, chứa trang popup và l
   assert.doesNotThrow(() => new Function(src)); // cú pháp hợp lệ
   // Chỉ nhận hộp việc mới mở sau khi đổi hash (Getfly có việc trùng tên), đối chiếu id / mã, hash trùng thì về #/tasks trước.
   for (const s of ['MutationObserver', 'before.indexOf(m) < 0', 'verifyTask', "'task_id=' + it.getflyId", 'closeAll()', "location.hash === target", "location.hash = '#/tasks'"]) assert.ok(src.includes(s), s);
+});
+
+test('Popup Getfly: báo sẵn sàng, chỉ nhận Bắt đầu từ đúng popup và không chạy hai lần', () => {
+  const P = 'https://project.vnlab.id.vn', G = 'https://acs.getflycrm.com';
+  const handlers = new Set<(e: any) => void>();
+  const sent: any[] = [];
+  const popup = { postMessage: (data: any, origin: string) => sent.push({ data, origin }), closed: false };
+  const element = () => ({ style: {}, appendChild() {}, remove() {}, innerHTML: '', textContent: '' });
+  const box = element();
+  const window = {
+    open: () => popup, focus() {},
+    addEventListener: (_: string, fn: (e: any) => void) => handlers.add(fn),
+    removeEventListener: (_: string, fn: (e: any) => void) => handlers.delete(fn),
+  };
+  runInNewContext(getflyBookmarkletScript(P, G), {
+    window, location: { origin: G }, screen: { availWidth: 1440, availHeight: 900 },
+    document: { getElementById: () => box, createElement: element, body: element(), querySelectorAll: () => [] },
+    setTimeout: () => 1, clearTimeout() {},
+  });
+  const message = (type: string, origin = P, source: unknown = popup, extra = {}) => {
+    for (const fn of [...handlers]) fn({ origin, source, data: { type, ...extra } });
+  };
+  message('vnlab-getfly-done-start'); // chưa có danh sách
+  assert.equal(sent.length, 0);
+  message('vnlab-getfly-done-list', P, popup, { items: [{ getflyId: 9130, name: 'Review lần 2' }] });
+  assert.equal(sent[0].data.type, 'vnlab-getfly-done-ready');
+  message('vnlab-getfly-done-start', G);
+  message('vnlab-getfly-done-start', P, {});
+  assert.equal(sent.length, 1);
+  message('vnlab-getfly-done-start');
+  message('vnlab-getfly-done-start');
+  assert.deepEqual(sent.map((x) => x.data.type), ['vnlab-getfly-done-ready', 'vnlab-getfly-done-started']);
+  assert.ok(sent.every((x) => x.origin === P));
 });
 
 /** Getfly giả: chỉ danh sách việc (mới -> cũ) với task_status đổi được; '6' = hoàn thành, '11' = đang tiến hành. */
