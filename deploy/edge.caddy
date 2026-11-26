@@ -2,8 +2,10 @@
 # /home/ducnp/edge/caddy/sites/project.caddy rồi nạp lại Edge.
 # Service app tự phục vụ cả API lẫn SPA.
 project.vnlab.id.vn {
-	encode gzip
+	encode zstd gzip
 	import browser_security
+	# Lớn nhất hợp lệ: nhập dữ liệu JSON / ảnh đại diện 2 MB.
+	import body_limit 32MB
 
 	reverse_proxy project-app:3400
 }

@@ -307,6 +307,8 @@ const MIGRATIONS: string[] = [
     9197, 9198, 9199, 9203, 9204, 9205, 9206, 9088, 9089, 9115, 9137, 9138, 9142
   );
   `,
+  // 23: quyền theo dự án / danh sách dự án lọc thành viên bằng lower(email) — index theo biểu thức đó (index email cũ không dùng được).
+  `create index if not exists project_members_lower_email on project_members (lower(email));`,
 ];
 
 export async function migrate() {

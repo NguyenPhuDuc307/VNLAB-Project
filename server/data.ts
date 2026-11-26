@@ -146,16 +146,23 @@ export const effortOf = (t: { days: number | null; startDate: string | null; end
   t.days != null ? t.days : t.startDate && t.endDate ? workDays(t.startDate, t.endDate, Number(p.satWeight), Number(p.sunWeight)) : 0;
 
 export type Stats = { taskCount: number; doneCount: number; overdueCount: number; progress: number; firstStart: string | null; lastEnd: string | null };
-export const statsOf = async (projectId: string): Promise<Stats> => {
-  const [s] = await sql<Stats[]>`
-    select count(*)::int as task_count,
+const emptyStats = (): Stats => ({ taskCount: 0, doneCount: 0, overdueCount: 0, progress: 0, firstStart: null, lastEnd: null });
+/** Thống kê của nhiều dự án trong MỘT truy vấn (group by project_id); dự án không có việc nhận số 0. */
+export async function statsOfMany(projectIds: string[]): Promise<Map<string, Stats>> {
+  const out = new Map(projectIds.map((id) => [id, emptyStats()]));
+  if (!projectIds.length) return out;
+  const rows = await sql<(Stats & { projectId: string })[]>`
+    select t.project_id,
+           count(*)::int as task_count,
            count(*) filter (where t.progress >= 100)::int as done_count,
            count(*) filter (where t.end_date < ${today()} and t.progress < 100)::int as overdue_count,
            coalesce(round(avg(t.progress)), 0)::int as progress,
            min(t.start_date) as first_start, max(t.end_date) as last_end
-    from tasks t where t.project_id = ${projectId}`;
-  return s;
-};
+    from tasks t where t.project_id = any(${projectIds}::uuid[])
+    group by t.project_id`;
+  for (const { projectId, ...st } of rows) out.set(projectId, st);
+  return out;
+}
 
 /** Mọi dự án tôi là chủ hoặc được mời, kèm thống kê. */
 export async function myProjects(u: Pick<UserRow, 'id' | 'email'>) {
@@ -172,24 +179,57 @@ export async function myProjects(u: Pick<UserRow, 'id' | 'email'>) {
       (select count(*)::int from project_members m where m.project_id = mine.id) as member_count
     from mine join users o on o.id = mine.owner_id
     order by mine.archived, mine.updated_at desc`;
-  const out = [];
-  for (const p of rows) out.push({ ...projectView(p), myRole: p.myRole, owner: { name: p.ownerName, email: p.ownerEmail }, memberCount: p.memberCount, stats: await statsOf(p.id) });
-  return out;
+  const stats = await statsOfMany(rows.map((p) => p.id));
+  return rows.map((p) => ({ ...projectView(p), myRole: p.myRole, owner: { name: p.ownerName, email: p.ownerEmail }, memberCount: p.memberCount, stats: stats.get(p.id)! }));
 }
 
-export async function projectBundle(id: string) {
-  const [p] = await sql<ProjectRow[]>`select * from projects where id = ${id}`;
-  const groups = await sql<{ id: string; name: string; sort: number; collapsed: boolean }[]>`select id, name, sort, collapsed from task_groups where project_id = ${id} order by sort, created_at`;
-  // Thứ tự hiển thị: theo nhóm (nhóm chưa phân xếp cuối), rồi thứ tự trong nhóm — cột STT khi xuất CSV cũng theo đây.
-  const tasks = await sql`
+// Thứ tự hiển thị: theo nhóm (nhóm chưa phân xếp cuối), rồi thứ tự trong nhóm — cột STT khi xuất CSV cũng theo đây.
+const bundleTasks = (ids: string[]) => sql`
     select t.*, l.getfly_code as gf_code, l.getfly_id as gf_id, l.adopted as gf_adopted
     from tasks t left join task_groups g on g.id = t.group_id
     left join getfly_links l on l.project_id = t.project_id and l.local_id = t.id::text
-    where t.project_id = ${id}
+    where t.project_id = any(${ids}::uuid[])
     order by (t.group_id is null), g.sort, g.created_at, t.sort, t.created_at`;
-  const scopes = await sql<ScopeRow[]>`select id, name, color, owner, note, sort from scopes where project_id = ${id} order by sort, created_at`;
-  const phases = await sql<PhaseRow[]>`select id, name, to_char(start_date, 'YYYY-MM-DD') as start_date, to_char(end_date, 'YYYY-MM-DD') as end_date, note, sort from phases where project_id = ${id} order by sort, start_date nulls last, created_at`;
+type GroupOut = { id: string; name: string; sort: number; collapsed: boolean };
+
+export async function projectBundle(id: string) {
+  // Năm truy vấn độc lập — chạy song song thay vì nối tiếp.
+  const [[p], groups, tasks, scopes, phases] = await Promise.all([
+    sql<ProjectRow[]>`select * from projects where id = ${id}`,
+    sql<GroupOut[]>`select id, name, sort, collapsed from task_groups where project_id = ${id} order by sort, created_at`,
+    bundleTasks([id]),
+    sql<ScopeRow[]>`select id, name, color, owner, note, sort from scopes where project_id = ${id} order by sort, created_at`,
+    sql<PhaseRow[]>`select id, name, to_char(start_date, 'YYYY-MM-DD') as start_date, to_char(end_date, 'YYYY-MM-DD') as end_date, note, sort from phases where project_id = ${id} order by sort, start_date nulls last, created_at`,
+  ]);
   return { ...projectView(p), groups, scopes, phases, tasks: tasks.map(taskView) };
+}
+
+/** Như projectBundle cho nhiều dự án cùng lúc: 5 truy vấn `project_id = any(...)` thay vì 5 truy vấn mỗi dự án.
+ *  Trả theo đúng thứ tự `ids` (bỏ id không tồn tại); nội dung từng bundle y hệt projectBundle. */
+export async function projectBundles(ids: string[]) {
+  if (!ids.length) return [];
+  const [ps, groups, tasks, scopes, phases] = await Promise.all([
+    sql<ProjectRow[]>`select * from projects where id = any(${ids}::uuid[])`,
+    sql<(GroupOut & { projectId: string })[]>`select project_id, id, name, sort, collapsed from task_groups where project_id = any(${ids}::uuid[]) order by sort, created_at`,
+    bundleTasks(ids),
+    sql<(ScopeRow & { projectId: string })[]>`select project_id, id, name, color, owner, note, sort from scopes where project_id = any(${ids}::uuid[]) order by sort, created_at`,
+    sql<(PhaseRow & { projectId: string })[]>`select project_id, id, name, to_char(start_date, 'YYYY-MM-DD') as start_date, to_char(end_date, 'YYYY-MM-DD') as end_date, note, sort from phases where project_id = any(${ids}::uuid[]) order by sort, start_date nulls last, created_at`,
+  ]);
+  // Chia theo dự án, giữ nguyên thứ tự đã sắp trong SQL.
+  const bucket = <T extends { projectId: string }>(rows: readonly T[]) => {
+    const m = new Map<string, Omit<T, 'projectId'>[]>();
+    for (const { projectId, ...rest } of rows) { let l = m.get(projectId); if (!l) m.set(projectId, (l = [])); l.push(rest); }
+    return m;
+  };
+  const g = bucket(groups), s = bucket(scopes), ph = bucket(phases);
+  const t = new Map<string, Record<string, unknown>[]>();
+  for (const row of tasks) { const k = row.projectId as string; let l = t.get(k); if (!l) t.set(k, (l = [])); l.push(row); }
+  const byId = new Map(ps.map((p) => [p.id, p]));
+  return ids.filter((id) => byId.has(id)).map((id) => ({
+    ...projectView(byId.get(id)!),
+    groups: (g.get(id) ?? []) as GroupOut[], scopes: (s.get(id) ?? []) as ScopeRow[], phases: (ph.get(id) ?? []) as PhaseRow[],
+    tasks: (t.get(id) ?? []).map(taskView),
+  }));
 }
 
 export async function projectMembers(p: ProjectRow) {
@@ -509,11 +549,31 @@ export async function deleteTask(projectId: string, taskId: string) {
   await touch(projectId);
 }
 
+/** Cặp (id, sort = vị trí) cho UPDATE hàng loạt; id lặp lại thì lấy vị trí cuối (như vòng UPDATE từng dòng trước đây). */
+function sortValues(ids: string[]) {
+  const last = new Map<string, number>();
+  ids.forEach((id, i) => last.set(id, i));
+  return { ids: [...last.keys()], sorts: [...last.values()] };
+}
+/** Đánh lại `sort` theo thứ tự `ids` bằng MỘT câu UPDATE … FROM unnest(...) (thay cho một UPDATE mỗi dòng). */
+async function setSort(tx: Tx, table: 'scopes' | 'phases' | 'task_groups', projectId: string, ids: string[]) {
+  const v = sortValues(ids);
+  if (!v.ids.length) return;
+  await tx`
+    update ${tx(table)} x set sort = v.sort
+    from unnest(${v.ids}::uuid[], ${v.sorts}::int[]) as v(id, sort)
+    where x.id = v.id and x.project_id = ${projectId}`;
+}
+
 /** Sắp xếp lại việc trong một nhóm; việc chuyển từ nhóm khác sang cũng đi qua đây. */
 export async function reorderTasks(projectId: string, groupId: string | null, ids: string[]) {
   await groupBelongs(projectId, groupId);
   await sql.begin(async (tx) => {
-    for (const [i, id] of ids.entries()) await tx`update tasks set group_id = ${groupId}, sort = ${i} where id = ${id} and project_id = ${projectId}`;
+    const v = sortValues(ids);
+    if (v.ids.length) await tx`
+      update tasks t set group_id = ${groupId}, sort = v.sort
+      from unnest(${v.ids}::uuid[], ${v.sorts}::int[]) as v(id, sort)
+      where t.id = v.id and t.project_id = ${projectId}`;
     await clearBrokenParents(tx, [projectId]);
   });
   await touch(projectId);
@@ -634,7 +694,7 @@ export async function deleteScope(projectId: string, scopeId: string) {
 }
 export async function reorderScopes(projectId: string, ids: string[]) {
   await sql.begin(async (tx) => {
-    for (const [i, id] of ids.entries()) await tx`update scopes set sort = ${i} where id = ${id} and project_id = ${projectId}`;
+    await setSort(tx, 'scopes', projectId, ids);
   });
   await touch(projectId);
 }
@@ -690,7 +750,7 @@ export async function deletePhase(projectId: string, phaseId: string, deleteTask
 }
 export async function reorderPhases(projectId: string, ids: string[]) {
   await sql.begin(async (tx) => {
-    for (const [i, id] of ids.entries()) await tx`update phases set sort = ${i} where id = ${id} and project_id = ${projectId}`;
+    await setSort(tx, 'phases', projectId, ids);
   });
   await touch(projectId);
 }
@@ -770,7 +830,7 @@ export async function mergeProjectAsPhase(targetId: string, sourceId: string, so
 
 export async function reorderGroups(projectId: string, ids: string[]) {
   await sql.begin(async (tx) => {
-    for (const [i, id] of ids.entries()) await tx`update task_groups set sort = ${i} where id = ${id} and project_id = ${projectId}`;
+    await setSort(tx, 'task_groups', projectId, ids);
   });
   await touch(projectId);
 }

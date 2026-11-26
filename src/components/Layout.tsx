@@ -1,5 +1,5 @@
 import { CalendarDots, CaretDoubleLeft, CaretDoubleRight, FolderSimple, GearSix, Robot, SquaresFour, type Icon } from '@phosphor-icons/react';
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { Suspense, useEffect, useState, useSyncExternalStore } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useLiveEvents, useMe, useOverview } from '../lib/api';
 import { Avatar, BrandLogo, cx, IconButton, useFeedback } from './ui';
@@ -89,7 +89,10 @@ export function Layout() {
           </header>
         )}
         <main className={cx('mx-auto w-full min-w-0 flex-1 px-4 py-5 md:px-8 md:py-7', !/^\/du-an\/[^/]+(\/phase\/[^/]+)?$/.test(pathname) && 'max-w-[1400px]', !wide && 'pb-[calc(84px+max(8px,calc(env(safe-area-inset-bottom)-14px)))]')}>
-          <Outlet />
+          {/* Trang con tải lười: giữ khung (menu) khi đang tải chunk của trang. */}
+          <Suspense fallback={<div className="flex min-h-[50vh] items-center justify-center"><span className="h-8 w-8 animate-pulse rounded-full bg-current opacity-20" /></div>}>
+            <Outlet />
+          </Suspense>
         </main>
         {!wide && (
           // Thanh điều hướng nổi y như VNLab Home: chỉ icon trong ô tròn 48px. Bo đúng

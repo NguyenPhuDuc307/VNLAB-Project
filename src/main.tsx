@@ -1,20 +1,22 @@
 import { MutationCache, QueryCache, QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { StrictMode } from 'react';
+import { lazy, StrictMode, Suspense } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import './index.css';
 import { Layout } from './components/Layout';
 import { FeedbackProvider, Splash } from './components/ui';
 import { ApiError, useMe } from './lib/api';
-import { Home } from './pages/Home';
 import { Consent, Login } from './pages/Login';
-import { ProjectPage } from './pages/Project';
-import { ProjectHome } from './pages/ProjectHome';
-import { Projects } from './pages/Projects';
-import { Settings } from './pages/Settings';
-import { CalendarPage } from './pages/Calendar';
-import { GetflyDonePage } from './pages/GetflyDone';
-import { GetflyKpiPage } from './pages/GetflyKpi';
+
+// Mỗi trang là một chunk riêng (tải khi vào route) — Gantt / Lịch / Cài đặt không nằm trong lần tải đầu.
+const Home = lazy(() => import('./pages/Home').then((m) => ({ default: m.Home })));
+const ProjectPage = lazy(() => import('./pages/Project').then((m) => ({ default: m.ProjectPage })));
+const ProjectHome = lazy(() => import('./pages/ProjectHome').then((m) => ({ default: m.ProjectHome })));
+const Projects = lazy(() => import('./pages/Projects').then((m) => ({ default: m.Projects })));
+const Settings = lazy(() => import('./pages/Settings').then((m) => ({ default: m.Settings })));
+const CalendarPage = lazy(() => import('./pages/Calendar').then((m) => ({ default: m.CalendarPage })));
+const GetflyDonePage = lazy(() => import('./pages/GetflyDone').then((m) => ({ default: m.GetflyDonePage })));
+const GetflyKpiPage = lazy(() => import('./pages/GetflyKpi').then((m) => ({ default: m.GetflyKpiPage })));
 
 // Phiên hết hạn ở bất kỳ request nào -> hỏi lại /me, nó 401 thì hiện màn đăng nhập
 // (màn đó tự đi SSO im lặng để kiểm role lại khi server đòi `reauth`).
@@ -38,6 +40,7 @@ function App() {
   }
   if (me.data.consentRequired) return <Consent user={me.data} />;
   return (
+    <Suspense fallback={<Splash />}>
     <Routes>
       {/* Cửa sổ bật lên của bookmarklet "Hoàn thành Getfly" — không có khung trang. */}
       <Route path="getfly-hoan-thanh" element={<GetflyDonePage />} />
@@ -52,6 +55,7 @@ function App() {
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
+    </Suspense>
   );
 }
 

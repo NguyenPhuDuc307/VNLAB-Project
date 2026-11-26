@@ -190,9 +190,12 @@ export const TOOLS: Record<string, Tool> = {
       const due = date(a.dueBefore);
       const q = a.query?.toLowerCase(), who = a.assignee?.toLowerCase();
       const out: unknown[] = [];
-      for (const p of projects) {
-        if (p.archived && !(a.projectId || a.project)) continue;
-        const bundle = await D.projectBundle(p.id);
+      // Nạp mọi dự án cần tìm trong một lượt (5 truy vấn `project_id = any(...)`) thay vì 5 truy vấn mỗi dự án.
+      const wanted = projects.filter((p) => !(p.archived && !(a.projectId || a.project)));
+      const bundles = new Map((await D.projectBundles(wanted.map((p) => p.id))).map((b) => [b.id, b]));
+      for (const p of wanted) {
+        const bundle = bundles.get(p.id);
+        if (!bundle) continue;
         const groups = new Map(bundle.groups.map((g) => [g.id, g.name]));
         const scopes = namesOf(bundle);
         for (const t of bundle.tasks) {

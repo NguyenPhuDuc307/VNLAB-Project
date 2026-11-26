@@ -6,6 +6,7 @@ import { getflyKpiBookmarkletScript } from '../src/lib/getfly-kpi-bookmarklet.ts
 import { Hono, type Context } from 'hono';
 import { deleteCookie, getCookie, setCookie } from 'hono/cookie';
 import { HTTPException } from 'hono/http-exception';
+import { bodyLimit } from 'hono/body-limit';
 import { streamSSE } from 'hono/streaming';
 import { sign, verify } from 'hono/jwt';
 import { createHash, randomBytes } from 'node:crypto';
@@ -134,7 +135,9 @@ const SSO_COOKIE = 'prj_sso';
 const IDT_COOKIE = 'prj_idt';
 const NOACCESS_COOKIE = 'prj_noaccess';
 const SSO_PATH = '/api/auth/sso';
-const safeNext = (n: string | undefined) => (n && n.startsWith('/') && !n.startsWith('//') ? n : '/');
+// Chỉ nhận đường dẫn nội bộ. Trình duyệt coi `/\evil.com` và `/<tab>/evil.com` như `//evil.com`
+// (sang site khác), nên chặn cả dấu `\` và ký tự điều khiển — không thì thành open redirect sau đăng nhập.
+const safeNext = (n: string | undefined) => (n && n.startsWith('/') && !n.startsWith('//') && !/[\\\x00-\x1f\x7f]/.test(n) ? n : '/');
 
 /** Gắn user_id cho các lời mời theo email của người này (mời trước khi họ đăng nhập lần đầu). */
 const linkInvites = (userId: string, email: string) =>
@@ -284,8 +287,7 @@ auth.post('/me/delete', async (c) => {
 auth.get('/me/export', requirePermission('project.data.export'), async (c) => {
   const u = c.get('user');
   const projects = await sql`select id from projects where owner_id = ${u.id} order by created_at`;
-  const out = [];
-  for (const p of projects) out.push(await D.projectBundle(p.id));
+  const out = await D.projectBundles(projects.map((p) => p.id as string));
   const invited = await sql`select p.id, p.name, m.role from project_members m join projects p on p.id = m.project_id where m.user_id = ${u.id} or lower(m.email) = ${u.email.toLowerCase()}`;
   c.header('Content-Disposition', `attachment; filename="vnlab-project-${today()}.json"`);
   return c.json({ exportedAt: new Date().toISOString(), user: { email: u.email, name: u.name }, projects: out, invitedTo: invited });
@@ -764,7 +766,9 @@ auth.post('/projects/:id/tasks/sort', requirePermission('project.task.write'), a
 });
 
 /** Nhập hàng loạt (dán từ bảng tính). */
-auth.post('/projects/:id/import', requirePermission('project.data.import'), async (c) => {
+// Giới hạn 10 MB: 200 nhóm × 2000 việc đã dư; chặn payload khổng lồ trước khi parse JSON.
+const importLimit = bodyLimit({ maxSize: 10 * 1024 * 1024, onError: (c) => c.json({ error: 'Dữ liệu nhập quá lớn (tối đa 10 MB)' }, 413) });
+auth.post('/projects/:id/import', importLimit, requirePermission('project.data.import'), async (c) => {
   const p = await D.projectOf(c.get('user'), param(c));
   D.editable(p);
   const b = await body(c, z.object({
